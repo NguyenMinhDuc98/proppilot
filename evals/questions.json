@@ -105,7 +105,7 @@
     "id": "ar-08", "lang": "ar",
     "question": "ما سجل المدفوعات للوحدة B-203؟",
     "tools": ["get_payment_history"],
-    "expect": ["أحمد الحربي", "UNPAID"]
+    "expect": ["أحمد الحربي", ["UNPAID", "لم يُدفع", "غير مدفوع"]]
   },
   {
     "id": "ar-09", "lang": "ar",

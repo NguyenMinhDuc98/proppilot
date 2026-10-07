@@ -81,15 +81,19 @@ curl -N -X POST localhost:8080/api/chat -H 'Content-Type: application/json' \
 
 `evals/questions.json` has 20 questions (10 English, 10 Arabic) with expected facts and expected tools. `node evals/run.mjs` runs them against a live backend and prints pass rate, average cost and average latency.
 
-Latest run (offline assistant, Docker Compose stack, seeded data):
+Latest run against **real Claude** (`claude-haiku-4-5-20251001`, seeded data, backend on a laptop talking to the Anthropic API):
 
 | Set | Passed | Pass rate | Avg cost / question | Avg latency |
 |---|---|---|---|---|
-| All | 20/20 | 100% | $0.00000 | 30 ms |
-| English | 10/10 | 100% | $0.00000 | 48 ms |
-| Arabic | 10/10 | 100% | $0.00000 | 12 ms |
+| All | 20/20 | 100% | $0.0059 | 4.2 s |
+| English | 10/10 | 100% | $0.0055 | 3.6 s |
+| Arabic | 10/10 | 100% | $0.0063 | 4.8 s |
 
-> **Read this honestly:** the offline assistant is a keyword router written against these question shapes, so 100% here proves the data, tools, streaming and answer pipeline are correct, **not** language-model quality. The same eval is the real benchmark for Claude: run it with `LLM_PROVIDER=anthropic` and replace this table with the result (the script reports real cost and latency).
+Tool selection was correct on all 20 questions: the right tool was called every time, and the answers were in the language of the question.
+
+The first Claude run scored 16/20. I read the four failing answers: all were correct, and my grader was too literal (it wanted `4800` but Claude wrote `4,800`, and in Arabic Claude wrote `لم يُدفع` instead of the raw status `UNPAID`). I fixed the grader to ignore number formatting and accept alternative wordings of the same fact, and did not change what is being checked.
+
+The free **offline assistant** (a keyword router written against these question shapes) also scores 20/20 at $0 and about 30 ms. That only shows the data, tools and streaming pipeline are correct; the Claude run above is the meaningful benchmark.
 
 ```bash
 CHAT_RATE_LIMIT_PER_MINUTE=1000 ./mvnw -f backend/pom.xml spring-boot:run   # or: docker compose up

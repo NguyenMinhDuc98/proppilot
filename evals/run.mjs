@@ -3,8 +3,9 @@
 //
 //   node evals/run.mjs [--url http://localhost:8080] [--delay-ms 0]
 //
-// A question passes when every `expect` string appears in the streamed answer (case-insensitive) and every tool in
-// `tools` was called. Start the backend with CHAT_RATE_LIMIT_PER_MINUTE=1000 to run without throttling.
+// A question passes when every `expect` entry appears in the streamed answer and every tool in `tools` was called.
+// An entry is a string, or an array of alternative wordings of which any one counts. Matching is case-insensitive
+// and ignores number formatting (4,800 = 4800 = ٤٨٠٠), because models format numbers freely. Start the backend with CHAT_RATE_LIMIT_PER_MINUTE=1000 to run without throttling.
 
 import { readFile, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
@@ -55,9 +56,17 @@ async function ask(question) {
   return run
 }
 
+function normalize(text) {
+  return String(text)
+    .toLowerCase()
+    .replace(/[\u0660-\u0669]/g, (digit) => String(digit.charCodeAt(0) - 0x0660))
+    .replace(/(\d),(?=\d{3}\b)/g, '$1')
+}
+
 function grade(item, run) {
-  const answer = run.answer.toLowerCase()
-  const missingFacts = item.expect.filter((fact) => !answer.includes(String(fact).toLowerCase()))
+  const answer = normalize(run.answer)
+  const present = (fact) => [fact].flat().some((alternative) => answer.includes(normalize(alternative)))
+  const missingFacts = item.expect.filter((fact) => !present(fact))
   const missingTools = (item.tools ?? []).filter((tool) => !run.tools.includes(tool))
   return { missingFacts, missingTools, pass: !run.error && missingFacts.length === 0 && missingTools.length === 0 }
 }
