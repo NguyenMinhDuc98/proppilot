@@ -41,7 +41,7 @@ final class OfflineAnswerWriter {
             sb.append("\n- ").append(u.path("code").asText()).append(" · ").append(u.path("building").asText())
                     .append(" (").append(u.path(ar ? "cityAr" : "cityEn").asText()).append(") · ")
                     .append(u.path("bedrooms").asInt()).append(ar ? " غرف · " : " BR · ")
-                    .append(u.path("monthlyRent").asText()).append(ar ? " ريال/شهر · " : " SAR/mo · ")
+                    .append(money(u.path("monthlyRent"))).append(ar ? " ريال/شهر · " : " SAR/mo · ")
                     .append(u.path("status").asText());
         }
         if (d.path("total").asInt() > d.path("shown").asInt()) {
@@ -55,7 +55,7 @@ final class OfflineAnswerWriter {
         var sb = new StringBuilder(ar ? "الوحدة " : "Unit ").append(u.path("code").asText()).append(" — ")
                 .append(u.path("building").asText()).append(", ").append(u.path(ar ? "cityAr" : "cityEn").asText())
                 .append(ar ? "\n- الحالة: " : "\n- Status: ").append(u.path("status").asText())
-                .append(ar ? "\n- الإيجار: " : "\n- Rent: ").append(u.path("monthlyRent").asText()).append(ar ? " ريال/شهر" : " SAR/month")
+                .append(ar ? "\n- الإيجار: " : "\n- Rent: ").append(money(u.path("monthlyRent"))).append(ar ? " ريال/شهر" : " SAR/month")
                 .append(ar ? "\n- غرف النوم: " : "\n- Bedrooms: ").append(u.path("bedrooms").asInt())
                 .append(ar ? "\n- المساحة: " : "\n- Area: ").append(u.path("areaSqm").asInt()).append(ar ? " م²" : " sqm");
         var t = d.path("currentTenant");
@@ -65,7 +65,7 @@ final class OfflineAnswerWriter {
             sb.append(ar ? "\n- المستأجر: " : "\n- Tenant: ").append(t.path(ar ? "nameAr" : "nameEn").asText())
                     .append(ar ? "\n- العقد: " : "\n- Lease: ").append(t.path("leaseStart").asText()).append(" → ").append(t.path("leaseEnd").asText())
                     .append(ar ? "\n- أشهر متأخرة: " : "\n- Overdue months: ").append(t.path("overdueMonths").asInt())
-                    .append(" (").append(t.path("overdueAmount").asText()).append(ar ? " ريال)" : " SAR)");
+                    .append(" (").append(money(t.path("overdueAmount"))).append(ar ? " ريال)" : " SAR)");
         }
         return sb.toString();
     }
@@ -74,14 +74,14 @@ final class OfflineAnswerWriter {
         int total = d.path("totalTenants").asInt();
         var sb = new StringBuilder(ar
                 ? "عدد المستأجرين المتأخرين أكثر من " + d.path("minDaysOverdue").asInt() + " يوم: " + total
-                        + " (إجمالي المستحق " + d.path("totalUnpaidAmount").asText() + " ريال)."
+                        + " (إجمالي المستحق " + money(d.path("totalUnpaidAmount")) + " ريال)."
                 : total + " tenant(s) more than " + d.path("minDaysOverdue").asInt() + " days overdue (total unpaid "
-                        + d.path("totalUnpaidAmount").asText() + " SAR).");
+                        + money(d.path("totalUnpaidAmount")) + " SAR).");
         for (var t : d.path("tenants")) {
             sb.append("\n- ").append(t.path(ar ? "nameAr" : "nameEn").asText()).append(" · ").append(t.path("unitCode").asText())
                     .append(" · ").append(t.path("daysOverdue").asInt()).append(ar ? " يوم · " : " days · ")
                     .append(t.path("unpaidMonths").asInt()).append(ar ? " شهر · " : " month(s) · ")
-                    .append(t.path("unpaidAmount").asText()).append(ar ? " ريال" : " SAR");
+                    .append(money(t.path("unpaidAmount"))).append(ar ? " ريال" : " SAR");
         }
         if (total > d.path("shown").asInt()) {
             sb.append(ar ? "\n(عُرض الأكثر تأخرًا فقط)" : "\n(showing the most overdue)");
@@ -96,14 +96,14 @@ final class OfflineAnswerWriter {
                   + "\n- الوحدات: " + d.path("totalUnits").asInt() + " (مشغولة " + d.path("occupiedUnits").asInt() + "، شاغرة "
                   + d.path("vacantUnits").asInt() + "، صيانة " + d.path("maintenanceUnits").asInt() + ")"
                   + "\n- نسبة الإشغال: " + d.path("occupancyRatePercent").asText() + "%"
-                  + "\n- الإيجار المحصّل: " + d.path("rentCollected").asText() + " من " + d.path("rentExpected").asText() + " ريال ("
+                  + "\n- الإيجار المحصّل: " + money(d.path("rentCollected")) + " من " + money(d.path("rentExpected")) + " ريال ("
                   + d.path("collectionRatePercent").asText() + "%)"
                   + "\n- فواتير غير مدفوعة: " + d.path("unpaidInvoices").asInt()
                 : "Summary for " + (scope.equals("ALL") ? "all buildings" : "building " + scope) + ", " + d.path("month").asText() + ":"
                   + "\n- Units: " + d.path("totalUnits").asInt() + " (occupied " + d.path("occupiedUnits").asInt() + ", vacant "
                   + d.path("vacantUnits").asInt() + ", maintenance " + d.path("maintenanceUnits").asInt() + ")"
                   + "\n- Occupancy: " + d.path("occupancyRatePercent").asText() + "%"
-                  + "\n- Rent collected: " + d.path("rentCollected").asText() + " of " + d.path("rentExpected").asText() + " SAR ("
+                  + "\n- Rent collected: " + money(d.path("rentCollected")) + " of " + money(d.path("rentExpected")) + " SAR ("
                   + d.path("collectionRatePercent").asText() + "%)"
                   + "\n- Unpaid invoices: " + d.path("unpaidInvoices").asInt();
     }
@@ -114,7 +114,7 @@ final class OfflineAnswerWriter {
                 .append(ar ? ") — أشهر غير مدفوعة: " : ") — unpaid months: ").append(d.path("unpaidMonths").asInt());
         for (var p : d.path("payments")) {
             sb.append("\n- ").append(p.path("month").asText()).append(": ").append(p.path("status").asText())
-                    .append(" (").append(p.path("amount").asText()).append(ar ? " ريال)" : " SAR)");
+                    .append(" (").append(money(p.path("amount"))).append(ar ? " ريال)" : " SAR)");
         }
         return sb.toString();
     }
@@ -122,5 +122,9 @@ final class OfflineAnswerWriter {
     private static String draft(JsonNode d, boolean ar) {
         return (ar ? "هذه مسودة للمراجعة (لم يتم إرسال أي شيء):" : "Here is a draft for you to review (nothing was sent):")
                 + "\n\n" + d.path("subject").asText() + "\n\n" + d.path("body").asText();
+    }
+
+    private static String money(JsonNode amount) {
+        return amount.decimalValue().stripTrailingZeros().toPlainString();
     }
 }

@@ -1,0 +1,56 @@
+:root {
+  --pp-bg: #f5f7fb;
+  --pp-surface: #ffffff;
+  --pp-border: #e3e8ef;
+  --pp-text: #1f2937;
+  --pp-muted: #6b7280;
+  --pp-primary: #2563eb;
+  --pp-user-bubble: #2563eb;
+  --pp-user-text: #ffffff;
+  --pp-radius: 14px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Tahoma, 'Noto Sans Arabic', Arial, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --pp-bg: #0f1420;
+    --pp-surface: #182032;
+    --pp-border: #2a3550;
+    --pp-text: #e5e9f2;
+    --pp-muted: #94a0b8;
+    --pp-primary: #5b8def;
+    --pp-user-bubble: #3b6fd8;
+  }
+  html { color-scheme: dark; }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--pp-bg);
+  color: var(--pp-text);
+}
+
+.page {
+  max-width: 960px;
+  margin-inline: auto;
+  padding: 24px 16px 48px;
+}
+
+.page h1 { margin: 0 0 4px; font-size: 22px; }
+.page .subtitle { margin: 0 0 20px; color: var(--pp-muted); }
+
+.card {
+  background: var(--pp-surface);
+  border: 1px solid var(--pp-border);
+  border-radius: var(--pp-radius);
+  padding: 16px;
+}
+
+/* Icons that point in a direction must mirror in RTL. */
+[dir='rtl'] .mirror-rtl { transform: scaleX(-1); }
+
+@media (max-width: 640px) {
+  .page { padding-inline: 12px; }
+}
