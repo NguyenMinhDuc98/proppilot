@@ -2,7 +2,7 @@
 
 **A bilingual (English / Arabic) AI assistant for property managers: ask a question in either language and an agent answers by calling typed tools against a property database, streaming its work live.**
 
-> **Live demo:** _add your Vercel URL here after deploying (see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md))_
+> **Live demo:** https://proppilot-lake.vercel.app (the free-tier API sleeps when idle, so the first request can take about a minute)
 >
 > _30-second demo GIF goes here (save it as `docs/demo.gif` and embed it). Suggested recording: the chat answering "Who is more than 30 days late on rent?" then switching to Arabic._
 
