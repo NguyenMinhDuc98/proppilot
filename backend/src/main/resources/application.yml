@@ -1,0 +1,43 @@
+spring:
+  application:
+    name: proppilot
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/proppilot}
+    username: ${DB_USER:proppilot}
+    password: ${DB_PASSWORD:proppilot}
+    hikari:
+      maximum-pool-size: 5
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+  threads:
+    virtual:
+      enabled: true
+
+server:
+  port: ${PORT:8080}
+  shutdown: graceful
+
+management:
+  endpoints.web.exposure.include: health
+  endpoint.health.probes.enabled: true
+
+proppilot:
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
+  llm:
+    provider: ${LLM_PROVIDER:offline}
+    api-key: ${ANTHROPIC_API_KEY:}
+    model: ${ANTHROPIC_MODEL:claude-haiku-4-5-20251001}
+    api-url: https://api.anthropic.com/v1/messages
+    max-tokens: 1024
+    timeout-seconds: 60
+    price-input-per-mtok: ${LLM_PRICE_INPUT_PER_MTOK:1.00}
+    price-output-per-mtok: ${LLM_PRICE_OUTPUT_PER_MTOK:5.00}
+  agent:
+    max-iterations: 6
+    max-history-turns: 10
+  chat:
+    max-message-length: ${CHAT_MAX_MESSAGE_LENGTH:500}
+    rate-limit-per-minute: ${CHAT_RATE_LIMIT_PER_MINUTE:10}

@@ -1,0 +1,14 @@
+# build
+target/
+node_modules/
+dist/
+.DS_Store
+# env / secrets
+.env
+.env.local
+# ide
+.idea/
+.vscode/
+*.iml
+# eval output
+evals/results.json
