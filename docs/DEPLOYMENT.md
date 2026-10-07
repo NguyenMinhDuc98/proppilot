@@ -8,7 +8,7 @@ Three free services, no credit card required for the free tiers (check each prov
 | Backend (Docker) | **Render** (free web service) | Builds from the `backend/Dockerfile`; `render.yaml` is included. |
 | Frontend | **Vercel** (free hobby) | Static Vite build with SPA rewrites (`frontend/vercel.json`). |
 
-Trade-offs of the free tier: the Render service sleeps after ~15 minutes idle, so the first request after a pause takes about a minute (cold start). Neon also pauses idle databases and wakes them on connect. Both are fine for a portfolio demo; upgrade later by changing the plan.
+Trade-offs of the free tier: the Render service sleeps after ~15 minutes idle, so the first request after a pause is slow while it wakes. I measured about 150 seconds to boot under the free tier's 0.1 CPU limit, and more when Neon is also waking. Neon also pauses idle databases and wakes them on connect. Both are fine for a portfolio demo; upgrade later by changing the plan.
 
 The LLM defaults to the free **offline** assistant, so there is **no per-question cost** unless you opt into Claude.
 
@@ -49,4 +49,6 @@ Open the Vercel URL, switch to Arabic with the language button, and ask a questi
 ## 5. Keep it healthy
 
 - Every push runs CI (backend tests with Testcontainers, frontend typecheck/tests/build, Docker build).
-- To avoid the cold start before a demo, open the site a minute early.
+- To avoid the cold start before a demo, open the site a few minutes early.
+- If a deploy fails with "Timed out ... health check" and the logs stop right after `No active profile set`, the JVM was still starting on the throttled free CPU. Click **Manual Deploy → Deploy latest commit** again; the previous version keeps serving traffic meanwhile.
+- `render.yaml` has a `buildFilter`, so only changes under `backend/` redeploy the API.
