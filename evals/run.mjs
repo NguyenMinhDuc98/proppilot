@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Runs evals/questions.json against a running PropPilot backend and prints pass rate, avg cost and avg latency.
 //
-//   node evals/run.mjs [--url http://localhost:8080] [--delay-ms 0] [--markdown]
+//   node evals/run.mjs [--url http://localhost:8080] [--delay-ms 0]
 //
 // A question passes when every `expect` string appears in the streamed answer (case-insensitive) and every tool in
 // `tools` was called. Start the backend with CHAT_RATE_LIMIT_PER_MINUTE=1000 to run without throttling.

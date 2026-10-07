@@ -4,8 +4,7 @@
 
 > **Live demo:** _add your Vercel URL here after deploying (see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md))_
 >
-> ![30-second demo](docs/demo.gif)
-> _Demo GIF placeholder: record the chat answering "Who is more than 30 days late on rent?" then switch to Arabic._
+> _30-second demo GIF goes here (save it as `docs/demo.gif` and embed it). Suggested recording: the chat answering "Who is more than 30 days late on rent?" then switching to Arabic._
 
 All data is fake seed data (3 cities, 6 buildings, 150 units, 120 tenants, 12 months of payments). No real companies or people.
 
@@ -94,7 +93,7 @@ Latest run (offline assistant, Docker Compose stack, seeded data):
 
 ```bash
 CHAT_RATE_LIMIT_PER_MINUTE=1000 ./mvnw -f backend/pom.xml spring-boot:run   # or: docker compose up
-node evals/run.mjs --url http://localhost:8080 --markdown
+node evals/run.mjs --url http://localhost:8080
 ```
 
 ## Tech stack
