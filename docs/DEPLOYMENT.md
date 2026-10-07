@@ -52,3 +52,18 @@ Open the Vercel URL, switch to Arabic with the language button, and ask a questi
 - To avoid the cold start before a demo, open the site a few minutes early.
 - If a deploy fails with "Timed out ... health check" and the logs stop right after `No active profile set`, the JVM was still starting on the throttled free CPU. Click **Manual Deploy → Deploy latest commit** again; the previous version keeps serving traffic meanwhile.
 - `render.yaml` has a `buildFilter`, so only changes under `backend/` redeploy the API.
+
+## Why the free tier cold start is slow (measured, and what did not help)
+
+Render's free instance has 0.1 CPU, and Spring Boot + Hibernate need about 15 CPU-seconds to start, so a cold start takes roughly 2.5 to 3 minutes. I reproduced this locally with `docker run --cpus=0.1 --memory=512m` and timed start to "Started":
+
+| Variant | Wall time |
+|---|---|
+| Baseline | 166 s |
+| `spring.main.lazy-initialization` | 159 s |
+| Lazy init + lighter JVM flags (`-XX:CICompilerCount=1 -Xss256k`) | 154 s |
+| AppCDS archive built into the image | 140 s and 163 s (two runs) |
+| Spring AOT | 181 s |
+| Spring AOT + AppCDS | 168 s and 162 s |
+
+Run-to-run noise is about ±20 s, so none of these is a real improvement and none was shipped. The startup is CPU-bound; the options that actually change it are more CPU (a paid instance, or a host that gives a startup CPU boost) or avoiding cold starts by keeping the service awake.
