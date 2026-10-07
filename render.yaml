@@ -8,6 +8,10 @@ services:
     dockerfilePath: ./backend/Dockerfile
     plan: free
     healthCheckPath: /actuator/health
+    # Only backend changes redeploy the API; README, frontend and eval pushes leave the running service alone.
+    buildFilter:
+      paths:
+        - backend/**
     envVars:
       - key: DB_URL          # jdbc:postgresql://<neon-host>/<db>?sslmode=require
         sync: false
