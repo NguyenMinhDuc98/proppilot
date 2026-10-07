@@ -74,3 +74,9 @@ CREATE TABLE chat_runs (
     status        VARCHAR(16)    NOT NULL CHECK (status IN ('OK', 'ERROR', 'MAX_ITERATIONS'))
 );
 CREATE INDEX idx_chat_runs_created ON chat_runs (created_at);
+
+CREATE TABLE chat_run_tools (
+    run_id    UUID        NOT NULL REFERENCES chat_runs (id) ON DELETE CASCADE,
+    tool_name VARCHAR(64) NOT NULL
+);
+CREATE INDEX idx_chat_run_tools_run ON chat_run_tools (run_id);

@@ -30,6 +30,8 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
             order by p.period desc""")
     List<Payment> findByUnitCode(@Param("unitCode") String unitCode, Pageable pageable);
 
+    List<Payment> findByLeaseIdAndPaidOnIsNullAndDueDateBeforeOrderByPeriod(Long leaseId, LocalDate before);
+
     @Query("""
             select sum(p.paidAmount) as collected, sum(p.amount) as expected,
                    count(p) as invoices, sum(case when p.paidOn is null then 1 else 0 end) as unpaid

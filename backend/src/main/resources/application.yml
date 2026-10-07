@@ -18,6 +18,7 @@ spring:
 server:
   port: ${PORT:8080}
   shutdown: graceful
+  forward-headers-strategy: native
 
 management:
   endpoints.web.exposure.include: health
@@ -41,3 +42,4 @@ proppilot:
   chat:
     max-message-length: ${CHAT_MAX_MESSAGE_LENGTH:500}
     rate-limit-per-minute: ${CHAT_RATE_LIMIT_PER_MINUTE:10}
+    daily-limit: ${CHAT_DAILY_LIMIT:500}
