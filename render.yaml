@@ -1,0 +1,27 @@
+# Render Blueprint: the backend on Render's free web service.
+# The database is a free Neon Postgres (Render's free Postgres expires), so DB_* are set by hand in the dashboard.
+services:
+  - type: web
+    name: proppilot-api
+    runtime: docker
+    dockerContext: ./backend
+    dockerfilePath: ./backend/Dockerfile
+    plan: free
+    healthCheckPath: /actuator/health
+    envVars:
+      - key: DB_URL          # jdbc:postgresql://<neon-host>/<db>?sslmode=require
+        sync: false
+      - key: DB_USER
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
+      - key: CORS_ALLOWED_ORIGINS   # your Vercel URL, e.g. https://proppilot.vercel.app
+        sync: false
+      - key: LLM_PROVIDER
+        value: offline              # switch to "anthropic" + set ANTHROPIC_API_KEY to use Claude
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: CHAT_RATE_LIMIT_PER_MINUTE
+        value: "10"
+      - key: CHAT_DAILY_LIMIT
+        value: "300"
