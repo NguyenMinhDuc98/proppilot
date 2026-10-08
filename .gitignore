@@ -12,4 +12,3 @@ dist/
 *.iml
 # eval output
 evals/results.json
-.neon
