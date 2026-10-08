@@ -67,3 +67,7 @@ Render's free instance has 0.1 CPU, and Spring Boot + Hibernate need about 15 CP
 | Spring AOT + AppCDS | 168 s and 162 s |
 
 Run-to-run noise is about ±20 s, so none of these is a real improvement and none was shipped. The startup is CPU-bound; the options that actually change it are more CPU (a paid instance, or a host that gives a startup CPU boost) or avoiding cold starts by keeping the service awake.
+
+## Gotcha: blueprint syncs overwrite dashboard values
+
+Render re-applies every value written in `render.yaml` whenever the blueprint syncs, so a variable you changed in the dashboard silently reverts if the file also gives it a `value`. Settings you manage in the dashboard (`LLM_PROVIDER`, keys, DB credentials, CORS origins) are therefore marked `sync: false` in `render.yaml` and have no value there. This bit me once: the live demo went back to the free offline assistant after a sync.
