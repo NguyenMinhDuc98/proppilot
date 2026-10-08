@@ -1,5 +1,7 @@
 # PropPilot
 
+[![CI](https://github.com/NguyenMinhDuc98/proppilot/actions/workflows/ci.yml/badge.svg)](https://github.com/NguyenMinhDuc98/proppilot/actions/workflows/ci.yml)
+
 **A bilingual (English / Arabic) AI assistant for property managers: ask a question in either language and an agent answers by calling typed tools against a property database, streaming its work live.**
 
 > **Live demo:** https://proppilot-lake.vercel.app (the free-tier API sleeps when idle, so the first request after a pause can take a few minutes while it wakes up)
@@ -14,6 +16,7 @@ All data is fake seed data (3 cities, 6 buildings, 150 units, 120 tenants, 12 mo
 - **Tool registry:** every tool is a Spring bean implementing `Tool`; the registry collects them and generates the tool list for the API. Tools are read-only and typed (no raw SQL from the model) and return clean errors the model can act on.
 - **Streaming UX over SSE:** the UI shows live "Searching units…" chips, then streams the answer.
 - **Cost and latency tracking** per question (`chat_runs` table, shown under each answer and on a Usage page).
+- **A transparent agent:** every answer has an expandable "How I answered" panel showing the tool call and its arguments, what the tool returned, tokens, cost and latency.
 - **Real Arabic support:** vue-i18n, `dir="rtl"` flipping, Element Plus Arabic locale, bidi-safe numbers.
 - **Zero-cost by default:** the app runs with a built-in offline assistant, so it works with no API key. Set one env var to switch to real Claude.
 
@@ -152,7 +155,7 @@ LLM_PROVIDER=anthropic ANTHROPIC_API_KEY=sk-ant-... docker compose up --build
 
 ```bash
 cd backend && ./mvnw verify      # 64 tests; integration tests start PostgreSQL via Testcontainers (needs Docker)
-cd frontend && npm test          # 15 Vitest tests: SSE parser + chat store
+cd frontend && npm test          # 25 Vitest tests: SSE parser, chat store, Markdown sanitising, trace builder
 ```
 
 Backend: the agent loop against a mocked LLM, the registry, the Anthropic stream parser, every tool against the real seeded database, the SSE endpoint end to end, rate limiter, cost calculator, units API. CI (`.github/workflows/ci.yml`) builds and tests both on every push.
