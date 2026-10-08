@@ -8,10 +8,9 @@ import type { ToolChip } from '../stores/chat'
 const props = defineProps<{ chip: ToolChip }>()
 const { t, te, locale } = useI18n()
 
-const KNOWN = 'tools.'
 const label = computed(() => {
-  const key = te(`${KNOWN}${props.chip.name}.running`) ? props.chip.name : 'unknown'
-  return t(`${KNOWN}${key}.${props.chip.status === 'running' ? 'running' : 'done'}`)
+  const key = te(`tools.${props.chip.name}.running`) ? props.chip.name : 'unknown'
+  return t(`tools.${key}.${props.chip.status === 'running' ? 'running' : 'done'}`)
 })
 </script>
 
@@ -33,17 +32,16 @@ const label = computed(() => {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 3px 10px;
+  padding: 3px 12px;
   font-size: 12px;
+  font-weight: 600;
   border-radius: 999px;
-  border: 1px solid var(--pp-border);
-  background: var(--pp-bg);
-  color: var(--pp-muted);
+  background: var(--pp-primary-soft);
+  color: var(--pp-primary-ink);
 }
-.chip.done { color: #15803d; border-color: #86efac66; }
-.chip.failed { color: #b45309; border-color: #fcd34d88; }
-.summary { opacity: 0.85; }
+.chip.done { background: var(--pp-success-bg); color: var(--pp-success-ink); }
+.chip.failed { background: var(--pp-warn-bg); color: var(--pp-warn-ink); }
+.summary { font-weight: 500; opacity: 0.85; }
 .spin { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
 </style>

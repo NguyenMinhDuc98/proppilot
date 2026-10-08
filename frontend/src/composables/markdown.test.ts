@@ -12,7 +12,8 @@ describe('renderMarkdown', () => {
   it('renders GitHub-style tables', () => {
     const html = renderMarkdown('| Month | Status |\n|---|---|\n| 2026-10 | UNPAID |')
 
-    expect(html).toContain('<table>')
+    expect(html).toContain('<div class="table-wrap"><table>')
+    expect(html).toContain('</table></div>')
     expect(html).toContain('<td>UNPAID</td>')
   })
 

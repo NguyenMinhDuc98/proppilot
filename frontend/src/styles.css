@@ -1,27 +1,86 @@
 :root {
-  --pp-bg: #f5f7fb;
+  color-scheme: light;
+  --pp-bg: #f6f7fb;
   --pp-surface: #ffffff;
-  --pp-border: #e3e8ef;
-  --pp-text: #1f2937;
-  --pp-muted: #6b7280;
-  --pp-primary: #2563eb;
-  --pp-user-bubble: #2563eb;
-  --pp-user-text: #ffffff;
-  --pp-radius: 14px;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Tahoma, 'Noto Sans Arabic', Arial, sans-serif;
+  --pp-surface-2: #fafafd;
+  --pp-border: #e6e8f0;
+  --pp-border-strong: #d9dcea;
+  --pp-text: #12141d;
+  --pp-muted: #5b6275;
+  --pp-primary: #4f46e5;
+  --pp-primary-soft: #eef0ff;
+  --pp-primary-ink: #3730a3;
+  --pp-on-primary: #ffffff;
+  --pp-user-bubble: var(--pp-primary);
+  --pp-user-text: var(--pp-on-primary);
+  --pp-success-bg: #e7f6ef;
+  --pp-success-ink: #0f6b49;
+  --pp-danger-bg: #fdecea;
+  --pp-danger-ink: #b42318;
+  --pp-warn-bg: #fef3e2;
+  --pp-warn-ink: #9a5a06;
+  --pp-radius: 16px;
+  --pp-shadow: 0 1px 2px rgba(18, 20, 29, 0.05);
+  --pp-shadow-lift: 0 8px 24px -12px rgba(18, 20, 29, 0.22);
+  --topbar-h: 56px;
+  --tabbar-h: 64px;
+  font-family: 'Plus Jakarta Sans', 'IBM Plex Sans Arabic', -apple-system, BlinkMacSystemFont, 'Segoe UI', Tahoma, Arial, sans-serif;
+  line-height: 1.6;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --pp-bg: #0f1420;
-    --pp-surface: #182032;
-    --pp-border: #2a3550;
-    --pp-text: #e5e9f2;
-    --pp-muted: #94a0b8;
-    --pp-primary: #5b8def;
-    --pp-user-bubble: #3b6fd8;
+    color-scheme: dark;
+    --pp-bg: #0e1018;
+    --pp-surface: #171a26;
+    --pp-surface-2: #1b1f2d;
+    --pp-border: #262b3b;
+    --pp-border-strong: #353b50;
+    --pp-text: #e8eaf2;
+    --pp-muted: #9aa3b8;
+    --pp-primary: #5a52e6;
+    --pp-primary-soft: #23264a;
+    --pp-primary-ink: #b7bbff;
+    --pp-success-bg: #12301f;
+    --pp-success-ink: #6fdcaa;
+    --pp-danger-bg: #3a1a1a;
+    --pp-danger-ink: #ff9a8f;
+    --pp-warn-bg: #3a2a10;
+    --pp-warn-ink: #f2bd6b;
+    --pp-shadow: none;
+    --pp-shadow-lift: 0 8px 24px -12px rgba(0, 0, 0, 0.6);
   }
-  html { color-scheme: dark; }
+}
+
+/* Element Plus follows our tokens so the table, selects and pagination match the rest of the app. */
+:root,
+html.dark {
+  --el-color-primary: var(--pp-primary);
+  --el-font-family: inherit;
+  --el-border-radius-base: 10px;
+  --el-bg-color: var(--pp-surface);
+  --el-bg-color-overlay: var(--pp-surface);
+  --el-fill-color-blank: var(--pp-surface);
+  --el-text-color-primary: var(--pp-text);
+  --el-text-color-regular: var(--pp-text);
+  --el-border-color: var(--pp-border-strong);
+  --el-border-color-light: var(--pp-border);
+  --el-border-color-lighter: var(--pp-border);
+}
+.el-table {
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: var(--pp-surface-2);
+  --el-table-header-text-color: var(--pp-muted);
+  --el-table-border-color: var(--pp-border);
+  --el-table-row-hover-bg-color: var(--pp-bg);
+  font-size: 14px;
+}
+.el-table th.el-table__cell {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 * { box-sizing: border-box; }
@@ -32,25 +91,45 @@ body {
   color: var(--pp-text);
 }
 
-.page {
-  max-width: 960px;
-  margin-inline: auto;
-  padding: 24px 16px 48px;
+h1, h2, h3 { line-height: 1.3; }
+
+:focus-visible {
+  outline: 2px solid var(--pp-primary);
+  outline-offset: 2px;
 }
 
-.page h1 { margin: 0 0 4px; font-size: 22px; }
-.page .subtitle { margin: 0 0 20px; color: var(--pp-muted); }
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.page {
+  max-width: 1040px;
+  margin-inline: auto;
+  padding: 32px 32px 56px;
+}
+.page h1 { margin: 0 0 4px; font-size: 22px; font-weight: 700; }
+.page .subtitle { margin: 0 0 22px; color: var(--pp-muted); }
 
 .card {
   background: var(--pp-surface);
   border: 1px solid var(--pp-border);
   border-radius: var(--pp-radius);
   padding: 16px;
+  box-shadow: var(--pp-shadow);
 }
 
 /* Icons that point in a direction must mirror in RTL. */
 [dir='rtl'] .mirror-rtl { transform: scaleX(-1); }
 
-@media (max-width: 640px) {
-  .page { padding-inline: 12px; }
+@media (max-width: 800px) {
+  .page { padding: 20px 14px calc(var(--tabbar-h) + 28px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
 }

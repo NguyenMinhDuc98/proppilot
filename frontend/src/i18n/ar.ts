@@ -1,5 +1,11 @@
 export default {
-  app: { title: 'بروب بايلوت', tagline: 'مساعد ذكي لمديري العقارات', language: 'English' },
+  app: {
+    title: 'بروب بايلوت',
+    tagline: 'مساعد ذكي لمديري العقارات',
+    language: 'English',
+    demoNote: 'جميع البيانات المعروضة وهمية للعرض التجريبي.',
+    navLabel: 'التنقل الرئيسي',
+  },
   nav: { chat: 'المساعد', units: 'الوحدات', stats: 'الاستخدام' },
   chat: {
     title: 'اسأل عن محفظتك العقارية',
@@ -22,6 +28,24 @@ export default {
     assistant: 'بروب بايلوت',
     charCount: '{count} / {max}',
     usage: { free: 'مجاني (المساعد المحلي)', toolCalls: '{n} استدعاءات أدوات', tokens: '{n} رمز' },
+    offlineAssistant: 'المساعد المحلي',
+  },
+  trace: {
+    toggle: 'كيف توصلت للإجابة',
+    called: 'استدعاء أداة',
+    returned: 'نتيجة الأداة',
+    failed: 'فشلت الأداة',
+    answered: 'كتابة الإجابة',
+    answerTokens: '{n} رمز',
+    readOnly: 'الأدوات للقراءة فقط، ولا تُرسل المسودات أبدًا.',
+    stats: {
+      cost: 'التكلفة',
+      latency: 'الزمن',
+      tokensIn: 'رموز الإدخال',
+      tokensOut: 'رموز الإخراج',
+      rounds: 'جولات النموذج',
+      model: 'النموذج',
+    },
   },
   tools: {
     search_units: { running: 'جارٍ البحث عن الوحدات…', done: 'تم البحث عن الوحدات' },

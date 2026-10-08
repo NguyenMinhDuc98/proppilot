@@ -4,44 +4,167 @@ import { useI18n } from 'vue-i18n'
 import { useLocale } from './i18n'
 
 const { t } = useI18n()
-const { elementLocale, toggle } = useLocale()
+const { locale, elementLocale, setLocale, toggle } = useLocale()
+
+const links = [
+  { to: '/', key: 'chat', icon: 'M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z' },
+  { to: '/units', key: 'units', icon: 'M5 3h14v18H5zM9 8h.01M15 8h.01M9 12h.01M15 12h.01M10 21v-4h4v4' },
+  { to: '/stats', key: 'stats', icon: 'M4 20V10M10 20V4M16 20v-7M22 20H2' },
+] as const
 </script>
 
 <template>
   <ElConfigProvider :locale="elementLocale">
-    <header class="top">
-      <div class="inner">
+    <div class="shell">
+      <aside class="sidebar">
         <RouterLink to="/" class="brand">
-          <svg viewBox="0 0 32 32" width="26" height="26" aria-hidden="true">
-            <rect width="32" height="32" rx="8" fill="#2563eb" />
+          <svg viewBox="0 0 32 32" width="30" height="30" aria-hidden="true">
+            <rect width="32" height="32" rx="9" fill="var(--pp-primary)" />
             <path d="M8 17 16 9l8 8v7h-5v-5h-6v5H8z" fill="#fff" />
           </svg>
           <span>{{ t('app.title') }}</span>
         </RouterLink>
-        <nav>
-          <RouterLink to="/">{{ t('nav.chat') }}</RouterLink>
-          <RouterLink to="/units">{{ t('nav.units') }}</RouterLink>
-          <RouterLink to="/stats">{{ t('nav.stats') }}</RouterLink>
+
+        <nav :aria-label="t('app.navLabel')" class="nav">
+          <RouterLink v-for="link in links" :key="link.key" :to="link.to" class="nav-link">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path :d="link.icon" /></svg>
+            {{ t(`nav.${link.key}`) }}
+          </RouterLink>
         </nav>
-        <button class="lang" type="button" @click="toggle">{{ t('app.language') }}</button>
+
+        <div class="foot">
+          <div class="segmented" role="group" aria-label="Language">
+            <button type="button" :aria-pressed="locale === 'en'" @click="setLocale('en')">English</button>
+            <button type="button" :aria-pressed="locale === 'ar'" @click="setLocale('ar')">العربية</button>
+          </div>
+          <p>{{ t('app.demoNote') }}</p>
+        </div>
+      </aside>
+
+      <div class="content">
+        <header class="topbar">
+          <RouterLink to="/" class="brand">
+            <svg viewBox="0 0 32 32" width="28" height="28" aria-hidden="true">
+              <rect width="32" height="32" rx="8" fill="var(--pp-primary)" />
+              <path d="M8 17 16 9l8 8v7h-5v-5h-6v5H8z" fill="#fff" />
+            </svg>
+            <span>{{ t('app.title') }}</span>
+          </RouterLink>
+          <button type="button" class="lang" @click="toggle">{{ t('app.language') }}</button>
+        </header>
+
+        <main><RouterView /></main>
+
+        <nav :aria-label="t('app.navLabel')" class="tabbar">
+          <RouterLink v-for="link in links" :key="link.key" :to="link.to" class="tab">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path :d="link.icon" /></svg>
+            {{ t(`nav.${link.key}`) }}
+          </RouterLink>
+        </nav>
       </div>
-    </header>
-    <main>
-      <RouterView />
-    </main>
+    </div>
   </ElConfigProvider>
 </template>
 
 <style scoped>
-.top { background: var(--pp-surface); border-bottom: 1px solid var(--pp-border); position: sticky; top: 0; z-index: 10; }
-.inner { max-width: 960px; margin-inline: auto; padding: 10px 16px; display: flex; align-items: center; gap: 20px; }
-.brand { display: flex; align-items: center; gap: 8px; font-weight: 700; color: var(--pp-text); text-decoration: none; }
-nav { display: flex; gap: 4px; flex: 1; }
-nav a { padding: 6px 12px; border-radius: 8px; color: var(--pp-muted); text-decoration: none; }
-nav a.router-link-exact-active { background: var(--pp-bg); color: var(--pp-primary); font-weight: 600; }
-.lang {
-  font: inherit; cursor: pointer; padding: 6px 12px; border-radius: 8px;
-  border: 1px solid var(--pp-border); background: var(--pp-bg); color: var(--pp-text);
+.shell { display: grid; grid-template-columns: 248px minmax(0, 1fr); min-height: 100vh; }
+.sidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  padding: 20px 16px;
+  background: var(--pp-surface);
+  border-inline-end: 1px solid var(--pp-border);
 }
-@media (max-width: 520px) { .inner { gap: 8px; padding-inline: 10px; } nav a { padding-inline: 8px; } .brand span { display: none; } }
+.brand { display: flex; align-items: center; gap: 10px; padding: 0 8px; color: var(--pp-text); font-size: 18px; font-weight: 700; text-decoration: none; }
+.nav { display: flex; flex-direction: column; gap: 4px; }
+.nav-link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  color: var(--pp-muted);
+  font-size: 14px;
+  font-weight: 500;
+  text-decoration: none;
+}
+.nav-link:hover { background: var(--pp-bg); color: var(--pp-text); }
+.nav-link.router-link-exact-active { background: var(--pp-primary-soft); color: var(--pp-primary-ink); font-weight: 600; }
+.foot { margin-top: auto; display: flex; flex-direction: column; gap: 14px; }
+.foot p { margin: 0; padding: 0 4px; font-size: 12px; color: var(--pp-muted); }
+.segmented { display: flex; padding: 4px; border-radius: 12px; background: var(--pp-bg); }
+.segmented button {
+  flex: 1;
+  min-height: 34px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--pp-muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.segmented button[aria-pressed='true'] { background: var(--pp-surface); color: var(--pp-text); box-shadow: 0 1px 2px rgba(18, 20, 29, 0.14); }
+
+.content { min-width: 0; }
+.topbar, .tabbar { display: none; }
+
+@media (max-width: 800px) {
+  .shell { display: block; }
+  .sidebar { display: none; }
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    height: var(--topbar-h);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 14px;
+    background: var(--pp-surface);
+    border-bottom: 1px solid var(--pp-border);
+  }
+  .brand { padding: 0; font-size: 17px; }
+  .lang {
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0 14px;
+    border: 1px solid var(--pp-border);
+    border-radius: 12px;
+    background: var(--pp-bg);
+    color: var(--pp-text);
+    font: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .tabbar {
+    position: fixed;
+    inset-inline: 0;
+    bottom: 0;
+    z-index: 10;
+    height: var(--tabbar-h);
+    display: flex;
+    background: var(--pp-surface);
+    border-top: 1px solid var(--pp-border);
+  }
+  .tab {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    color: var(--pp-muted);
+    font-size: 11.5px;
+    font-weight: 500;
+    text-decoration: none;
+  }
+  .tab.router-link-exact-active { color: var(--pp-primary-ink); font-weight: 600; }
+}
 </style>

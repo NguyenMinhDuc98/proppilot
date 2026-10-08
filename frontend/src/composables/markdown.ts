@@ -9,5 +9,7 @@ marked.setOptions({ gfm: true, breaks: true })
  */
 export function renderMarkdown(text: string): string {
   const html = marked.parse(text, { async: false })
-  return DOMPurify.sanitize(html, { USE_PROFILES: { html: true } })
+  const safe = DOMPurify.sanitize(html, { USE_PROFILES: { html: true } })
+  // Tables get a scrollable, rounded wrapper so they read as a data card and never overflow a phone screen.
+  return safe.replaceAll('<table>', '<div class="table-wrap"><table>').replaceAll('</table>', '</table></div>')
 }

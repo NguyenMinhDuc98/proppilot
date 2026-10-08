@@ -1,5 +1,11 @@
 export default {
-  app: { title: 'PropPilot', tagline: 'AI assistant for property managers', language: 'العربية' },
+  app: {
+    title: 'PropPilot',
+    tagline: 'AI assistant for property managers',
+    language: 'العربية',
+    demoNote: 'All data shown is fake demo data.',
+    navLabel: 'Main navigation',
+  },
   nav: { chat: 'Assistant', units: 'Units', stats: 'Usage' },
   chat: {
     title: 'Ask about your portfolio',
@@ -22,6 +28,24 @@ export default {
     assistant: 'PropPilot',
     charCount: '{count} / {max}',
     usage: { free: 'Free (offline assistant)', toolCalls: '{n} tool calls', tokens: '{n} tokens' },
+    offlineAssistant: 'Offline assistant',
+  },
+  trace: {
+    toggle: 'How I answered',
+    called: 'Called a tool',
+    returned: 'Tool returned',
+    failed: 'Tool failed',
+    answered: 'Wrote the answer',
+    answerTokens: '{n} tokens',
+    readOnly: 'Tools are read-only. Drafts are never sent.',
+    stats: {
+      cost: 'Cost',
+      latency: 'Latency',
+      tokensIn: 'Tokens in',
+      tokensOut: 'Tokens out',
+      rounds: 'Model rounds',
+      model: 'Model',
+    },
   },
   tools: {
     search_units: { running: 'Searching units…', done: 'Searched units' },
