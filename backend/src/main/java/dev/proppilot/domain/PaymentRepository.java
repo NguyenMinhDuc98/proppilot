@@ -27,8 +27,10 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
     @Query("""
             select p from Payment p join fetch p.lease l join fetch l.unit u
             where upper(u.code) = upper(:unitCode)
-            order by p.period desc""")
+            order by p.period desc, p.id desc""")
     List<Payment> findByUnitCode(@Param("unitCode") String unitCode, Pageable pageable);
+
+    List<Payment> findByLeaseIdOrderByPeriodDesc(Long leaseId, Pageable pageable);
 
     List<Payment> findByLeaseIdAndPaidOnIsNullAndDueDateBeforeOrderByPeriod(Long leaseId, LocalDate before);
 

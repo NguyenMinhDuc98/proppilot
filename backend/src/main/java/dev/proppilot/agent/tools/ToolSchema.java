@@ -31,6 +31,10 @@ public final class ToolSchema {
         return property(name, "number", description);
     }
 
+    public ToolSchema bool(String name, String description) {
+        return property(name, "boolean", description);
+    }
+
     public ToolSchema enumeration(String name, String description, String... values) {
         var prop = f.objectNode().put("type", "string").put("description", description);
         var allowed = prop.putArray("enum");
