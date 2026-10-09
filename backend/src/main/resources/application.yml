@@ -41,6 +41,7 @@ proppilot:
   agent:
     max-iterations: 6
     max-history-turns: 10
+    run-timeout-seconds: ${AGENT_RUN_TIMEOUT_SECONDS:90}
   chat:
     max-message-length: ${CHAT_MAX_MESSAGE_LENGTH:500}
     rate-limit-per-minute: ${CHAT_RATE_LIMIT_PER_MINUTE:10}

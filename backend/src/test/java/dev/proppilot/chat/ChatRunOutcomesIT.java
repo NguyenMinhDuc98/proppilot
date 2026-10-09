@@ -15,6 +15,7 @@ import dev.proppilot.agent.llm.ContentBlock;
 import dev.proppilot.agent.llm.LlmResponse;
 import dev.proppilot.agent.llm.StopReason;
 import dev.proppilot.agent.llm.Usage;
+import dev.proppilot.config.AgentProperties;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
@@ -53,6 +54,9 @@ class ChatRunOutcomesIT extends PostgresIntegrationTest {
 
     @Autowired
     ChatRunRepository runs;
+
+    @Autowired
+    AgentProperties agentProps;
 
     @BeforeEach
     void resetScript() {
@@ -115,6 +119,16 @@ class ChatRunOutcomesIT extends PostgresIntegrationTest {
         assertThat(run.getCostUsd()).isPositive();
         assertThat(run.getToolCalls()).isEqualTo(1);
         assertThat(llm.requests).hasSize(1);
+    }
+
+    @Test
+    void theStreamStaysOpenFifteenSecondsLongerThanTheRunDeadline() {
+        llm.thenText("hello");
+
+        var emitter = chatService.start(new ChatRequest("outcome: emitter timeout", null));
+
+        assertThat(emitter.getTimeout()).isEqualTo(agentProps.runTimeout().plusSeconds(15).toMillis());
+        await().atMost(Duration.ofSeconds(10)).until(() -> runExists("outcome: emitter timeout"));
     }
 
     @Test

@@ -52,12 +52,23 @@ public class AnthropicLlmClient implements LlmClient {
 
     @Override
     public LlmResponse complete(LlmRequest request, Consumer<String> onTextDelta) {
-        return retries.execute(onTextDelta, sink -> attempt(request, sink));
+        long startedAt = System.nanoTime();
+        return retries.execute(onTextDelta, sink -> attempt(request, timeoutLeft(request, startedAt), sink));
     }
 
-    private LlmResponse attempt(LlmRequest request, Consumer<String> onTextDelta) {
+    /** The configured limit, or less when the caller's time budget (shared by all retries) is nearly used up. */
+    private Duration timeoutLeft(LlmRequest request, long startedAt) {
+        var left = request.timeout().minus(Duration.ofNanos(System.nanoTime() - startedAt));
+        if (!left.isPositive()) {
+            throw new LlmException("No time left for another Claude call", ErrorCode.LLM_TIMEOUT);
+        }
+        var configured = Duration.ofSeconds(props.timeoutSeconds());
+        return left.compareTo(configured) < 0 ? left : configured;
+    }
+
+    private LlmResponse attempt(LlmRequest request, Duration timeout, Consumer<String> onTextDelta) {
         var httpRequest = HttpRequest.newBuilder(URI.create(props.apiUrl()))
-                .timeout(Duration.ofSeconds(props.timeoutSeconds()))
+                .timeout(timeout)
                 .header("content-type", "application/json")
                 .header("x-api-key", props.apiKey())
                 .header("anthropic-version", API_VERSION)

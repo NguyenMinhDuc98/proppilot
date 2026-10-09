@@ -6,6 +6,7 @@ import dev.proppilot.agent.AgentLoop;
 import dev.proppilot.agent.AgentResult;
 import dev.proppilot.agent.ErrorCode;
 import dev.proppilot.agent.llm.LlmClient;
+import dev.proppilot.config.AgentProperties;
 import jakarta.annotation.PreDestroy;
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -25,7 +26,8 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 public class ChatService {
 
     private static final Logger log = LoggerFactory.getLogger(ChatService.class);
-    private static final long EMITTER_TIMEOUT_MS = Duration.ofMinutes(2).toMillis();
+    /** The SSE connection outlives the run deadline by this much, so a run that times out can still say so. */
+    private static final Duration EMITTER_GRACE = Duration.ofSeconds(15);
 
     private final AgentLoop agent;
     private final LlmClient llm;
@@ -33,20 +35,22 @@ public class ChatService {
     private final ChatRunRepository runs;
     private final ObjectMapper json;
     private final Clock clock;
+    private final long emitterTimeoutMs;
     private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
 
     public ChatService(AgentLoop agent, LlmClient llm, CostCalculator costs, ChatRunRepository runs,
-                       ObjectMapper json, Clock clock) {
+                       ObjectMapper json, Clock clock, AgentProperties agentProps) {
         this.agent = agent;
         this.llm = llm;
         this.costs = costs;
         this.runs = runs;
         this.json = json;
         this.clock = clock;
+        this.emitterTimeoutMs = agentProps.runTimeout().plus(EMITTER_GRACE).toMillis();
     }
 
     public SseEmitter start(ChatRequest request) {
-        var emitter = new SseEmitter(EMITTER_TIMEOUT_MS);
+        var emitter = new SseEmitter(emitterTimeoutMs);
         var client = new ClientStream(emitter, json);
         executor.execute(() -> runAndStream(request, client));
         return emitter;

@@ -6,6 +6,7 @@ import static org.mockito.Mockito.mock;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.proppilot.agent.llm.ContentBlock;
+import dev.proppilot.agent.llm.LlmRequest;
 import dev.proppilot.agent.llm.LlmResponse;
 import dev.proppilot.agent.llm.Message;
 import dev.proppilot.agent.llm.StopReason;
@@ -16,9 +17,8 @@ import dev.proppilot.agent.tools.ToolRegistry;
 import dev.proppilot.agent.tools.ToolResult;
 import dev.proppilot.agent.tools.ToolSchema;
 import dev.proppilot.config.AgentProperties;
-import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
-import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.BooleanSupplier;
@@ -28,10 +28,12 @@ import org.springframework.transaction.PlatformTransactionManager;
 class AgentLoopTest {
 
     private static final ObjectMapper JSON = new ObjectMapper();
-    private static final Clock CLOCK = Clock.fixed(Instant.parse("2026-03-15T10:00:00Z"), ZoneOffset.UTC);
+    private static final Duration RUN_TIMEOUT = Duration.ofSeconds(90);
     private static final BooleanSupplier NEVER = () -> false;
 
+    private final MutableClock clock = new MutableClock(Instant.parse("2026-03-15T10:00:00Z"));
     private final List<String> executedWith = new ArrayList<>();
+    private Duration echoTakes = Duration.ZERO;
 
     private final Tool echo = new Tool() {
         public String name() { return "echo"; }
@@ -42,13 +44,14 @@ class AgentLoopTest {
                 throw new ToolInputException("text is required");
             }
             executedWith.add(input.get("text").asText());
+            clock.advance(echoTakes);
             return ToolResult.ok(JSON, java.util.Map.of("echo", input.get("text").asText()), "echoed");
         }
     };
 
     private AgentLoop loop(ScriptedLlmClient llm, int maxIterations) {
         var registry = new ToolRegistry(List.of(echo), mock(PlatformTransactionManager.class));
-        return new AgentLoop(llm, registry, new AgentProperties(maxIterations, 10), CLOCK);
+        return new AgentLoop(llm, registry, new AgentProperties(maxIterations, 10, (int) RUN_TIMEOUT.toSeconds()), clock);
     }
 
     @Test
@@ -210,6 +213,51 @@ class AgentLoopTest {
         assertThat(result.toolCalls()).isEqualTo(1);
         assertThat(result.usage()).isEqualTo(new Usage(50, 10));
         assertThat(llm.requests).hasSize(1);
+    }
+
+    @Test
+    void everyModelCallGetsOnlyTheTimeLeftAndTheRunEndsWithRunTimeoutWhenItIsUsedUp() {
+        var llm = new ScriptedLlmClient()
+                .beforeEachCall(() -> clock.advance(Duration.ofSeconds(60)))
+                .thenToolCall("t1", "echo", "{\"text\":\"one\"}")
+                .thenToolCall("t2", "echo", "{\"text\":\"two\"}")
+                .thenText("never reached");
+
+        var result = loop(llm, 6).run("slow question", List.of(), e -> { }, NEVER);
+
+        assertThat(llm.requests).extracting(LlmRequest::timeout)
+                .containsExactly(Duration.ofSeconds(90), Duration.ofSeconds(30));
+        assertThat(result.status()).isEqualTo(AgentResult.Status.ERROR);
+        assertThat(result.errorCode()).isEqualTo(ErrorCode.RUN_TIMEOUT);
+        assertThat(result.answer()).isEqualTo(ErrorCode.RUN_TIMEOUT.message());
+        assertThat(result.usage()).isEqualTo(new Usage(100, 20));
+        assertThat(result.iterations()).isEqualTo(2);
+        assertThat(executedWith).containsExactly("one");
+    }
+
+    @Test
+    void theDeadlineIsAlsoCheckedBetweenToolCalls() throws Exception {
+        var first = new ContentBlock.ToolUse("t1", "echo", JSON.readTree("{\"text\":\"one\"}"));
+        var second = new ContentBlock.ToolUse("t2", "echo", JSON.readTree("{\"text\":\"two\"}"));
+        var llm = new ScriptedLlmClient()
+                .then(new LlmResponse(List.of(first, second), StopReason.TOOL_USE, new Usage(50, 10)));
+        echoTakes = RUN_TIMEOUT.plusSeconds(1);
+
+        var result = loop(llm, 6).run("slow tools", List.of(), e -> { }, NEVER);
+
+        assertThat(result.errorCode()).isEqualTo(ErrorCode.RUN_TIMEOUT);
+        assertThat(executedWith).containsExactly("one");
+        assertThat(result.toolCalls()).isEqualTo(1);
+        assertThat(llm.requests).hasSize(1);
+    }
+
+    @Test
+    void aRunThatFinishesInTimeIsNotAffectedByTheDeadline() {
+        var llm = new ScriptedLlmClient().beforeEachCall(() -> clock.advance(Duration.ofSeconds(89))).thenText("fast enough");
+
+        var result = loop(llm, 6).run("quick", List.of(), e -> { }, NEVER);
+
+        assertThat(result.status()).isEqualTo(AgentResult.Status.OK);
     }
 
     @Test

@@ -12,6 +12,8 @@ import dev.proppilot.agent.llm.Usage;
 import dev.proppilot.agent.tools.ToolRegistry;
 import dev.proppilot.config.AgentProperties;
 import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
@@ -24,8 +26,8 @@ import org.springframework.stereotype.Service;
 
 /**
  * The agent loop, written by hand: send messages and tool definitions to the model; if it asks for tools, run them,
- * append the results and ask again; stop on a final answer, a reply cut off by the token limit, or after the iteration
- * limit.
+ * append the results and ask again; stop on a final answer, a reply cut off by the token limit, the iteration limit or
+ * the run deadline.
  */
 @Service
 public class AgentLoop {
@@ -46,6 +48,9 @@ public class AgentLoop {
     }
 
     /**
+     * Answers one question. The run ends with error code {@code run_timeout} once the run deadline has passed, and
+     * each model call is given only the time that is left.
+     *
      * @param cancelled polled before every model call and tool execution; once it is true the run stops and returns
      *                  what it has spent so far with status {@code ABORTED}
      */
@@ -61,6 +66,7 @@ public class AgentLoop {
         private final List<Message> messages = new ArrayList<>();
         private final String system = SystemPrompt.forDate(LocalDate.now(clock));
         private final List<ToolSpec> toolSpecs = tools.specs();
+        private final Instant deadline = clock.instant().plus(props.runTimeout());
         private Usage usage = Usage.ZERO;
         private int toolCalls;
         private int iterations;
@@ -85,13 +91,14 @@ public class AgentLoop {
 
         /** One model call and the tools it asked for. Returns the final result once the run is over. */
         private Optional<AgentResult> step() {
-            if (cancelled.getAsBoolean()) {
-                return Optional.of(aborted());
+            var interruption = interruption();
+            if (interruption.isPresent()) {
+                return interruption;
             }
             iterations++;
             LlmResponse response;
             try {
-                response = llm.complete(new LlmRequest(system, List.copyOf(messages), toolSpecs),
+                response = llm.complete(new LlmRequest(system, List.copyOf(messages), toolSpecs, timeLeft()),
                         text -> events.accept(new AgentEvent.Token(text)));
             } catch (LlmException e) {
                 log.warn("LLM call failed on iteration {} ({}): {}", iterations, e.code(), e.getMessage());
@@ -111,12 +118,13 @@ public class AgentLoop {
             return runTools(requested);
         }
 
-        /** Runs the tools and queues their results for the next model call; a result is returned only if cancelled. */
+        /** Runs the tools and queues their results for the next model call; a result is returned only if interrupted. */
         private Optional<AgentResult> runTools(List<ContentBlock.ToolUse> requested) {
             var results = new ArrayList<ContentBlock>();
             for (var call : requested) {
-                if (cancelled.getAsBoolean()) {
-                    return Optional.of(aborted());
+                var interruption = interruption();
+                if (interruption.isPresent()) {
+                    return interruption;
                 }
                 events.accept(new AgentEvent.ToolCall(call.name(), call.input()));
                 var result = tools.execute(call.name(), call.input());
@@ -128,8 +136,20 @@ public class AgentLoop {
             return Optional.empty();
         }
 
-        private AgentResult aborted() {
-            return result(AgentResult.Status.ABORTED, "");
+        /** Checked before every model call and tool execution: the client left, or the run is out of time. */
+        private Optional<AgentResult> interruption() {
+            if (cancelled.getAsBoolean()) {
+                return Optional.of(result(AgentResult.Status.ABORTED, ""));
+            }
+            if (!timeLeft().isPositive()) {
+                log.warn("Run stopped after {} model calls: it exceeded {}", iterations, props.runTimeout());
+                return Optional.of(AgentResult.failed(ErrorCode.RUN_TIMEOUT, usage, toolCalls, iterations));
+            }
+            return Optional.empty();
+        }
+
+        private Duration timeLeft() {
+            return Duration.between(clock.instant(), deadline);
         }
 
         private AgentResult result(AgentResult.Status status, String answer) {

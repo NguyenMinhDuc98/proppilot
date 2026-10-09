@@ -28,7 +28,8 @@ import org.junit.jupiter.api.Test;
 class AnthropicLlmClientTest {
 
     private static final String API_KEY = "test-api-key-123";
-    private static final LlmRequest REQUEST = new LlmRequest("system", List.of(Message.user("hi")), List.of());
+    private static final LlmRequest REQUEST =
+            new LlmRequest("system", List.of(Message.user("hi")), List.of(), Duration.ofSeconds(60));
 
     private static final String ANSWER_STREAM = """
             event: message_start
@@ -57,13 +58,17 @@ class AnthropicLlmClientTest {
     private static final String OVERLOADED_EVENT =
             "event: error\ndata: {\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\",\"message\":\"Overloaded\"}}\n\n";
 
-    private record Reply(int status, Map<String, String> headers, String body) {
+    private record Reply(int status, Map<String, String> headers, String body, Duration delay) {
         static Reply status(int status) {
-            return new Reply(status, Map.of(), "{\"error\":{\"message\":\"SECRET-UPSTREAM-DETAIL\"}}");
+            return new Reply(status, Map.of(), "{\"error\":{\"message\":\"SECRET-UPSTREAM-DETAIL\"}}", Duration.ZERO);
         }
 
         static Reply stream(String body) {
-            return new Reply(200, Map.of("content-type", "text/event-stream"), body);
+            return new Reply(200, Map.of("content-type", "text/event-stream"), body, Duration.ZERO);
+        }
+
+        Reply after(Duration delay) {
+            return new Reply(status, headers, body, delay);
         }
     }
 
@@ -83,6 +88,7 @@ class AnthropicLlmClientTest {
             if (reply == null) {
                 reply = Reply.status(418);
             }
+            pause(reply.delay());
             reply.headers().forEach((name, value) -> exchange.getResponseHeaders().add(name, value));
             var bytes = reply.body().getBytes(StandardCharsets.UTF_8);
             exchange.sendResponseHeaders(reply.status(), bytes.length);
@@ -96,6 +102,14 @@ class AnthropicLlmClientTest {
     @AfterEach
     void stopServer() {
         server.stop(0);
+    }
+
+    private static void pause(Duration duration) {
+        try {
+            Thread.sleep(duration);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     private AnthropicLlmClient client(int port) {
@@ -126,7 +140,7 @@ class AnthropicLlmClientTest {
 
     @Test
     void waitsForTheRetryAfterHeader() {
-        replies.add(new Reply(429, Map.of("Retry-After", "7"), "{}"));
+        replies.add(new Reply(429, Map.of("Retry-After", "7"), "{}", Duration.ZERO));
         replies.add(Reply.stream(ANSWER_STREAM));
 
         complete();
@@ -237,6 +251,20 @@ class AnthropicLlmClientTest {
         assertThat(response.stopReason()).isEqualTo(StopReason.MAX_TOKENS);
         assertThat(response.text()).isEqualTo("Let me check");
         assertThat(response.toolUses()).isEmpty();
+    }
+
+    @Test
+    void theRequestsTimeBudgetCapsTheCallEvenWhenTheConfiguredTimeoutIsLonger() {
+        replies.add(Reply.stream(ANSWER_STREAM).after(Duration.ofSeconds(3)));
+        var request = new LlmRequest("system", List.of(Message.user("hi")), List.of(), Duration.ofMillis(300));
+        long startedAt = System.nanoTime();
+
+        assertThatThrownBy(() -> client(server.getAddress().getPort()).complete(request, deltas::add))
+                .isInstanceOfSatisfying(LlmException.class, e -> assertThat(e.code()).isEqualTo(ErrorCode.LLM_TIMEOUT));
+
+        assertThat(Duration.ofNanos(System.nanoTime() - startedAt)).isLessThan(Duration.ofSeconds(2));
+        assertThat(requests).hasValue(1);
+        assertThat(deltas).isEmpty();
     }
 
     @Test

@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.proppilot.agent.llm.offline.OfflineLlmClient;
+import java.time.Duration;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -11,10 +12,12 @@ import org.junit.jupiter.params.provider.CsvSource;
 
 class OfflineLlmClientTest {
 
+    private static final Duration TIMEOUT = Duration.ofSeconds(60);
+
     private final OfflineLlmClient client = new OfflineLlmClient(new ObjectMapper());
 
     private ContentBlock.ToolUse route(String question) {
-        var response = client.complete(new LlmRequest("", List.of(Message.user(question)), List.of()), s -> { });
+        var response = client.complete(new LlmRequest("", List.of(Message.user(question)), List.of(), TIMEOUT), s -> { });
         assertThat(response.stopReason()).isEqualTo(StopReason.TOOL_USE);
         return response.toolUses().get(0);
     }
@@ -61,8 +64,8 @@ class OfflineLlmClientTest {
 
     @Test
     void unknownQuestionGetsHelpTextInTheQuestionsLanguage() {
-        var english = client.complete(new LlmRequest("", List.of(Message.user("what is the weather")), List.of()), s -> { });
-        var arabic = client.complete(new LlmRequest("", List.of(Message.user("كيف الطقس")), List.of()), s -> { });
+        var english = client.complete(new LlmRequest("", List.of(Message.user("what is the weather")), List.of(), TIMEOUT), s -> { });
+        var arabic = client.complete(new LlmRequest("", List.of(Message.user("كيف الطقس")), List.of(), TIMEOUT), s -> { });
 
         assertThat(english.toolUses()).isEmpty();
         assertThat(english.text()).contains("Try:");
@@ -80,7 +83,7 @@ class OfflineLlmClientTest {
                 new Message(Message.Role.ASSISTANT, List.of(call)),
                 new Message(Message.Role.USER, List.of(result)));
 
-        var response = client.complete(new LlmRequest("", messages, List.of()), s -> { });
+        var response = client.complete(new LlmRequest("", messages, List.of(), TIMEOUT), s -> { });
 
         assertThat(response.stopReason()).isEqualTo(StopReason.END_TURN);
         assertThat(response.text()).contains("Ahmed Al-Harbi", "A-203", "98", "Data: find_overdue_tenants");
