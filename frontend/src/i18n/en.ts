@@ -35,7 +35,7 @@ export default {
       generic: 'Something went wrong. Please try again.',
     },
     charCount: '{count} / {max}',
-    usage: { free: 'Free (offline assistant)', toolCalls: '{n} tool calls', tokens: '{n} tokens' },
+    usage: { free: 'Free (offline assistant)', toolCalls: 'no tool calls | {n} tool call | {n} tool calls', tokens: '{n} tokens' },
   },
   trace: {
     toggle: 'How I answered',

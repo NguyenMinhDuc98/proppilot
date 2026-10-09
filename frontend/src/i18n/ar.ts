@@ -35,7 +35,7 @@ export default {
       generic: 'حدث خطأ ما. يرجى المحاولة مرة أخرى.',
     },
     charCount: '{count} / {max}',
-    usage: { free: 'مجاني (المساعد المحلي)', toolCalls: '{n} استدعاءات أدوات', tokens: '{n} رمز' },
+    usage: { free: 'مجاني (المساعد المحلي)', toolCalls: 'بدون استدعاء أدوات | استدعاء أداة واحد | {n} استدعاءات أدوات', tokens: '{n} رمز' },
   },
   trace: {
     toggle: 'كيف توصلت للإجابة',

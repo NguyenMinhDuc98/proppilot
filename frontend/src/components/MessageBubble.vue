@@ -25,7 +25,7 @@ const usageParts = computed(() => {
   return [
     costLabel.value,
     formatLatency(u.latencyMs),
-    t('chat.usage.toolCalls', { n: u.toolCalls }),
+    t('chat.usage.toolCalls', { n: u.toolCalls }, u.toolCalls),
     t('chat.usage.tokens', { n: (u.inputTokens + u.outputTokens).toLocaleString('en-US') }),
   ]
 })
