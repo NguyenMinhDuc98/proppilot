@@ -53,6 +53,7 @@ const errorText = computed(() => {
         <!-- eslint-disable-next-line vue/no-v-html -- sanitised by DOMPurify in renderMarkdown -->
         <div v-if="message.text" class="markdown" dir="auto" v-html="html" />
         <div v-else-if="message.streaming && !message.tools.length" class="thinking">{{ t('chat.thinking') }}</div>
+        <div v-if="usage?.truncated" class="notice" role="note">{{ t('chat.truncated') }}</div>
         <div v-if="message.error" class="error" role="alert">{{ errorText }}</div>
         <div v-if="usage" class="meta">
           <bdi v-for="(part, i) in usageParts" :key="i">{{ part }}</bdi>
@@ -82,6 +83,7 @@ const errorText = computed(() => {
 .body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
 .tools { display: flex; flex-wrap: wrap; gap: 8px; }
 .thinking { color: var(--pp-muted); }
+.notice { align-self: flex-start; color: var(--pp-warn-ink); background: var(--pp-warn-bg); padding: 6px 12px; border-radius: 10px; font-size: 13px; }
 .error { color: var(--pp-danger-ink); background: var(--pp-danger-bg); padding: 8px 12px; border-radius: 10px; }
 .meta { display: flex; flex-wrap: wrap; gap: 2px 14px; font-size: 12px; color: var(--pp-muted); font-variant-numeric: tabular-nums; }
 

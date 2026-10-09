@@ -22,6 +22,7 @@ export default {
       'Draft a polite rent reminder in Arabic for unit B-203.',
     ],
     thinking: 'Thinking…',
+    truncated: 'This answer was cut off because it reached the length limit.',
     errorNetwork: 'Could not reach the server. Please try again.',
     errorPrefix: 'Something went wrong',
     errors: {

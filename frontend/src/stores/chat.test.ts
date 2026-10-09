@@ -9,7 +9,7 @@ vi.mock('../api/chat', () => ({ streamChat: (...args: unknown[]) => streamChat(.
 
 const done: ChatEvent = {
   type: 'done', runId: 'r1', status: 'OK', provider: 'offline', model: 'rule-based',
-  inputTokens: 10, outputTokens: 5, toolCalls: 1, iterations: 2, latencyMs: 30, costUsd: 0,
+  inputTokens: 10, outputTokens: 5, toolCalls: 1, iterations: 2, latencyMs: 30, costUsd: 0, truncated: false,
 }
 
 function script(events: ChatEvent[]) {
@@ -102,6 +102,16 @@ describe('chat store', () => {
     await chat.send('two')
 
     expect(streamChat.mock.calls[1][1]).toEqual([])
+  })
+
+  it('records that an answer was cut off', async () => {
+    script([{ type: 'token', text: 'The portfolio has 150 un' }, { ...done, status: 'TRUNCATED', truncated: true }])
+    const chat = useChatStore()
+
+    await chat.send('how many units?')
+
+    expect(chat.messages[1].text).toBe('The portfolio has 150 un')
+    expect(chat.messages[1].usage).toMatchObject({ status: 'TRUNCATED', truncated: true })
   })
 
   it('ignores empty input and concurrent sends', async () => {

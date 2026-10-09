@@ -5,7 +5,7 @@ import { buildTrace } from './trace'
 
 const usage: DonePayload = {
   runId: 'r1', status: 'OK', provider: 'anthropic', model: 'claude-haiku-4-5-20251001',
-  inputTokens: 3681, outputTokens: 331, toolCalls: 1, iterations: 2, latencyMs: 4200, costUsd: 0.005859,
+  inputTokens: 3681, outputTokens: 331, toolCalls: 1, iterations: 2, latencyMs: 4200, costUsd: 0.005859, truncated: false,
 }
 
 const message = (overrides: Partial<ChatMessage>): ChatMessage => ({

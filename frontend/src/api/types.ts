@@ -1,6 +1,6 @@
 export interface DonePayload {
   runId: string
-  status: 'OK' | 'ERROR' | 'MAX_ITERATIONS'
+  status: 'OK' | 'ERROR' | 'MAX_ITERATIONS' | 'TRUNCATED'
   provider: string
   model: string
   inputTokens: number
@@ -9,6 +9,8 @@ export interface DonePayload {
   iterations: number
   latencyMs: number
   costUsd: number
+  /** The answer hit the model's length limit and was cut off. */
+  truncated: boolean
 }
 
 /** Why a run failed; the UI shows its own localised text for each, never the server's message. */
