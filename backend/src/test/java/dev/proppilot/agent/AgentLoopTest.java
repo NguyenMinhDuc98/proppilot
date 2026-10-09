@@ -259,6 +259,41 @@ class AgentLoopTest {
     }
 
     @Test
+    void aModelCallThatTimesOutAfterTheRunDeadlineEndsTheRunWithRunTimeout() {
+        var llm = new ScriptedLlmClient()
+                .beforeEachCall(() -> clock.advance(RUN_TIMEOUT.plusSeconds(1)))
+                .thenFail(ErrorCode.LLM_TIMEOUT, "Claude response stream timed out");
+
+        var result = loop(llm, 6).run("slow question", List.of(), e -> { }, NEVER);
+
+        assertThat(result.status()).isEqualTo(AgentResult.Status.ERROR);
+        assertThat(result.errorCode()).isEqualTo(ErrorCode.RUN_TIMEOUT);
+        assertThat(result.answer()).isEqualTo(ErrorCode.RUN_TIMEOUT.message());
+    }
+
+    @Test
+    void aModelCallThatTimesOutWithTimeLeftInTheRunStaysAnLlmTimeout() {
+        var llm = new ScriptedLlmClient()
+                .beforeEachCall(() -> clock.advance(Duration.ofSeconds(60)))
+                .thenFail(ErrorCode.LLM_TIMEOUT, "Claude response stream timed out");
+
+        var result = loop(llm, 6).run("slow question", List.of(), e -> { }, NEVER);
+
+        assertThat(result.errorCode()).isEqualTo(ErrorCode.LLM_TIMEOUT);
+    }
+
+    @Test
+    void otherModelFailuresKeepTheirCodeEvenWhenTheDeadlineHasPassed() {
+        var llm = new ScriptedLlmClient()
+                .beforeEachCall(() -> clock.advance(RUN_TIMEOUT.plusSeconds(1)))
+                .thenFail(ErrorCode.LLM_OVERLOADED, "Claude API returned 429");
+
+        var result = loop(llm, 6).run("busy", List.of(), e -> { }, NEVER);
+
+        assertThat(result.errorCode()).isEqualTo(ErrorCode.LLM_OVERLOADED);
+    }
+
+    @Test
     void theDeadlineIsAlsoCheckedBetweenToolCalls() throws Exception {
         var first = new ContentBlock.ToolUse("t1", "echo", JSON.readTree("{\"text\":\"one\"}"));
         var second = new ContentBlock.ToolUse("t2", "echo", JSON.readTree("{\"text\":\"two\"}"));

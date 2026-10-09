@@ -102,7 +102,7 @@ public class AgentLoop {
                         text -> events.accept(new AgentEvent.Token(text)));
             } catch (LlmException e) {
                 log.warn("LLM call failed on iteration {} ({}): {}", iterations, e.code(), e.getMessage());
-                return Optional.of(AgentResult.failed(e.code(), usage, toolCalls, iterations));
+                return Optional.of(AgentResult.failed(failureCode(e), usage, toolCalls, iterations));
             }
             usage = usage.plus(response.usage());
             if (cancelled.getAsBoolean()) {
@@ -150,6 +150,12 @@ public class AgentLoop {
                 return Optional.of(AgentResult.failed(ErrorCode.RUN_TIMEOUT, usage, toolCalls, iterations));
             }
             return Optional.empty();
+        }
+
+        /** A model call that timed out once the run deadline had passed was cut short by it: the run timed out. */
+        private ErrorCode failureCode(LlmException failure) {
+            boolean outOfTime = failure.code() == ErrorCode.LLM_TIMEOUT && !timeLeft().isPositive();
+            return outOfTime ? ErrorCode.RUN_TIMEOUT : failure.code();
         }
 
         private Duration timeLeft() {
