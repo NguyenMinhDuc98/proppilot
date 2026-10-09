@@ -30,10 +30,7 @@ class PaymentHistoryScopeIT extends PostgresIntegrationTest {
 
     @BeforeEach
     void unitWithAnActiveAndAnEarlierLease() {
-        long unitId = jdbc.queryForObject("""
-                insert into units (building_id, code, floor, bedrooms, area_sqm, monthly_rent, status)
-                select id, ?, 9, 2, 100, 5000, 'OCCUPIED' from buildings where code = 'F'
-                returning id""", Long.class, UNIT);
+        long unitId = insertUnit(UNIT);
         long earlier = insertLease(unitId, insertTenant("Previous"), false, LocalDate.of(2026, 5, 1));
         long current = insertLease(unitId, insertTenant("Current"), true, LocalDate.of(2026, 8, 1));
         for (int month = 5; month <= 7; month++) {
@@ -42,6 +39,13 @@ class PaymentHistoryScopeIT extends PostgresIntegrationTest {
         for (int month = 8; month <= 10; month++) {
             insertPayment(current, LocalDate.of(2026, month, 1), true);
         }
+    }
+
+    private long insertUnit(String code) {
+        return jdbc.queryForObject("""
+                insert into units (building_id, code, floor, bedrooms, area_sqm, monthly_rent, status)
+                select id, ?, 9, 2, 100, 5000, 'OCCUPIED' from buildings where code = 'F'
+                returning id""", Long.class, code);
     }
 
     private long insertTenant(String name) {
@@ -75,6 +79,7 @@ class PaymentHistoryScopeIT extends PostgresIntegrationTest {
         assertThat(d.get("payments").findValuesAsText("month")).containsExactly("2026-10", "2026-09", "2026-08");
         assertThat(d.get("unpaidMonths").asInt()).isZero();
         assertThat(d.get("allLeases").asBoolean()).isFalse();
+        assertThat(d.has("earlierLeases")).as("earlier leases were not asked for, so none are claimed").isFalse();
     }
 
     @Test
@@ -85,20 +90,70 @@ class PaymentHistoryScopeIT extends PostgresIntegrationTest {
     }
 
     @Test
-    void includesPreviousLeasesWhenAskedTo() throws Exception {
+    void returnsPreviousLeasesApartFromTheCurrentOneWhenAskedTo() throws Exception {
         var d = history("{\"unit_code\":\"" + UNIT + "\",\"all_leases\":true}");
 
-        assertThat(d.get("payments").findValuesAsText("month"))
-                .containsExactly("2026-10", "2026-09", "2026-08", "2026-07", "2026-06", "2026-05");
-        assertThat(d.get("unpaidMonths").asInt()).isEqualTo(3);
         assertThat(d.get("allLeases").asBoolean()).isTrue();
+        assertThat(d.get("tenantEn").asText()).isEqualTo("Qwerty Current");
+        assertThat(d.get("payments").findValuesAsText("month")).containsExactly("2026-10", "2026-09", "2026-08");
+        assertThat(d.get("unpaidMonths").asInt()).as("the current tenant owes nothing").isZero();
+
+        var earlier = d.get("earlierLeases");
+        assertThat(earlier).hasSize(1);
+        assertThat(earlier.get(0).get("tenantEn").asText()).isEqualTo("Qwerty Previous");
+        assertThat(earlier.get(0).get("tenantAr").asText()).isEqualTo("كويرتي Previous");
+        assertThat(earlier.get(0).get("startDate").asText()).isEqualTo("2026-05-01");
+        assertThat(earlier.get(0).get("endDate").asText()).isEqualTo("2026-08-01");
+        assertThat(earlier.get(0).get("unpaidMonths").asInt()).isEqualTo(3);
+        assertThat(earlier.get(0).get("payments").findValuesAsText("month")).containsExactly("2026-07", "2026-06", "2026-05");
+    }
+
+    @Test
+    void keepsTheLeasesApartWhenTheUnitHadSeveralPreviousTenants() throws Exception {
+        long unitId = jdbc.queryForObject("select id from units where code = ?", Long.class, UNIT);
+        long oldest = insertLease(unitId, insertTenant("Oldest"), false, LocalDate.of(2026, 2, 1));
+        insertPayment(oldest, LocalDate.of(2026, 4, 1), true);
+
+        var d = history("{\"unit_code\":\"" + UNIT + "\",\"all_leases\":true}");
+
+        assertThat(d.get("earlierLeases").findValuesAsText("tenantEn")).containsExactly("Qwerty Previous", "Qwerty Oldest");
+        assertThat(d.get("earlierLeases").get(1).get("payments")).hasSize(1);
+        assertThat(d.get("earlierLeases").get(1).get("unpaidMonths").asInt()).isZero();
+    }
+
+    @Test
+    void anEmptyEarlierLeasesListMeansTheUnitHadNoPreviousLeases() throws Exception {
+        long unitId = insertUnit("F-902");
+        long onlyLease = insertLease(unitId, insertTenant("Only"), true, LocalDate.of(2026, 8, 1));
+        insertPayment(onlyLease, LocalDate.of(2026, 8, 1), true);
+
+        var d = history("{\"unit_code\":\"F-902\",\"all_leases\":true}");
+
+        assertThat(d.get("earlierLeases").isArray()).isTrue();
+        assertThat(d.get("earlierLeases")).isEmpty();
+        assertThat(d.get("payments")).hasSize(1);
+    }
+
+    @Test
+    void aLeaseWithoutPaymentsYetStillShowsThePreviousOnes() throws Exception {
+        long unitId = insertUnit("F-903");
+        insertLease(unitId, insertTenant("Newcomer"), true, LocalDate.of(2026, 10, 1));
+        insertPayment(insertLease(unitId, insertTenant("Leaver"), false, LocalDate.of(2026, 6, 1)), LocalDate.of(2026, 6, 1), false);
+
+        var d = history("{\"unit_code\":\"F-903\",\"all_leases\":true}");
+
+        assertThat(d.get("payments")).isEmpty();
+        assertThat(d.get("unpaidMonths").asInt()).isZero();
+        assertThat(d.get("earlierLeases")).hasSize(1);
+        assertThat(d.get("earlierLeases").get(0).get("unpaidMonths").asInt()).isEqualTo(1);
     }
 
     @Test
     void theMonthsLimitAppliesToTheWholeHistory() throws Exception {
         var d = history("{\"unit_code\":\"" + UNIT + "\",\"all_leases\":true,\"months\":4}");
 
-        assertThat(d.get("payments").findValuesAsText("month")).containsExactly("2026-10", "2026-09", "2026-08", "2026-07");
+        assertThat(d.get("payments").findValuesAsText("month")).containsExactly("2026-10", "2026-09", "2026-08");
+        assertThat(d.get("earlierLeases").get(0).get("payments").findValuesAsText("month")).containsExactly("2026-07");
     }
 
     @Test
@@ -107,7 +162,19 @@ class PaymentHistoryScopeIT extends PostgresIntegrationTest {
         var everything = history("{\"tenant_name\":\"Qwerty Current\",\"all_leases\":true}");
 
         assertThat(byName.get("payments")).hasSize(3);
-        assertThat(everything.get("payments")).hasSize(6);
+        assertThat(everything.get("payments")).hasSize(3);
+        assertThat(everything.get("unpaidMonths").asInt()).isZero();
+        assertThat(everything.get("earlierLeases").get(0).get("tenantEn").asText()).isEqualTo("Qwerty Previous");
+    }
+
+    @Test
+    void theTraceSummaryCountsEveryMonthReturned() throws Exception {
+        var current = registry.execute("get_payment_history", json.readTree("{\"unit_code\":\"" + UNIT + "\"}"));
+        var everything = registry.execute("get_payment_history",
+                json.readTree("{\"unit_code\":\"" + UNIT + "\",\"all_leases\":true}"));
+
+        assertThat(current.summary()).isEqualTo("3 months for F-901, 0 unpaid");
+        assertThat(everything.summary()).isEqualTo("6 months for F-901, 3 unpaid");
     }
 
     @Test

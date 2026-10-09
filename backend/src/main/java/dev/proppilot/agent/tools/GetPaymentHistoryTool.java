@@ -1,5 +1,6 @@
 package dev.proppilot.agent.tools;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.proppilot.domain.Payment;
@@ -8,7 +9,9 @@ import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.stream.Collectors;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Component;
 
@@ -35,7 +38,8 @@ public class GetPaymentHistoryTool implements Tool {
     @Override
     public String description() {
         return "Monthly rent payment history (newest first) for the current lease of one tenant or unit, with paid / late "
-                + "/ unpaid status. Set all_leases to also include the unit's previous leases.";
+                + "/ unpaid status. Set all_leases to also get the unit's previous leases, which come back separately "
+                + "under earlierLeases with their own tenant: they are not the current tenant's payments.";
     }
 
     @Override
@@ -44,7 +48,7 @@ public class GetPaymentHistoryTool implements Tool {
                 .string("unit_code", "Unit code such as A-203")
                 .string("tenant_name", "Tenant name in English or Arabic (partial match)")
                 .integer("months", "How many recent months to return (default 12, max 12)")
-                .bool("all_leases", "Also include payments of the unit's previous leases (default false: current lease only)")
+                .bool("all_leases", "Also return the payments of the unit's previous leases (default false: current lease only)")
                 .build();
     }
 
@@ -64,11 +68,35 @@ public class GetPaymentHistoryTool implements Tool {
         List<Payment> history = allLeases
                 ? payments.findByUnitCode(lease.getUnit().getCode(), page)
                 : payments.findByLeaseIdOrderByPeriodDesc(lease.getId(), page);
-        var rows = history.stream().map(p -> toRow(p, today)).toList();
-        long unpaid = rows.stream().filter(r -> r.status().equals("UNPAID")).count();
+        var currentAndEarlier = history.stream().collect(Collectors.partitioningBy(p -> p.getLease().getId().equals(lease.getId())));
+
+        var rows = toRows(currentAndEarlier.get(true), today);
+        var earlierLeases = allLeases ? earlierLeases(currentAndEarlier.get(false), today) : null;
         var data = new Result(lease.getTenant().getNameEn(), lease.getTenant().getNameAr(), lease.getUnit().getCode(),
-                allLeases, unpaid, rows);
-        return ToolResult.ok(json, data, rows.size() + " months for " + data.unitCode() + ", " + unpaid + " unpaid");
+                allLeases, unpaidMonths(rows), rows, earlierLeases);
+        long unpaidShown = history.stream().filter(p -> !p.isPaid()).count();
+        return ToolResult.ok(json, data, history.size() + " months for " + data.unitCode() + ", " + unpaidShown + " unpaid");
+    }
+
+    private static List<EarlierLease> earlierLeases(List<Payment> earlier, LocalDate today) {
+        return earlier.stream()
+                .collect(Collectors.groupingBy(p -> p.getLease().getId(), LinkedHashMap::new, Collectors.toList()))
+                .values().stream()
+                .map(leasePayments -> {
+                    var lease = leasePayments.get(0).getLease();
+                    var rows = toRows(leasePayments, today);
+                    return new EarlierLease(lease.getTenant().getNameEn(), lease.getTenant().getNameAr(),
+                            lease.getStartDate(), lease.getEndDate(), unpaidMonths(rows), rows);
+                })
+                .toList();
+    }
+
+    private static List<Row> toRows(List<Payment> payments, LocalDate today) {
+        return payments.stream().map(p -> toRow(p, today)).toList();
+    }
+
+    private static long unpaidMonths(List<Row> rows) {
+        return rows.stream().filter(r -> r.status().equals("UNPAID")).count();
     }
 
     private static Row toRow(Payment p, LocalDate today) {
@@ -85,8 +113,13 @@ public class GetPaymentHistoryTool implements Tool {
         return new Row(p.getPeriod().toString().substring(0, 7), p.getAmount(), p.getPaidAmount(), p.getPaidOn(), status, daysLate);
     }
 
+    /** The tenant, payments and unpaid months at the top level are those of the current lease; earlier leases stay apart. */
     record Result(String tenantEn, String tenantAr, String unitCode, boolean allLeases, long unpaidMonths,
-                  List<Row> payments) {
+                  List<Row> payments, @JsonInclude(JsonInclude.Include.NON_NULL) List<EarlierLease> earlierLeases) {
+    }
+
+    record EarlierLease(String tenantEn, String tenantAr, LocalDate startDate, LocalDate endDate, long unpaidMonths,
+                        List<Row> payments) {
     }
 
     record Row(String month, BigDecimal amount, BigDecimal paidAmount, LocalDate paidOn, String status, Long daysLate) {
