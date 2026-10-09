@@ -46,5 +46,6 @@ proppilot:
     token: ${ADMIN_TOKEN:}
   chat:
     max-message-length: ${CHAT_MAX_MESSAGE_LENGTH:500}
+    max-history-items: ${CHAT_MAX_HISTORY_ITEMS:20}
     rate-limit-per-minute: ${CHAT_RATE_LIMIT_PER_MINUTE:10}
     daily-limit: ${CHAT_DAILY_LIMIT:500}

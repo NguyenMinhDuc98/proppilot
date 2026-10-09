@@ -26,6 +26,9 @@ export interface ChatMessage {
   streaming: boolean
 }
 
+/** The most history items the server accepts per question (its proppilot.chat.max-history-items default). */
+const MAX_HISTORY_ITEMS = 20
+
 export const useChatStore = defineStore('chat', () => {
   const messages = ref<ChatMessage[]>([])
   const busy = ref(false)
@@ -34,16 +37,22 @@ export const useChatStore = defineStore('chat', () => {
 
   const hasMessages = computed(() => messages.value.length > 0)
 
-  /** Only exchanges that completed successfully, so a failed or half-streamed answer never pollutes the next question. */
+  /**
+   * Only exchanges that completed successfully, so a failed or half-streamed answer never pollutes the next question.
+   * Capped to what the server accepts, dropping the oldest whole exchanges so a question never loses its answer.
+   */
   function history(): HistoryTurn[] {
-    const turns: HistoryTurn[] = []
+    const exchanges: HistoryTurn[][] = []
     for (let i = 0; i + 1 < messages.value.length; i += 2) {
       const question = messages.value[i]
       const answer = messages.value[i + 1]
       if (answer.streaming || answer.error || answer.text.trim() === '') continue
-      turns.push({ role: 'user', text: question.text }, { role: 'assistant', text: answer.text })
+      exchanges.push([
+        { role: 'user', text: question.text },
+        { role: 'assistant', text: answer.text },
+      ])
     }
-    return turns
+    return exchanges.slice(-Math.floor(MAX_HISTORY_ITEMS / 2)).flat()
   }
 
   /** The server emits tool calls only after a model round has finished, so the text so far was not part of the answer. */

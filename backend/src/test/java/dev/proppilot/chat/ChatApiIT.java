@@ -11,6 +11,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import dev.proppilot.PostgresIntegrationTest;
 import java.nio.charset.StandardCharsets;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -93,6 +95,28 @@ class ChatApiIT extends PostgresIntegrationTest {
         var tooLong = "x".repeat(501);
         mvc.perform(post("/api/chat").contentType(MediaType.APPLICATION_JSON).content("{\"message\":\"" + tooLong + "\"}"))
                 .andExpect(status().isBadRequest());
+    }
+
+    /** {@code count} alternating turns, starting with the user, as the web app sends them. */
+    private static String historyOf(int count) {
+        return IntStream.range(0, count)
+                .mapToObj(i -> "{\"role\":\"" + (i % 2 == 0 ? "user" : "assistant") + "\",\"text\":\"turn " + i + "\"}")
+                .collect(Collectors.joining(",", "[", "]"));
+    }
+
+    @Test
+    void acceptsAHistoryOfTwentyItems() throws Exception {
+        var sse = chat("{\"message\":\"Which units in Riyadh are vacant?\",\"history\":" + historyOf(20) + "}");
+
+        assertThat(sse).contains("event:done");
+    }
+
+    @Test
+    void rejectsAHistoryLongerThanTwentyItems() throws Exception {
+        mvc.perform(post("/api/chat").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"message\":\"hi\",\"history\":" + historyOf(21) + "}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(status().reason("history must have at most 20 items"));
     }
 
     @Test

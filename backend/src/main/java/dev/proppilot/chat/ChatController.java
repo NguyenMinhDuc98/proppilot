@@ -48,7 +48,12 @@ public class ChatController {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "message must be at most " + props.maxMessageLength() + " characters");
         }
-        for (ChatTurn turn : request.historyOrEmpty()) {
+        var history = request.historyOrEmpty();
+        if (history.size() > props.maxHistoryItems()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "history must have at most " + props.maxHistoryItems() + " items");
+        }
+        for (ChatTurn turn : history) {
             if (turn == null || turn.text() == null || turn.role() == null || turn.text().length() > MAX_HISTORY_TURN_LENGTH) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid history");
             }

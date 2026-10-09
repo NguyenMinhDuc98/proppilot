@@ -139,6 +139,30 @@ describe('chat store', () => {
     ])
   })
 
+  it('sends at most the 20 most recent history items, keeping each question with its answer', async () => {
+    const chat = useChatStore()
+    for (let n = 1; n <= 13; n++) {
+      script([{ type: 'token', text: `answer ${n}` }, done])
+      await chat.send(`question ${n}`)
+    }
+
+    const history = streamChat.mock.calls[12][1] as { role: string; text: string }[]
+    expect(history).toHaveLength(20)
+    expect(history[0]).toEqual({ role: 'user', text: 'question 3' })
+    expect(history[19]).toEqual({ role: 'assistant', text: 'answer 12' })
+    expect(history.map((turn) => turn.role)).toEqual(Array.from({ length: 20 }, (_, i) => (i % 2 === 0 ? 'user' : 'assistant')))
+  })
+
+  it('sends the whole history while it still fits', async () => {
+    const chat = useChatStore()
+    for (let n = 1; n <= 10; n++) {
+      script([{ type: 'token', text: `answer ${n}` }, done])
+      await chat.send(`question ${n}`)
+    }
+
+    expect(streamChat.mock.calls[9][1]).toHaveLength(18)
+  })
+
   it('sends only the final answer as history, never the text written before tool calls', async () => {
     script([
       { type: 'token', text: 'Let me check the units.' },

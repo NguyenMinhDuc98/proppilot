@@ -26,7 +26,7 @@ class ChatRateLimiterTest {
 
     @Test
     void blocksAfterPerMinuteLimitAndRecoversAfterTheWindow() {
-        var limiter = new ChatRateLimiter(new ChatProperties(500, 3, 1000), clock);
+        var limiter = new ChatRateLimiter(new ChatProperties(500, 20, 3, 1000), clock);
 
         for (int i = 0; i < 3; i++) {
             assertThat(limiter.tryAcquire("1.1.1.1")).isEqualTo(Decision.ALLOWED);
@@ -39,7 +39,7 @@ class ChatRateLimiterTest {
 
     @Test
     void clientsAreLimitedIndependently() {
-        var limiter = new ChatRateLimiter(new ChatProperties(500, 1, 1000), clock);
+        var limiter = new ChatRateLimiter(new ChatProperties(500, 20, 1, 1000), clock);
 
         assertThat(limiter.tryAcquire("a")).isEqualTo(Decision.ALLOWED);
         assertThat(limiter.tryAcquire("b")).isEqualTo(Decision.ALLOWED);
@@ -48,7 +48,7 @@ class ChatRateLimiterTest {
 
     @Test
     void dailyLimitAppliesToEveryoneAndResetsNextDay() {
-        var limiter = new ChatRateLimiter(new ChatProperties(500, 100, 2), clock);
+        var limiter = new ChatRateLimiter(new ChatProperties(500, 20, 100, 2), clock);
 
         assertThat(limiter.tryAcquire("a")).isEqualTo(Decision.ALLOWED);
         assertThat(limiter.tryAcquire("b")).isEqualTo(Decision.ALLOWED);
