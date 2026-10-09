@@ -61,9 +61,7 @@ class TenantResolver {
         if (matches.isEmpty()) {
             return new Resolution.Failed("No tenant matches '" + name + "'.");
         }
-        var activeLeases = matches.stream()
-                .flatMap(t -> leases.findActiveByTenantId(t.getId()).stream())
-                .toList();
+        var activeLeases = leases.findActiveByTenantIds(matches.stream().map(Tenant::getId).toList());
         if (activeLeases.size() == 1) {
             return new Resolution.Found(activeLeases.get(0));
         }

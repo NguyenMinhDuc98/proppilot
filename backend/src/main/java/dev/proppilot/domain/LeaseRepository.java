@@ -1,5 +1,6 @@
 package dev.proppilot.domain;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.EntityGraph;
@@ -14,6 +15,6 @@ public interface LeaseRepository extends JpaRepository<Lease, Long> {
     Optional<Lease> findActiveByUnitCode(@Param("unitCode") String unitCode);
 
     @EntityGraph(attributePaths = {"unit", "unit.building", "tenant"})
-    @Query("select l from Lease l where l.active = true and l.tenant.id = :tenantId")
-    List<Lease> findActiveByTenantId(@Param("tenantId") Long tenantId);
+    @Query("select l from Lease l where l.active = true and l.tenant.id in :tenantIds order by l.tenant.id, l.id")
+    List<Lease> findActiveByTenantIds(@Param("tenantIds") Collection<Long> tenantIds);
 }
