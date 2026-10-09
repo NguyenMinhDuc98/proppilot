@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ElConfigProvider } from 'element-plus'
 import { useI18n } from 'vue-i18n'
+import ModeBadge from './components/ModeBadge.vue'
 import { useLocale } from './i18n'
 
 const { t } = useI18n()
@@ -50,7 +51,10 @@ const links = [
             </svg>
             <span>{{ t('app.title') }}</span>
           </RouterLink>
-          <button type="button" class="lang" @click="toggle">{{ t('app.language') }}</button>
+          <div class="topbar-actions">
+            <ModeBadge />
+            <button type="button" class="lang" @click="toggle">{{ t('app.language') }}</button>
+          </div>
         </header>
 
         <main><RouterView /></main>
@@ -130,7 +134,9 @@ const links = [
     border-bottom: 1px solid var(--pp-border);
   }
   .brand { padding: 0; font-size: 17px; }
+  .topbar-actions { display: flex; align-items: center; gap: 8px; min-width: 0; }
   .lang {
+    flex: none;
     min-width: 44px;
     min-height: 44px;
     padding: 0 14px;

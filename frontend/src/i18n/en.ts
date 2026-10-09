@@ -4,6 +4,7 @@ export default {
     tagline: 'AI assistant for property managers',
     language: 'العربية',
     demoNote: 'All data shown is fake demo data.',
+    offlineDemo: 'Offline demo',
     navLabel: 'Main navigation',
   },
   nav: { chat: 'Assistant', units: 'Units', stats: 'Usage' },
@@ -38,7 +39,6 @@ export default {
     assistant: 'PropPilot',
     charCount: '{count} / {max}',
     usage: { free: 'Free (offline assistant)', toolCalls: '{n} tool calls', tokens: '{n} tokens' },
-    offlineAssistant: 'Offline assistant',
   },
   trace: {
     toggle: 'How I answered',

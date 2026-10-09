@@ -28,6 +28,13 @@ export interface HistoryTurn {
   text: string
 }
 
+/** Which assistant the backend runs: real Claude, or the free built-in offline one. */
+export interface AppInfo {
+  mode: 'claude' | 'offline'
+  provider: string
+  model: string
+}
+
 export interface Unit {
   code: string
   building: string

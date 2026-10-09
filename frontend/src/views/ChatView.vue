@@ -2,7 +2,7 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import MessageBubble from '../components/MessageBubble.vue'
-import { formatModel } from '../composables/format'
+import ModeBadge from '../components/ModeBadge.vue'
 import { useChatStore } from '../stores/chat'
 
 const MAX_LENGTH = 500
@@ -14,13 +14,6 @@ const scroller = ref<HTMLElement | null>(null)
 const input = ref<HTMLTextAreaElement | null>(null)
 
 const examples = computed(() => (tm('chat.examples') as string[]).map((e) => rt(e)))
-
-/** The model behind the latest answer, shown as a small status pill once we know it. */
-const modelLabel = computed(() => {
-  const latest = [...chat.messages].reverse().find((m) => m.usage)?.usage
-  if (!latest) return ''
-  return latest.provider === 'offline' ? t('chat.offlineAssistant') : formatModel(latest.model)
-})
 
 function grow() {
   const el = input.value
@@ -57,7 +50,7 @@ watch(
   <section class="chat">
     <header class="head">
       <h1>{{ t('chat.title') }}</h1>
-      <span v-if="modelLabel" class="pill"><span class="dot" />{{ modelLabel }}</span>
+      <ModeBadge />
       <button v-if="chat.hasMessages" type="button" class="ghost" @click="chat.clear()">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" /></svg>
         {{ t('chat.clear') }}
@@ -121,19 +114,6 @@ watch(
   border-bottom: 1px solid var(--pp-border);
 }
 .head h1 { margin: 0; flex: 1; font-size: 18px; font-weight: 700; }
-.pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 5px 12px;
-  border-radius: 999px;
-  background: var(--pp-surface);
-  border: 1px solid var(--pp-border);
-  color: var(--pp-muted);
-  font-size: 12px;
-  font-weight: 600;
-}
-.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--pp-success-ink); }
 .ghost {
   display: inline-flex;
   align-items: center;

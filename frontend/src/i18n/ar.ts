@@ -4,6 +4,7 @@ export default {
     tagline: 'مساعد ذكي لمديري العقارات',
     language: 'English',
     demoNote: 'جميع البيانات المعروضة وهمية للعرض التجريبي.',
+    offlineDemo: 'عرض تجريبي محلي',
     navLabel: 'التنقل الرئيسي',
   },
   nav: { chat: 'المساعد', units: 'الوحدات', stats: 'الاستخدام' },
@@ -38,7 +39,6 @@ export default {
     assistant: 'بروب بايلوت',
     charCount: '{count} / {max}',
     usage: { free: 'مجاني (المساعد المحلي)', toolCalls: '{n} استدعاءات أدوات', tokens: '{n} رمز' },
-    offlineAssistant: 'المساعد المحلي',
   },
   trace: {
     toggle: 'كيف توصلت للإجابة',
