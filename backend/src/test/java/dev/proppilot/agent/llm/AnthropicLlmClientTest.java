@@ -200,6 +200,46 @@ class AnthropicLlmClientTest {
     }
 
     @Test
+    void aStreamCutByMaxTokensWithAnIncompleteToolCallKeepsTheTextAndDropsTheCall() {
+        replies.add(Reply.stream("""
+                event: message_start
+                data: {"type":"message_start","message":{"usage":{"input_tokens":12,"output_tokens":1}}}
+
+                event: content_block_start
+                data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}
+
+                event: content_block_delta
+                data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Let me check"}}
+
+                event: content_block_stop
+                data: {"type":"content_block_stop","index":0}
+
+                event: content_block_start
+                data: {"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"toolu_1","name":"search_units","input":{}}}
+
+                event: content_block_delta
+                data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\\"city\\": \\"Ri"}}
+
+                event: content_block_stop
+                data: {"type":"content_block_stop","index":1}
+
+                event: message_delta
+                data: {"type":"message_delta","delta":{"stop_reason":"max_tokens"},"usage":{"output_tokens":2048}}
+
+                event: message_stop
+                data: {"type":"message_stop"}
+
+                """));
+
+        var response = complete();
+
+        assertThat(requests).hasValue(1);
+        assertThat(response.stopReason()).isEqualTo(StopReason.MAX_TOKENS);
+        assertThat(response.text()).isEqualTo("Let me check");
+        assertThat(response.toolUses()).isEmpty();
+    }
+
+    @Test
     void neitherTheUpstreamBodyNorTheKeyReachTheExceptionMessage() {
         for (int i = 0; i < 4; i++) {
             replies.add(Reply.status(500));

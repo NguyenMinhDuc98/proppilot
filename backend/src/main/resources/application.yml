@@ -32,7 +32,7 @@ proppilot:
     api-key: ${ANTHROPIC_API_KEY:}
     model: ${ANTHROPIC_MODEL:claude-haiku-4-5-20251001}
     api-url: https://api.anthropic.com/v1/messages
-    max-tokens: 1024
+    max-tokens: ${LLM_MAX_TOKENS:2048}
     timeout-seconds: 60
     max-retries: ${LLM_MAX_RETRIES:3}
     retry-base-delay-ms: 1000

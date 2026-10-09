@@ -6,7 +6,10 @@ import static org.mockito.Mockito.mock;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.proppilot.agent.llm.ContentBlock;
+import dev.proppilot.agent.llm.LlmResponse;
 import dev.proppilot.agent.llm.Message;
+import dev.proppilot.agent.llm.StopReason;
+import dev.proppilot.agent.llm.Usage;
 import dev.proppilot.agent.tools.Tool;
 import dev.proppilot.agent.tools.ToolInputException;
 import dev.proppilot.agent.tools.ToolRegistry;
@@ -140,6 +143,24 @@ class AgentLoopTest {
         assertThat(result.status()).isEqualTo(AgentResult.Status.ERROR);
         assertThat(result.errorCode()).isEqualTo(ErrorCode.LLM_OVERLOADED);
         assertThat(result.answer()).isEqualTo(ErrorCode.LLM_OVERLOADED.message()).doesNotContain("upstream-secret");
+    }
+
+    @Test
+    void aReplyCutOffByTheTokenLimitEndsTheRunAsTruncatedAndRunsNoTools() throws Exception {
+        var toolCall = new ContentBlock.ToolUse("t1", "echo", JSON.readTree("{\"text\":\"ping\"}"));
+        var llm = new ScriptedLlmClient().then(new LlmResponse(
+                List.of(new ContentBlock.Text("The answer is cut"), toolCall), StopReason.MAX_TOKENS, new Usage(30, 2048)));
+        var events = new ArrayList<AgentEvent>();
+
+        var result = loop(llm, 6).run("go", List.of(), events::add);
+
+        assertThat(result.status()).isEqualTo(AgentResult.Status.TRUNCATED);
+        assertThat(result.answer()).isEqualTo("The answer is cut");
+        assertThat(result.usage()).isEqualTo(new Usage(30, 2048));
+        assertThat(result.toolCalls()).isZero();
+        assertThat(executedWith).isEmpty();
+        assertThat(llm.requests).hasSize(1);
+        assertThat(events).noneMatch(AgentEvent.ToolCall.class::isInstance);
     }
 
     @Test

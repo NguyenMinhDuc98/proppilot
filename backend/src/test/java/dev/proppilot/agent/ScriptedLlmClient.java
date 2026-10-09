@@ -19,6 +19,11 @@ public class ScriptedLlmClient implements LlmClient {
     private final Queue<Object> script = new ArrayDeque<>();
     public final List<LlmRequest> requests = new ArrayList<>();
 
+    public ScriptedLlmClient then(LlmResponse response) {
+        script.add(response);
+        return this;
+    }
+
     public ScriptedLlmClient thenText(String text) {
         script.add(new LlmResponse(List.of(new ContentBlock.Text(text)), StopReason.END_TURN, new Usage(100, 20)));
         return this;

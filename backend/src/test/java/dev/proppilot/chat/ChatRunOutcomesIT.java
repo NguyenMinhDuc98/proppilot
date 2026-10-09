@@ -10,7 +10,12 @@ import dev.proppilot.PostgresIntegrationTest;
 import dev.proppilot.agent.AgentResult;
 import dev.proppilot.agent.ErrorCode;
 import dev.proppilot.agent.ScriptedLlmClient;
+import dev.proppilot.agent.llm.ContentBlock;
+import dev.proppilot.agent.llm.LlmResponse;
+import dev.proppilot.agent.llm.StopReason;
+import dev.proppilot.agent.llm.Usage;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -71,5 +76,19 @@ class ChatRunOutcomesIT extends PostgresIntegrationTest {
                 .contains("event:done").contains("\"status\":\"ERROR\"")
                 .doesNotContain("upstream-secret");
         assertThat(recordedRun("outcome: provider failure").getStatus()).isEqualTo(AgentResult.Status.ERROR);
+    }
+
+    @Test
+    void aReplyCutOffByTheTokenLimitIsFlaggedTruncatedAndRecorded() throws Exception {
+        llm.then(new LlmResponse(List.of(new ContentBlock.Text("The portfolio has 150 un")), StopReason.MAX_TOKENS,
+                new Usage(40, 2048)));
+
+        var sse = chat("outcome: truncated");
+
+        assertThat(sse).contains("The portfolio has 150 un")
+                .contains("event:done").contains("\"status\":\"TRUNCATED\"").contains("\"truncated\":true");
+        var run = recordedRun("outcome: truncated");
+        assertThat(run.getStatus()).isEqualTo(AgentResult.Status.TRUNCATED);
+        assertThat(run.getOutputTokens()).isEqualTo(2048);
     }
 }

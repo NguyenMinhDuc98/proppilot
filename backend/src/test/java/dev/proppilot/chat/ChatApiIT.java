@@ -51,7 +51,7 @@ class ChatApiIT extends PostgresIntegrationTest {
         assertThat(sse).contains("event:tool_call").contains("find_overdue_tenants")
                 .contains("event:tool_result").contains("event:token")
                 .contains("event:done").contains("\"status\":\"OK\"").contains("\"toolCalls\":1")
-                .contains("\"provider\":\"offline\"");
+                .contains("\"provider\":\"offline\"").contains("\"truncated\":false");
         assertThat(answerText(sse)).contains("Ahmed Al-Harbi").contains("Data: find_overdue_tenants");
         assertThat(sse.indexOf("event:tool_call")).isLessThan(sse.indexOf("event:token"));
         assertThat(sse.indexOf("event:token")).isLessThan(sse.indexOf("event:done"));

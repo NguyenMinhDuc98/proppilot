@@ -135,11 +135,12 @@ public class ChatService {
     }
 
     record DonePayload(UUID runId, String status, String provider, String model, int inputTokens, int outputTokens,
-                       int toolCalls, int iterations, long latencyMs, BigDecimal costUsd) {
+                       int toolCalls, int iterations, long latencyMs, BigDecimal costUsd, boolean truncated) {
 
         static DonePayload of(ChatRun run, LlmClient llm) {
             return new DonePayload(run.getId(), run.getStatus().name(), llm.provider(), llm.model(), run.getInputTokens(),
-                    run.getOutputTokens(), run.getToolCalls(), run.getIterations(), run.getLatencyMs(), run.getCostUsd());
+                    run.getOutputTokens(), run.getToolCalls(), run.getIterations(), run.getLatencyMs(), run.getCostUsd(),
+                    run.getStatus() == AgentResult.Status.TRUNCATED);
         }
     }
 }

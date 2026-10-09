@@ -6,6 +6,7 @@ import dev.proppilot.agent.llm.LlmException;
 import dev.proppilot.agent.llm.LlmRequest;
 import dev.proppilot.agent.llm.LlmResponse;
 import dev.proppilot.agent.llm.Message;
+import dev.proppilot.agent.llm.StopReason;
 import dev.proppilot.agent.llm.Usage;
 import dev.proppilot.agent.tools.ToolRegistry;
 import dev.proppilot.config.AgentProperties;
@@ -20,7 +21,8 @@ import org.springframework.stereotype.Service;
 
 /**
  * The agent loop, written by hand: send messages and tool definitions to the model; if it asks for tools, run them,
- * append the results and ask again; stop on a final answer or after the iteration limit.
+ * append the results and ask again; stop on a final answer, a reply cut off by the token limit, or after the iteration
+ * limit.
  */
 @Service
 public class AgentLoop {
@@ -57,6 +59,10 @@ public class AgentLoop {
                 return AgentResult.failed(e.code(), usage, toolCalls, iteration);
             }
             usage = usage.plus(response.usage());
+            if (response.stopReason() == StopReason.MAX_TOKENS) {
+                // Tool calls in a reply that hit the token limit may be incomplete, so none are run.
+                return new AgentResult(response.text(), usage, toolCalls, iteration, AgentResult.Status.TRUNCATED);
+            }
             messages.add(new Message(Message.Role.ASSISTANT, response.content()));
 
             var requested = response.toolUses();

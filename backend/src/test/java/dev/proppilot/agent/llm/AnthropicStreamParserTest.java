@@ -83,6 +83,78 @@ class AnthropicStreamParserTest {
         assertThat(response.toolUses().get(0).input()).isEmpty();
     }
 
+    private static final String CUT_OFF_TOOL_CALL_STREAM = """
+            data: {"type":"message_start","message":{"usage":{"input_tokens":30,"output_tokens":1}}}
+
+            data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}
+
+            data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Checking "}}
+
+            data: {"type":"content_block_stop","index":0}
+
+            data: {"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"toolu_1","name":"search_units","input":{}}}
+
+            data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\\"city\\": \\"Ri"}}
+
+            %s
+            data: {"type":"message_delta","delta":{"stop_reason":"%s"},"usage":{"output_tokens":2048}}
+            """;
+
+    private static String cutOffToolCall(String blockStop, String stopReason) {
+        return CUT_OFF_TOOL_CALL_STREAM.formatted(blockStop, stopReason);
+    }
+
+    @Test
+    void dropsAToolCallWhoseJsonWasCutOffByTheTokenLimitAndKeepsTheText() throws IOException {
+        var stream = cutOffToolCall("data: {\"type\":\"content_block_stop\",\"index\":1}\n", "max_tokens");
+        var deltas = new ArrayList<String>();
+
+        var response = new AnthropicStreamParser(json, deltas::add).parse(new BufferedReader(new StringReader(stream)));
+
+        assertThat(response.stopReason()).isEqualTo(StopReason.MAX_TOKENS);
+        assertThat(response.text()).isEqualTo("Checking ");
+        assertThat(response.toolUses()).isEmpty();
+        assertThat(response.usage()).isEqualTo(new Usage(30, 2048));
+        assertThat(deltas).containsExactly("Checking ");
+    }
+
+    @Test
+    void dropsAToolCallWhoseBlockWasNeverClosed() throws IOException {
+        var stream = cutOffToolCall("", "max_tokens");
+
+        var response = new AnthropicStreamParser(json, s -> { }).parse(new BufferedReader(new StringReader(stream)));
+
+        assertThat(response.text()).isEqualTo("Checking ");
+        assertThat(response.toolUses()).isEmpty();
+    }
+
+    @Test
+    void keepsTextOfABlockThatWasNeverClosed() throws IOException {
+        var stream = """
+                data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}
+
+                data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"cut off mid-sen"}}
+
+                data: {"type":"message_delta","delta":{"stop_reason":"max_tokens"},"usage":{"output_tokens":2048}}
+                """;
+
+        var response = new AnthropicStreamParser(json, s -> { }).parse(new BufferedReader(new StringReader(stream)));
+
+        assertThat(response.text()).isEqualTo("cut off mid-sen");
+        assertThat(response.stopReason()).isEqualTo(StopReason.MAX_TOKENS);
+    }
+
+    @Test
+    void malformedToolJsonThatIsNotCausedByTheTokenLimitIsAnError() {
+        var stream = cutOffToolCall("data: {\"type\":\"content_block_stop\",\"index\":1}\n", "tool_use");
+
+        assertThatThrownBy(() -> new AnthropicStreamParser(json, s -> { }).parse(new BufferedReader(new StringReader(stream))))
+                .isInstanceOfSatisfying(LlmException.class, e -> {
+                    assertThat(e.code()).isEqualTo(ErrorCode.LLM_ERROR);
+                    assertThat(e.retryable()).isFalse();
+                });
+    }
+
     @Test
     void streamedOverloadedErrorBecomesRetryableLlmExceptionWithoutProviderText() {
         var stream = "data: {\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\",\"message\":\"provider-detail\"}}\n";
