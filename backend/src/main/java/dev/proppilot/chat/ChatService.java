@@ -7,7 +7,6 @@ import dev.proppilot.agent.AgentResult;
 import dev.proppilot.agent.ErrorCode;
 import dev.proppilot.agent.llm.LlmClient;
 import jakarta.annotation.PreDestroy;
-import java.io.IOException;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Duration;
@@ -18,7 +17,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -49,11 +47,12 @@ public class ChatService {
 
     public SseEmitter start(ChatRequest request) {
         var emitter = new SseEmitter(EMITTER_TIMEOUT_MS);
-        executor.execute(() -> runAndStream(request, emitter));
+        var client = new ClientStream(emitter, json);
+        executor.execute(() -> runAndStream(request, client));
         return emitter;
     }
 
-    private void runAndStream(ChatRequest request, SseEmitter emitter) {
+    private void runAndStream(ChatRequest request, ClientStream client) {
         var started = System.nanoTime();
         var toolNames = new ArrayList<String>();
         try {
@@ -61,21 +60,25 @@ public class ChatService {
                 if (event instanceof AgentEvent.ToolCall call) {
                     toolNames.add(call.name());
                 }
-                send(emitter, event);
-            });
+                send(client, event);
+            }, client::isGone);
             long latencyMs = Duration.ofNanos(System.nanoTime() - started).toMillis();
             var run = record(request.message(), result, toolNames, latencyMs);
-            if (result.status() == AgentResult.Status.ERROR) {
-                send(emitter, "error", ErrorPayload.of(result.errorCode()));
+            if (!client.isGone()) {
+                finish(client, result, run);
             }
-            send(emitter, "done", DonePayload.of(run, llm));
-            emitter.complete();
-        } catch (ClientDisconnectedException e) {
-            log.debug("Client disconnected mid-stream");
         } catch (RuntimeException e) {
             log.error("Chat run failed", e);
-            emitter.completeWithError(e);
+            client.completeWithError(e);
         }
+    }
+
+    private void finish(ClientStream client, AgentResult result, ChatRun run) {
+        if (result.status() == AgentResult.Status.ERROR) {
+            client.send("error", ErrorPayload.of(result.errorCode()));
+        }
+        client.send("done", DonePayload.of(run, llm));
+        client.complete();
     }
 
     private ChatRun record(String question, AgentResult result, ArrayList<String> toolNames, long latencyMs) {
@@ -89,32 +92,18 @@ public class ChatService {
         return question.length() <= 1000 ? question : question.substring(0, 1000);
     }
 
-    private void send(SseEmitter emitter, AgentEvent event) {
+    private static void send(ClientStream client, AgentEvent event) {
         switch (event) {
-            case AgentEvent.ToolCall call -> send(emitter, "tool_call", new ToolCallPayload(call.name(), call.args()));
+            case AgentEvent.ToolCall call -> client.send("tool_call", new ToolCallPayload(call.name(), call.args()));
             case AgentEvent.ToolResultEvent result ->
-                    send(emitter, "tool_result", new ToolResultPayload(result.name(), result.summary(), result.error()));
-            case AgentEvent.Token token -> send(emitter, "token", new TokenPayload(token.text()));
-        }
-    }
-
-    private void send(SseEmitter emitter, String name, Object payload) {
-        try {
-            emitter.send(SseEmitter.event().name(name).data(json.writeValueAsString(payload), MediaType.APPLICATION_JSON));
-        } catch (IOException | IllegalStateException e) {
-            throw new ClientDisconnectedException(e);
+                    client.send("tool_result", new ToolResultPayload(result.name(), result.summary(), result.error()));
+            case AgentEvent.Token token -> client.send("token", new TokenPayload(token.text()));
         }
     }
 
     @PreDestroy
     void shutdown() {
         executor.shutdown();
-    }
-
-    private static final class ClientDisconnectedException extends RuntimeException {
-        ClientDisconnectedException(Throwable cause) {
-            super(cause);
-        }
     }
 
     record ToolCallPayload(String name, Object args) {

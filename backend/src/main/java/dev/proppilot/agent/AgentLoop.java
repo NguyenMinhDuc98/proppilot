@@ -7,6 +7,7 @@ import dev.proppilot.agent.llm.LlmRequest;
 import dev.proppilot.agent.llm.LlmResponse;
 import dev.proppilot.agent.llm.Message;
 import dev.proppilot.agent.llm.StopReason;
+import dev.proppilot.agent.llm.ToolSpec;
 import dev.proppilot.agent.llm.Usage;
 import dev.proppilot.agent.tools.ToolRegistry;
 import dev.proppilot.config.AgentProperties;
@@ -14,6 +15,8 @@ import java.time.Clock;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
+import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -42,49 +45,96 @@ public class AgentLoop {
         this.clock = clock;
     }
 
-    public AgentResult run(String question, List<ChatTurn> history, Consumer<AgentEvent> events) {
-        var messages = new ArrayList<Message>(conversationSoFar(history));
-        messages.add(Message.user(question));
-        var system = SystemPrompt.forDate(LocalDate.now(clock));
-        var toolSpecs = tools.specs();
+    /**
+     * @param cancelled polled before every model call and tool execution; once it is true the run stops and returns
+     *                  what it has spent so far with status {@code ABORTED}
+     */
+    public AgentResult run(String question, List<ChatTurn> history, Consumer<AgentEvent> events, BooleanSupplier cancelled) {
+        return new Run(question, history, events, cancelled).execute();
+    }
 
-        var usage = Usage.ZERO;
-        int toolCalls = 0;
-        for (int iteration = 1; iteration <= props.maxIterations(); iteration++) {
+    /** The state of one question, so the loop reads as a sequence of small steps. */
+    private final class Run {
+
+        private final Consumer<AgentEvent> events;
+        private final BooleanSupplier cancelled;
+        private final List<Message> messages = new ArrayList<>();
+        private final String system = SystemPrompt.forDate(LocalDate.now(clock));
+        private final List<ToolSpec> toolSpecs = tools.specs();
+        private Usage usage = Usage.ZERO;
+        private int toolCalls;
+        private int iterations;
+
+        Run(String question, List<ChatTurn> history, Consumer<AgentEvent> events, BooleanSupplier cancelled) {
+            this.events = events;
+            this.cancelled = cancelled;
+            messages.addAll(conversationSoFar(history));
+            messages.add(Message.user(question));
+        }
+
+        AgentResult execute() {
+            while (iterations < props.maxIterations()) {
+                var finished = step();
+                if (finished.isPresent()) {
+                    return finished.get();
+                }
+            }
+            events.accept(new AgentEvent.Token(GAVE_UP));
+            return result(AgentResult.Status.MAX_ITERATIONS, GAVE_UP);
+        }
+
+        /** One model call and the tools it asked for. Returns the final result once the run is over. */
+        private Optional<AgentResult> step() {
+            if (cancelled.getAsBoolean()) {
+                return Optional.of(aborted());
+            }
+            iterations++;
             LlmResponse response;
             try {
-                response = llm.complete(new LlmRequest(system, List.copyOf(messages), toolSpecs), text -> events.accept(new AgentEvent.Token(text)));
+                response = llm.complete(new LlmRequest(system, List.copyOf(messages), toolSpecs),
+                        text -> events.accept(new AgentEvent.Token(text)));
             } catch (LlmException e) {
-                log.warn("LLM call failed on iteration {} ({}): {}", iteration, e.code(), e.getMessage());
-                return AgentResult.failed(e.code(), usage, toolCalls, iteration);
+                log.warn("LLM call failed on iteration {} ({}): {}", iterations, e.code(), e.getMessage());
+                return Optional.of(AgentResult.failed(e.code(), usage, toolCalls, iterations));
             }
             usage = usage.plus(response.usage());
             if (response.stopReason() == StopReason.MAX_TOKENS) {
                 // Tool calls in a reply that hit the token limit may be incomplete, so none are run.
-                return new AgentResult(response.text(), usage, toolCalls, iteration, AgentResult.Status.TRUNCATED);
+                return Optional.of(result(AgentResult.Status.TRUNCATED, response.text()));
             }
             messages.add(new Message(Message.Role.ASSISTANT, response.content()));
 
             var requested = response.toolUses();
             if (requested.isEmpty()) {
-                return new AgentResult(response.text(), usage, toolCalls, iteration, AgentResult.Status.OK);
+                return Optional.of(result(AgentResult.Status.OK, response.text()));
             }
-            messages.add(new Message(Message.Role.USER, runTools(requested, events)));
-            toolCalls += requested.size();
+            return runTools(requested);
         }
-        events.accept(new AgentEvent.Token(GAVE_UP));
-        return new AgentResult(GAVE_UP, usage, toolCalls, props.maxIterations(), AgentResult.Status.MAX_ITERATIONS);
-    }
 
-    private List<ContentBlock> runTools(List<ContentBlock.ToolUse> requested, Consumer<AgentEvent> events) {
-        var results = new ArrayList<ContentBlock>();
-        for (var call : requested) {
-            events.accept(new AgentEvent.ToolCall(call.name(), call.input()));
-            var result = tools.execute(call.name(), call.input());
-            events.accept(new AgentEvent.ToolResultEvent(call.name(), result.summary(), result.error()));
-            results.add(new ContentBlock.ToolResult(call.id(), result.content(), result.error()));
+        /** Runs the tools and queues their results for the next model call; a result is returned only if cancelled. */
+        private Optional<AgentResult> runTools(List<ContentBlock.ToolUse> requested) {
+            var results = new ArrayList<ContentBlock>();
+            for (var call : requested) {
+                if (cancelled.getAsBoolean()) {
+                    return Optional.of(aborted());
+                }
+                events.accept(new AgentEvent.ToolCall(call.name(), call.input()));
+                var result = tools.execute(call.name(), call.input());
+                events.accept(new AgentEvent.ToolResultEvent(call.name(), result.summary(), result.error()));
+                results.add(new ContentBlock.ToolResult(call.id(), result.content(), result.error()));
+                toolCalls++;
+            }
+            messages.add(new Message(Message.Role.USER, results));
+            return Optional.empty();
         }
-        return results;
+
+        private AgentResult aborted() {
+            return result(AgentResult.Status.ABORTED, "");
+        }
+
+        private AgentResult result(AgentResult.Status status, String answer) {
+            return new AgentResult(answer, usage, toolCalls, iterations, status);
+        }
     }
 
     /** Last N turns of plain text, starting with a user turn so the roles alternate as the API requires. */

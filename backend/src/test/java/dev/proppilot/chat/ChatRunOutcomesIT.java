@@ -1,6 +1,7 @@
 package dev.proppilot.chat;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
@@ -15,7 +16,9 @@ import dev.proppilot.agent.llm.LlmResponse;
 import dev.proppilot.agent.llm.StopReason;
 import dev.proppilot.agent.llm.Usage;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -46,6 +49,9 @@ class ChatRunOutcomesIT extends PostgresIntegrationTest {
     ScriptedLlmClient llm;
 
     @Autowired
+    ChatService chatService;
+
+    @Autowired
     ChatRunRepository runs;
 
     @BeforeEach
@@ -62,6 +68,18 @@ class ChatRunOutcomesIT extends PostgresIntegrationTest {
                 .getResponse().getContentAsString(StandardCharsets.UTF_8);
     }
 
+    private static void awaitUninterruptibly(CountDownLatch latch) {
+        try {
+            latch.await();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    private boolean runExists(String question) {
+        return runs.findAll().stream().anyMatch(run -> run.getQuestion().equals(question));
+    }
+
     private ChatRun recordedRun(String question) {
         return runs.findAll().stream().filter(run -> run.getQuestion().equals(question)).findFirst().orElseThrow();
     }
@@ -76,6 +94,27 @@ class ChatRunOutcomesIT extends PostgresIntegrationTest {
                 .contains("event:done").contains("\"status\":\"ERROR\"")
                 .doesNotContain("upstream-secret");
         assertThat(recordedRun("outcome: provider failure").getStatus()).isEqualTo(AgentResult.Status.ERROR);
+    }
+
+    @Test
+    void aClientThatDisconnectsMidRunStillLeavesAnAbortedRunWithTheTokensSpent() throws Exception {
+        var held = new CountDownLatch(1);
+        llm.beforeEachCall(() -> awaitUninterruptibly(held))
+                .thenToolCall("t1", "get_occupancy_summary", "{}")
+                .thenText("never reached");
+
+        var emitter = chatService.start(new ChatRequest("outcome: disconnect", null));
+        emitter.complete();
+        held.countDown();
+
+        await().atMost(Duration.ofSeconds(10)).until(() -> runExists("outcome: disconnect"));
+        var run = recordedRun("outcome: disconnect");
+        assertThat(run.getStatus()).isEqualTo(AgentResult.Status.ABORTED);
+        assertThat(run.getInputTokens()).isEqualTo(50);
+        assertThat(run.getOutputTokens()).isEqualTo(10);
+        assertThat(run.getCostUsd()).isPositive();
+        assertThat(run.getToolCalls()).isEqualTo(1);
+        assertThat(llm.requests).hasSize(1);
     }
 
     @Test

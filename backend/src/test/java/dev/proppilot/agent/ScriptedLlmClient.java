@@ -17,7 +17,14 @@ import java.util.function.Consumer;
 public class ScriptedLlmClient implements LlmClient {
 
     private final Queue<Object> script = new ArrayDeque<>();
+    private Runnable beforeEachCall = () -> { };
     public final List<LlmRequest> requests = new ArrayList<>();
+
+    /** Runs at the start of every call, for example to hold the model until the test has done something else. */
+    public ScriptedLlmClient beforeEachCall(Runnable hook) {
+        beforeEachCall = hook;
+        return this;
+    }
 
     public ScriptedLlmClient then(LlmResponse response) {
         script.add(response);
@@ -48,10 +55,12 @@ public class ScriptedLlmClient implements LlmClient {
     public void reset() {
         script.clear();
         requests.clear();
+        beforeEachCall = () -> { };
     }
 
     @Override
     public LlmResponse complete(LlmRequest request, Consumer<String> onTextDelta) {
+        beforeEachCall.run();
         requests.add(request);
         var next = script.remove();
         if (next instanceof LlmException e) {

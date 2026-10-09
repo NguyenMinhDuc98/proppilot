@@ -21,6 +21,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.BooleanSupplier;
 import org.junit.jupiter.api.Test;
 import org.springframework.transaction.PlatformTransactionManager;
 
@@ -28,6 +29,7 @@ class AgentLoopTest {
 
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final Clock CLOCK = Clock.fixed(Instant.parse("2026-03-15T10:00:00Z"), ZoneOffset.UTC);
+    private static final BooleanSupplier NEVER = () -> false;
 
     private final List<String> executedWith = new ArrayList<>();
 
@@ -54,7 +56,7 @@ class AgentLoopTest {
         var llm = new ScriptedLlmClient().thenText("Hello");
         var events = new ArrayList<AgentEvent>();
 
-        var result = loop(llm, 6).run("hi", List.of(), events::add);
+        var result = loop(llm, 6).run("hi", List.of(), events::add, NEVER);
 
         assertThat(result.status()).isEqualTo(AgentResult.Status.OK);
         assertThat(result.answer()).isEqualTo("Hello");
@@ -70,7 +72,7 @@ class AgentLoopTest {
                 .thenText("Done: ping");
         var events = new ArrayList<AgentEvent>();
 
-        var result = loop(llm, 6).run("say ping", List.of(), events::add);
+        var result = loop(llm, 6).run("say ping", List.of(), events::add, NEVER);
 
         assertThat(executedWith).containsExactly("ping");
         assertThat(result.answer()).isEqualTo("Done: ping");
@@ -93,7 +95,7 @@ class AgentLoopTest {
                 .thenToolCall("t1", "echo", "{}")
                 .thenText("Sorry, I need text");
 
-        var result = loop(llm, 6).run("go", List.of(), e -> { });
+        var result = loop(llm, 6).run("go", List.of(), e -> { }, NEVER);
 
         assertThat(result.status()).isEqualTo(AgentResult.Status.OK);
         var secondRequest = llm.requests.get(1).messages();
@@ -108,7 +110,7 @@ class AgentLoopTest {
                 .thenToolCall("t1", "does_not_exist", "{}")
                 .thenText("ok");
 
-        var result = loop(llm, 6).run("go", List.of(), e -> { });
+        var result = loop(llm, 6).run("go", List.of(), e -> { }, NEVER);
 
         assertThat(result.status()).isEqualTo(AgentResult.Status.OK);
         var secondRequest = llm.requests.get(1).messages();
@@ -125,7 +127,7 @@ class AgentLoopTest {
         }
         var events = new ArrayList<AgentEvent>();
 
-        var result = loop(llm, 3).run("loop forever", List.of(), events::add);
+        var result = loop(llm, 3).run("loop forever", List.of(), events::add, NEVER);
 
         assertThat(result.status()).isEqualTo(AgentResult.Status.MAX_ITERATIONS);
         assertThat(result.iterations()).isEqualTo(3);
@@ -138,7 +140,7 @@ class AgentLoopTest {
     void llmFailureEndsTheRunWithAnErrorCodeAndNoProviderText() {
         var llm = new ScriptedLlmClient().thenFail(ErrorCode.LLM_OVERLOADED, "Claude API returned 529: upstream-secret");
 
-        var result = loop(llm, 6).run("hi", List.of(), e -> { });
+        var result = loop(llm, 6).run("hi", List.of(), e -> { }, NEVER);
 
         assertThat(result.status()).isEqualTo(AgentResult.Status.ERROR);
         assertThat(result.errorCode()).isEqualTo(ErrorCode.LLM_OVERLOADED);
@@ -152,7 +154,7 @@ class AgentLoopTest {
                 List.of(new ContentBlock.Text("The answer is cut"), toolCall), StopReason.MAX_TOKENS, new Usage(30, 2048)));
         var events = new ArrayList<AgentEvent>();
 
-        var result = loop(llm, 6).run("go", List.of(), events::add);
+        var result = loop(llm, 6).run("go", List.of(), events::add, NEVER);
 
         assertThat(result.status()).isEqualTo(AgentResult.Status.TRUNCATED);
         assertThat(result.answer()).isEqualTo("The answer is cut");
@@ -164,10 +166,57 @@ class AgentLoopTest {
     }
 
     @Test
+    void cancelledBeforeTheFirstCallNothingIsSentToTheModel() {
+        var llm = new ScriptedLlmClient().thenText("never asked");
+
+        var result = loop(llm, 6).run("hi", List.of(), e -> { }, () -> true);
+
+        assertThat(result.status()).isEqualTo(AgentResult.Status.ABORTED);
+        assertThat(result.usage()).isEqualTo(Usage.ZERO);
+        assertThat(result.iterations()).isZero();
+        assertThat(llm.requests).isEmpty();
+    }
+
+    @Test
+    void cancelledWhileTheModelWasAnsweringKeepsTheTokensSpentAndRunsNoTool() {
+        var llm = new ScriptedLlmClient()
+                .thenToolCall("t1", "echo", "{\"text\":\"ping\"}")
+                .thenText("never reached");
+        var events = new ArrayList<AgentEvent>();
+
+        var result = loop(llm, 6).run("go", List.of(), events::add, () -> !llm.requests.isEmpty());
+
+        assertThat(result.status()).isEqualTo(AgentResult.Status.ABORTED);
+        assertThat(result.usage()).isEqualTo(new Usage(50, 10));
+        assertThat(result.iterations()).isEqualTo(1);
+        assertThat(result.toolCalls()).isZero();
+        assertThat(executedWith).isEmpty();
+        assertThat(events).isEmpty();
+        assertThat(llm.requests).hasSize(1);
+    }
+
+    @Test
+    void cancelledBetweenToolsStopsBeforeTheNextOneAndCountsTheOnesThatRan() throws Exception {
+        var first = new ContentBlock.ToolUse("t1", "echo", JSON.readTree("{\"text\":\"one\"}"));
+        var second = new ContentBlock.ToolUse("t2", "echo", JSON.readTree("{\"text\":\"two\"}"));
+        var llm = new ScriptedLlmClient()
+                .then(new LlmResponse(List.of(first, second), StopReason.TOOL_USE, new Usage(50, 10)))
+                .thenText("never reached");
+
+        var result = loop(llm, 6).run("go", List.of(), e -> { }, () -> !executedWith.isEmpty());
+
+        assertThat(result.status()).isEqualTo(AgentResult.Status.ABORTED);
+        assertThat(executedWith).containsExactly("one");
+        assertThat(result.toolCalls()).isEqualTo(1);
+        assertThat(result.usage()).isEqualTo(new Usage(50, 10));
+        assertThat(llm.requests).hasSize(1);
+    }
+
+    @Test
     void sendsSystemPromptWithTodaysDateAndToolSpecs() {
         var llm = new ScriptedLlmClient().thenText("ok");
 
-        loop(llm, 6).run("hi", List.of(), e -> { });
+        loop(llm, 6).run("hi", List.of(), e -> { }, NEVER);
 
         var request = llm.requests.get(0);
         assertThat(request.system()).contains("2026-03-15").contains("Never invent");
@@ -183,7 +232,7 @@ class AgentLoopTest {
                 new ChatTurn("assistant", "first answer"),
                 new ChatTurn("user", "dangling question without answer"));
 
-        loop(llm, 6).run("second question", history, e -> { });
+        loop(llm, 6).run("second question", history, e -> { }, NEVER);
 
         var messages = llm.requests.get(0).messages();
         assertThat(messages).extracting(Message::role).containsExactly(
