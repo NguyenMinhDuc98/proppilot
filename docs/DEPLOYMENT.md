@@ -71,3 +71,9 @@ Run-to-run noise is about ±20 s, so none of these is a real improvement and non
 ## Gotcha: blueprint syncs overwrite dashboard values
 
 Render re-applies every value written in `render.yaml` whenever the blueprint syncs, so a variable you changed in the dashboard silently reverts if the file also gives it a `value`. Settings you manage in the dashboard (`LLM_PROVIDER`, keys, DB credentials, CORS origins) are therefore marked `sync: false` in `render.yaml` and have no value there. This bit me once: the live demo went back to the free offline assistant after a sync.
+
+## Admin endpoint and new settings
+
+- `GET /api/admin/runs` lists the latest questions with cost and latency. It is off unless `ADMIN_TOKEN` is set in the Render dashboard (24 or more characters, for example `openssl rand -hex 24`); call it with the header `X-Admin-Token`. Visitors' questions are never exposed by the public API.
+- Optional tuning, all with sensible defaults: `LLM_MAX_TOKENS` (2048), `LLM_MAX_RETRIES` (3), `AGENT_RUN_TIMEOUT_SECONDS` (90), `CHAT_MAX_HISTORY_ITEMS` (20). See the table in the README.
+- This release adds the migration `V3__run_status.sql`; Flyway applies it on the first start.
