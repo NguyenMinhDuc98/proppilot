@@ -1,7 +1,6 @@
 export default {
   app: {
     title: 'PropPilot',
-    tagline: 'AI assistant for property managers',
     language: 'العربية',
     demoNote: 'All data shown is fake demo data.',
     offlineDemo: 'Offline demo',
@@ -35,8 +34,6 @@ export default {
       run_timeout: 'This question took too long to answer, so it was stopped. Try a narrower question.',
       generic: 'Something went wrong. Please try again.',
     },
-    you: 'You',
-    assistant: 'PropPilot',
     charCount: '{count} / {max}',
     usage: { free: 'Free (offline assistant)', toolCalls: '{n} tool calls', tokens: '{n} tokens' },
   },

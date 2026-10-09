@@ -19,12 +19,6 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
     List<OverdueRow> findOverdue(@Param("cutoff") LocalDate cutoff, Pageable pageable);
 
     @Query("""
-            select p from Payment p join fetch p.lease l
-            where l.tenant.id = :tenantId
-            order by p.period desc""")
-    List<Payment> findByTenant(@Param("tenantId") Long tenantId, Pageable pageable);
-
-    @Query("""
             select p from Payment p join fetch p.lease l join fetch l.unit u join fetch l.tenant
             where upper(u.code) = upper(:unitCode)
             order by p.period desc, p.id desc""")
