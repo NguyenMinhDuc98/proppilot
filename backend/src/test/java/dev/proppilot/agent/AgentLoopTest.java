@@ -199,6 +199,29 @@ class AgentLoopTest {
     }
 
     @Test
+    void cancelledWhileTheFinalReplyWasStreamingEndsTheRunAsAbortedNotOk() {
+        var llm = new ScriptedLlmClient().thenText("an answer nobody received");
+
+        var result = loop(llm, 6).run("go", List.of(), e -> { }, () -> !llm.requests.isEmpty());
+
+        assertThat(result.status()).isEqualTo(AgentResult.Status.ABORTED);
+        assertThat(result.answer()).isEmpty();
+        assertThat(result.usage()).isEqualTo(new Usage(100, 20));
+        assertThat(result.iterations()).isEqualTo(1);
+    }
+
+    @Test
+    void cancelledDuringTheLastToolCallEndsTheRunAsAbortedNotGaveUp() {
+        var llm = new ScriptedLlmClient().thenToolCall("t1", "echo", "{\"text\":\"ping\"}");
+
+        var result = loop(llm, 1).run("go", List.of(), e -> { }, () -> !executedWith.isEmpty());
+
+        assertThat(result.status()).isEqualTo(AgentResult.Status.ABORTED);
+        assertThat(result.toolCalls()).isEqualTo(1);
+        assertThat(result.iterations()).isEqualTo(1);
+    }
+
+    @Test
     void cancelledBetweenToolsStopsBeforeTheNextOneAndCountsTheOnesThatRan() throws Exception {
         var first = new ContentBlock.ToolUse("t1", "echo", JSON.readTree("{\"text\":\"one\"}"));
         var second = new ContentBlock.ToolUse("t2", "echo", JSON.readTree("{\"text\":\"two\"}"));

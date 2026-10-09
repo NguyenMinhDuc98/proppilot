@@ -122,6 +122,24 @@ class ChatRunOutcomesIT extends PostgresIntegrationTest {
     }
 
     @Test
+    void aClientThatDisconnectsWhileTheOnlyReplyIsStreamingLeavesAnAbortedRunNotAnOkOne() {
+        var held = new CountDownLatch(1);
+        llm.beforeEachCall(() -> awaitUninterruptibly(held)).thenText("an answer nobody received");
+
+        var emitter = chatService.start(new ChatRequest("outcome: disconnect during the answer", null));
+        emitter.complete();
+        held.countDown();
+
+        await().atMost(Duration.ofSeconds(10)).until(() -> runExists("outcome: disconnect during the answer"));
+        var run = recordedRun("outcome: disconnect during the answer");
+        assertThat(run.getStatus()).isEqualTo(AgentResult.Status.ABORTED);
+        assertThat(run.getInputTokens()).isEqualTo(100);
+        assertThat(run.getOutputTokens()).isEqualTo(20);
+        assertThat(run.getToolCalls()).isZero();
+        assertThat(run.getIterations()).isEqualTo(1);
+    }
+
+    @Test
     void theStreamStaysOpenFifteenSecondsLongerThanTheRunDeadline() {
         llm.thenText("hello");
 

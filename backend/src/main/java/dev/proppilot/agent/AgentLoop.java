@@ -51,8 +51,8 @@ public class AgentLoop {
      * Answers one question. The run ends with error code {@code run_timeout} once the run deadline has passed, and
      * each model call is given only the time that is left.
      *
-     * @param cancelled polled before every model call and tool execution; once it is true the run stops and returns
-     *                  what it has spent so far with status {@code ABORTED}
+     * @param cancelled polled before every model call and tool execution and after every model reply; once it is
+     *                  true the run stops and returns what it has spent so far with status {@code ABORTED}
      */
     public AgentResult run(String question, List<ChatTurn> history, Consumer<AgentEvent> events, BooleanSupplier cancelled) {
         return new Run(question, history, events, cancelled).execute();
@@ -86,7 +86,7 @@ public class AgentLoop {
                 }
             }
             events.accept(new AgentEvent.Token(GAVE_UP));
-            return result(AgentResult.Status.MAX_ITERATIONS, GAVE_UP);
+            return cancelled.getAsBoolean() ? aborted() : result(AgentResult.Status.MAX_ITERATIONS, GAVE_UP);
         }
 
         /** One model call and the tools it asked for. Returns the final result once the run is over. */
@@ -105,6 +105,10 @@ public class AgentLoop {
                 return Optional.of(AgentResult.failed(e.code(), usage, toolCalls, iterations));
             }
             usage = usage.plus(response.usage());
+            if (cancelled.getAsBoolean()) {
+                // The client left while the reply was streaming, so nobody received it.
+                return Optional.of(aborted());
+            }
             if (response.stopReason() == StopReason.MAX_TOKENS) {
                 // Tool calls in a reply that hit the token limit may be incomplete, so none are run.
                 return Optional.of(result(AgentResult.Status.TRUNCATED, response.text()));
@@ -139,7 +143,7 @@ public class AgentLoop {
         /** Checked before every model call and tool execution: the client left, or the run is out of time. */
         private Optional<AgentResult> interruption() {
             if (cancelled.getAsBoolean()) {
-                return Optional.of(result(AgentResult.Status.ABORTED, ""));
+                return Optional.of(aborted());
             }
             if (!timeLeft().isPositive()) {
                 log.warn("Run stopped after {} model calls: it exceeded {}", iterations, props.runTimeout());
@@ -150,6 +154,10 @@ public class AgentLoop {
 
         private Duration timeLeft() {
             return Duration.between(clock.instant(), deadline);
+        }
+
+        private AgentResult aborted() {
+            return result(AgentResult.Status.ABORTED, "");
         }
 
         private AgentResult result(AgentResult.Status status, String answer) {
