@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.UUID;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.BatchSize;
 
 /** Usage record of one question: tokens, tool calls, latency and estimated cost. */
 @Entity
@@ -40,6 +41,8 @@ public class ChatRun {
     @Enumerated(EnumType.STRING)
     private AgentResult.Status status;
 
+    /** Batched so a list of runs loads all its tool names in one query instead of one per run. */
+    @BatchSize(size = 100)
     @ElementCollection
     @CollectionTable(name = "chat_run_tools", joinColumns = @JoinColumn(name = "run_id"))
     @Column(name = "tool_name")

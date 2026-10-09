@@ -2,10 +2,13 @@ package dev.proppilot.chat;
 
 import java.util.List;
 import java.util.UUID;
+import org.springframework.data.domain.Limit;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 
 public interface ChatRunRepository extends JpaRepository<ChatRun, UUID> {
+
+    List<ChatRun> findAllByOrderByCreatedAtDesc(Limit limit);
 
     @Query("""
             select count(r) as runs, sum(r.costUsd) as totalCost, avg(r.costUsd) as avgCost,
