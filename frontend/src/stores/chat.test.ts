@@ -89,6 +89,21 @@ describe('chat store', () => {
     expect(streamChat.mock.calls[1][1]).toEqual([])
   })
 
+  it('keeps the error code from the stream and drops the failed exchange from the history', async () => {
+    script([
+      { type: 'error', message: 'The AI service is busy right now.', code: 'llm_overloaded' },
+      { ...done, status: 'ERROR' },
+    ])
+    script([{ type: 'token', text: 'ok' }, done])
+    const chat = useChatStore()
+
+    await chat.send('one')
+    expect(chat.messages[1]).toMatchObject({ errorCode: 'llm_overloaded', error: 'The AI service is busy right now.' })
+    await chat.send('two')
+
+    expect(streamChat.mock.calls[1][1]).toEqual([])
+  })
+
   it('ignores empty input and concurrent sends', async () => {
     let release: () => void = () => {}
     streamChat.mockImplementationOnce(async function* () {

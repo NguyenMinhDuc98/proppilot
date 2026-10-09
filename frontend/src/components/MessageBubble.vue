@@ -8,7 +8,7 @@ import ToolChip from './ToolChip.vue'
 import TraceDrawer from './TraceDrawer.vue'
 
 const props = defineProps<{ message: ChatMessage }>()
-const { t } = useI18n()
+const { t, te } = useI18n()
 
 const isUser = computed(() => props.message.role === 'user')
 const html = computed(() => (isUser.value ? '' : renderMarkdown(props.message.text)))
@@ -29,9 +29,12 @@ const usageParts = computed(() => {
     t('chat.usage.tokens', { n: (u.inputTokens + u.outputTokens).toLocaleString('en-US') }),
   ]
 })
-const errorText = computed(() =>
-  props.message.error === 'network' ? t('chat.errorNetwork') : `${t('chat.errorPrefix')}: ${props.message.error}`,
-)
+// Server errors are shown from their code, so provider or server text never reaches the user.
+const errorText = computed(() => {
+  const { error, errorCode } = props.message
+  if (errorCode) return t(te(`chat.errors.${errorCode}`) ? `chat.errors.${errorCode}` : 'chat.errors.generic')
+  return error === 'network' ? t('chat.errorNetwork') : `${t('chat.errorPrefix')}: ${error}`
+})
 </script>
 
 <template>

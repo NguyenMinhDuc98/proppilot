@@ -11,11 +11,14 @@ export interface DonePayload {
   costUsd: number
 }
 
+/** Why a run failed; the UI shows its own localised text for each, never the server's message. */
+export type ErrorCode = 'llm_overloaded' | 'llm_timeout' | 'llm_auth' | 'llm_error' | 'run_timeout'
+
 export type ChatEvent =
   | { type: 'tool_call'; name: string; args: Record<string, unknown> }
   | { type: 'tool_result'; name: string; summary: string; error: boolean }
   | { type: 'token'; text: string }
-  | { type: 'error'; message: string }
+  | { type: 'error'; message: string; code: ErrorCode }
   | ({ type: 'done' } & DonePayload)
 
 export interface HistoryTurn {

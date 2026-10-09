@@ -2,7 +2,7 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { streamChat } from '../api/chat'
 import { ApiError } from '../api/http'
-import type { ChatEvent, DonePayload, HistoryTurn } from '../api/types'
+import type { ChatEvent, DonePayload, ErrorCode, HistoryTurn } from '../api/types'
 
 export interface ToolChip {
   name: string
@@ -18,6 +18,8 @@ export interface ChatMessage {
   tools: ToolChip[]
   usage?: DonePayload
   error?: string
+  /** Set when the server reported the failure; the UI shows localised text for it instead of `error`. */
+  errorCode?: ErrorCode
   streaming: boolean
 }
 
@@ -59,6 +61,7 @@ export const useChatStore = defineStore('chat', () => {
         break
       case 'error':
         message.error = event.message
+        message.errorCode = event.code
         break
       case 'done': {
         const { type: _type, ...usage } = event
