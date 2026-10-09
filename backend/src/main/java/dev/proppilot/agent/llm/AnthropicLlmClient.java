@@ -90,7 +90,8 @@ public class AnthropicLlmClient implements LlmClient {
             var reader = new BufferedReader(new InputStreamReader(body, StandardCharsets.UTF_8));
             return new AnthropicStreamParser(json, onTextDelta).parse(reader);
         } catch (IOException e) {
-            throw new LlmException("Claude response stream failed: " + e.getMessage(), ErrorCode.LLM_ERROR, e);
+            // Not e.getMessage(): a parse error quotes the response text.
+            throw new LlmException("Claude response stream failed (" + e.getClass().getSimpleName() + ")", ErrorCode.LLM_ERROR, e);
         }
     }
 

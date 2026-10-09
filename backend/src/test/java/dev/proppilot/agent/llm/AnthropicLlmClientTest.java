@@ -268,6 +268,19 @@ class AnthropicLlmClientTest {
     }
 
     @Test
+    void anUnreadableStreamFailsOnceWithoutQuotingIt() {
+        replies.add(Reply.stream("data: SECRET-UPSTREAM-DETAIL {not json\n\n"));
+
+        assertThatThrownBy(this::complete).isInstanceOfSatisfying(LlmException.class, e -> {
+            assertThat(e.code()).isEqualTo(ErrorCode.LLM_ERROR);
+            assertThat(e.retryable()).isFalse();
+            assertThat(e.getMessage()).doesNotContain("SECRET-UPSTREAM-DETAIL");
+        });
+
+        assertThat(requests).hasValue(1);
+    }
+
+    @Test
     void neitherTheUpstreamBodyNorTheKeyReachTheExceptionMessage() {
         for (int i = 0; i < 4; i++) {
             replies.add(Reply.status(500));
