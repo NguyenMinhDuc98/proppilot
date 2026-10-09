@@ -73,7 +73,7 @@ class OfflineLlmClientTest {
     }
 
     @Test
-    void turnsToolResultIntoAnswerThatNamesTheTool() {
+    void turnsToolResultIntoAnswerWithoutNamingTheTool() {
         var call = new ContentBlock.ToolUse("t1", "find_overdue_tenants", new ObjectMapper().createObjectNode());
         var result = new ContentBlock.ToolResult("t1", """
                 {"minDaysOverdue":30,"totalTenants":1,"shown":1,"totalUnpaidAmount":9400,
@@ -86,6 +86,7 @@ class OfflineLlmClientTest {
         var response = client.complete(new LlmRequest("", messages, List.of(), TIMEOUT), s -> { });
 
         assertThat(response.stopReason()).isEqualTo(StopReason.END_TURN);
-        assertThat(response.text()).contains("Ahmed Al-Harbi", "A-203", "98", "Data: find_overdue_tenants");
+        assertThat(response.text()).contains("Ahmed Al-Harbi", "A-203", "98")
+                .doesNotContain("find_overdue_tenants").doesNotContain("Data:");
     }
 }

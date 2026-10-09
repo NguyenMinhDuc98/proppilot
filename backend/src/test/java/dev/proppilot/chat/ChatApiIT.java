@@ -52,7 +52,7 @@ class ChatApiIT extends PostgresIntegrationTest {
                 .contains("event:tool_result").contains("event:token")
                 .contains("event:done").contains("\"status\":\"OK\"").contains("\"toolCalls\":1")
                 .contains("\"provider\":\"offline\"").contains("\"truncated\":false");
-        assertThat(answerText(sse)).contains("Ahmed Al-Harbi").contains("Data: find_overdue_tenants");
+        assertThat(answerText(sse)).contains("Ahmed Al-Harbi").doesNotContain("find_overdue_tenants").doesNotContain("Data:");
         assertThat(sse.indexOf("event:tool_call")).isLessThan(sse.indexOf("event:token"));
         assertThat(sse.indexOf("event:token")).isLessThan(sse.indexOf("event:done"));
     }
@@ -62,7 +62,7 @@ class ChatApiIT extends PostgresIntegrationTest {
         var sse = chat("{\"message\":\"من المستأجرين المتأخرين في الدفع؟\"}");
 
         assertThat(sse).contains("find_overdue_tenants");
-        assertThat(answerText(sse)).contains("أحمد الحربي").contains("البيانات من");
+        assertThat(answerText(sse)).contains("أحمد الحربي").doesNotContain("find_overdue_tenants").doesNotContain("البيانات من");
     }
 
     @Test

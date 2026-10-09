@@ -9,7 +9,7 @@ final class OfflineAnswerWriter {
     }
 
     static String write(String tool, JsonNode data, boolean arabic) {
-        var body = switch (tool) {
+        return switch (tool) {
             case "search_units" -> searchUnits(data, arabic);
             case "get_unit_details" -> unitDetails(data, arabic);
             case "find_overdue_tenants" -> overdue(data, arabic);
@@ -18,7 +18,6 @@ final class OfflineAnswerWriter {
             case "draft_tenant_message" -> draft(data, arabic);
             default -> data.toString();
         };
-        return body + "\n\n" + (arabic ? "البيانات من: " : "Data: ") + tool;
     }
 
     static String error(String message, boolean arabic) {
