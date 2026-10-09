@@ -8,7 +8,7 @@ import ToolChip from './ToolChip.vue'
 import TraceDrawer from './TraceDrawer.vue'
 
 const props = defineProps<{ message: ChatMessage }>()
-const { t, te } = useI18n()
+const { t, te, locale } = useI18n()
 
 const isUser = computed(() => props.message.role === 'user')
 const html = computed(() => (isUser.value ? '' : renderMarkdown(props.message.text)))
@@ -28,6 +28,14 @@ const usageParts = computed(() => {
     t('chat.usage.toolCalls', { n: u.toolCalls }),
     t('chat.usage.tokens', { n: (u.inputTokens + u.outputTokens).toLocaleString('en-US') }),
   ]
+})
+// Only tools that returned data count as sources, each once, however many times the model called it.
+const sources = computed(() => {
+  if (props.message.streaming || !props.message.text) return ''
+  const used = new Set(props.message.tools.filter((tool) => tool.status === 'done').map((tool) => tool.name))
+  if (!used.size) return ''
+  const labels = [...used].map((name) => (te(`tools.${name}.source`) ? t(`tools.${name}.source`) : name))
+  return t('chat.sources', { sources: new Intl.ListFormat(locale.value, { type: 'conjunction' }).format(labels) })
 })
 // Server errors are shown from their code, so provider or server text never reaches the user.
 const errorText = computed(() => {
@@ -53,6 +61,7 @@ const errorText = computed(() => {
         <!-- eslint-disable-next-line vue/no-v-html -- sanitised by DOMPurify in renderMarkdown -->
         <div v-if="message.text" class="markdown" dir="auto" v-html="html" />
         <div v-else-if="message.streaming && !message.tools.length" class="thinking">{{ t('chat.thinking') }}</div>
+        <div v-if="sources" class="sources">{{ sources }}</div>
         <div v-if="usage?.truncated" class="notice" role="note">{{ t('chat.truncated') }}</div>
         <div v-if="message.error" class="error" role="alert">{{ errorText }}</div>
         <div v-if="usage" class="meta">
@@ -83,6 +92,7 @@ const errorText = computed(() => {
 .body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
 .tools { display: flex; flex-wrap: wrap; gap: 8px; }
 .thinking { color: var(--pp-muted); }
+.sources { font-size: 12.5px; color: var(--pp-muted); }
 .notice { align-self: flex-start; color: var(--pp-warn-ink); background: var(--pp-warn-bg); padding: 6px 12px; border-radius: 10px; font-size: 13px; }
 .error { color: var(--pp-danger-ink); background: var(--pp-danger-bg); padding: 8px 12px; border-radius: 10px; }
 .meta { display: flex; flex-wrap: wrap; gap: 2px 14px; font-size: 12px; color: var(--pp-muted); font-variant-numeric: tabular-nums; }
