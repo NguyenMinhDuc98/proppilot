@@ -8,6 +8,22 @@
 
 All data is fake seed data (3 cities, 6 buildings, 150 units, 120 tenants, 12 months of payments). No real companies or people.
 
+## Screenshots
+
+Captured from the live demo, answered by real Claude.
+
+![English chat: tool chip, data card, localized source line, cost and latency](docs/screenshots/chat-en.jpg)
+
+The "How I answered" panel shows each step, the tool arguments, tokens, cost, latency and model:
+
+![The "How I answered" trace panel](docs/screenshots/trace-drawer.jpg)
+
+Arabic is a full right-to-left mirror, not just translated text, and the layout adapts to phones:
+
+![Arabic chat, right-to-left](docs/screenshots/chat-ar.jpg)
+
+<img src="docs/screenshots/chat-mobile-ar.jpg" alt="Arabic chat on a phone: top bar, data card that scrolls sideways, bottom tab bar" width="300">
+
 ## What it shows
 
 - **A hand-written agent loop** (no Spring AI / LangChain4j): send messages and tool definitions, run the tools the model asks for, feed results back, repeat, with a hard iteration cap.
@@ -166,7 +182,7 @@ LLM_PROVIDER=anthropic ANTHROPIC_API_KEY=sk-ant-... docker compose up --build
 
 ```bash
 cd backend && ./mvnw verify      # 222 tests; integration tests start PostgreSQL via Testcontainers (needs Docker)
-cd frontend && npm test          # 76 Vitest tests: SSE parser, chat store, Markdown sanitising, trace builder, error codes, info badge
+cd frontend && npm test          # 79 Vitest tests: SSE parser, chat store, Markdown sanitising, trace builder, error codes, info badge
 ```
 
 Backend: the agent loop against a scripted LLM, retry policy and the Anthropic client against an in-process HTTP server (429/529 then success, 401, mid-stream errors, `max_tokens` truncation), run outcomes (OK, ERROR, TRUNCATED, ABORTED, deadline), admin authentication, every tool against the real seeded database, the SSE endpoint end to end, rate limiter, cost calculator, units API. CI (`.github/workflows/ci.yml`) builds and tests both on every push.
