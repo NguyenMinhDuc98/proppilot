@@ -7,7 +7,7 @@ afterEach(() => {
 
 describe('fetchInfo', () => {
   it('reads the assistant mode from /api/info', async () => {
-    const info = { mode: 'claude', provider: 'anthropic', model: 'claude-haiku-4-5-20251001' }
+    const info = { mode: 'claude', provider: 'anthropic', model: 'claude-haiku-4-5-20251001', maxHistoryItems: 20 }
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(info)))
     vi.stubGlobal('fetch', fetchMock)
 

@@ -1,5 +1,8 @@
 package dev.proppilot.info;
 
-/** What the UI may know about the model behind the assistant. {@code mode} is "claude" or "offline". */
-public record InfoView(String mode, String provider, String model) {
+/**
+ * What the UI may know about the assistant behind the chat. {@code mode} is "claude" or "offline";
+ * {@code maxHistoryItems} is the longest history the chat endpoint accepts.
+ */
+public record InfoView(String mode, String provider, String model, int maxHistoryItems) {
 }

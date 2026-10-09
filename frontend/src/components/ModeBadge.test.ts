@@ -8,8 +8,8 @@ import en from '../i18n/en'
 const fetchInfo = vi.fn()
 vi.mock('../api/info', () => ({ fetchInfo: () => fetchInfo() }))
 
-const offline: AppInfo = { mode: 'offline', provider: 'offline', model: 'rule-based' }
-const claude: AppInfo = { mode: 'claude', provider: 'anthropic', model: 'claude-haiku-4-5-20251001' }
+const offline: AppInfo = { mode: 'offline', provider: 'offline', model: 'rule-based', maxHistoryItems: 20 }
+const claude: AppInfo = { mode: 'claude', provider: 'anthropic', model: 'claude-haiku-4-5-20251001', maxHistoryItems: 20 }
 
 // The info is cached at module level, so each test loads fresh copies of the component and the i18n instance.
 async function mountBadge(reply: () => Promise<AppInfo>) {

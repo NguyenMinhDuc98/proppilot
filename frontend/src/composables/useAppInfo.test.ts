@@ -5,7 +5,7 @@ import type { AppInfo } from '../api/types'
 const fetchInfo = vi.fn()
 vi.mock('../api/info', () => ({ fetchInfo: () => fetchInfo() }))
 
-const offline: AppInfo = { mode: 'offline', provider: 'offline', model: 'rule-based' }
+const offline: AppInfo = { mode: 'offline', provider: 'offline', model: 'rule-based', maxHistoryItems: 20 }
 
 // The composable keeps its state at module level, so each test loads a fresh copy.
 async function freshUseAppInfo() {

@@ -1,11 +1,19 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { ref } from 'vue'
 import { ApiError } from '../api/http'
-import type { ChatEvent } from '../api/types'
+import type { AppInfo, ChatEvent } from '../api/types'
 import { useChatStore } from './chat'
 
 const streamChat = vi.fn()
 vi.mock('../api/chat', () => ({ streamChat: (...args: unknown[]) => streamChat(...args) }))
+
+const info = ref<AppInfo | null>(null)
+vi.mock('../composables/useAppInfo', () => ({ useAppInfo: () => ({ info }) }))
+
+function serverAllowsHistoryItems(maxHistoryItems: number) {
+  info.value = { mode: 'offline', provider: 'offline', model: 'rule-based', maxHistoryItems }
+}
 
 const done: ChatEvent = {
   type: 'done', runId: 'r1', status: 'OK', provider: 'offline', model: 'rule-based',
@@ -22,6 +30,7 @@ describe('chat store', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     streamChat.mockReset()
+    info.value = null
   })
 
   it('shows tool chips, streams tokens and records usage', async () => {
@@ -139,7 +148,7 @@ describe('chat store', () => {
     ])
   })
 
-  it('sends at most the 20 most recent history items, keeping each question with its answer', async () => {
+  it('sends at most the 20 most recent history items until the server has reported its limit, keeping each question with its answer', async () => {
     const chat = useChatStore()
     for (let n = 1; n <= 13; n++) {
       script([{ type: 'token', text: `answer ${n}` }, done])
@@ -151,6 +160,52 @@ describe('chat store', () => {
     expect(history[0]).toEqual({ role: 'user', text: 'question 3' })
     expect(history[19]).toEqual({ role: 'assistant', text: 'answer 12' })
     expect(history.map((turn) => turn.role)).toEqual(Array.from({ length: 20 }, (_, i) => (i % 2 === 0 ? 'user' : 'assistant')))
+  })
+
+  it.each([
+    { limit: 10, items: 10, firstQuestion: 'question 3' },
+    { limit: 7, items: 6, firstQuestion: 'question 5' },
+  ])('sends at most the $limit history items the server reports, as whole exchanges', async ({ limit, items, firstQuestion }) => {
+    serverAllowsHistoryItems(limit)
+    const chat = useChatStore()
+    for (let n = 1; n <= 8; n++) {
+      script([{ type: 'token', text: `answer ${n}` }, done])
+      await chat.send(`question ${n}`)
+    }
+
+    const history = streamChat.mock.calls[7][1] as { role: string; text: string }[]
+    expect(history).toHaveLength(items)
+    expect(history[0]).toEqual({ role: 'user', text: firstQuestion })
+    expect(history[items - 1]).toEqual({ role: 'assistant', text: 'answer 7' })
+  })
+
+  it.each([0, 1])('sends no history when the server allows only %i items', async (limit) => {
+    serverAllowsHistoryItems(limit)
+    const chat = useChatStore()
+    for (let n = 1; n <= 3; n++) {
+      script([{ type: 'token', text: `answer ${n}` }, done])
+      await chat.send(`question ${n}`)
+    }
+
+    expect(streamChat.mock.calls[2][1]).toEqual([])
+  })
+
+  it('follows the limit once the server has reported it', async () => {
+    const chat = useChatStore()
+    for (let n = 1; n <= 4; n++) {
+      script([{ type: 'token', text: `answer ${n}` }, done])
+      await chat.send(`question ${n}`)
+    }
+    expect(streamChat.mock.calls[3][1]).toHaveLength(6)
+
+    serverAllowsHistoryItems(2)
+    script([{ type: 'token', text: 'answer 5' }, done])
+    await chat.send('question 5')
+
+    expect(streamChat.mock.calls[4][1]).toEqual([
+      { role: 'user', text: 'question 4' },
+      { role: 'assistant', text: 'answer 4' },
+    ])
   })
 
   it('sends the whole history while it still fits', async () => {

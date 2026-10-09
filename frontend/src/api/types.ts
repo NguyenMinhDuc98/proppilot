@@ -28,11 +28,12 @@ export interface HistoryTurn {
   text: string
 }
 
-/** Which assistant the backend runs: real Claude, or the free built-in offline one. */
+/** Which assistant the backend runs (real Claude, or the free built-in offline one) and the history limit it enforces. */
 export interface AppInfo {
   mode: 'claude' | 'offline'
   provider: string
   model: string
+  maxHistoryItems: number
 }
 
 export interface Unit {

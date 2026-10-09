@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { streamChat } from '../api/chat'
 import { ApiError } from '../api/http'
 import type { ChatEvent, DonePayload, ErrorCode, HistoryTurn } from '../api/types'
+import { useAppInfo } from '../composables/useAppInfo'
 
 export interface ToolChip {
   name: string
@@ -26,10 +27,11 @@ export interface ChatMessage {
   streaming: boolean
 }
 
-/** The most history items the server accepts per question (its proppilot.chat.max-history-items default). */
-const MAX_HISTORY_ITEMS = 20
+/** The server's proppilot.chat.max-history-items default, assumed until /api/info has reported the real limit. */
+const DEFAULT_MAX_HISTORY_ITEMS = 20
 
 export const useChatStore = defineStore('chat', () => {
+  const { info } = useAppInfo()
   const messages = ref<ChatMessage[]>([])
   const busy = ref(false)
   let nextId = 1
@@ -52,7 +54,9 @@ export const useChatStore = defineStore('chat', () => {
         { role: 'assistant', text: answer.text },
       ])
     }
-    return exchanges.slice(-Math.floor(MAX_HISTORY_ITEMS / 2)).flat()
+    // Not slice(-maxExchanges): that would keep every exchange when the limit is below 2.
+    const maxExchanges = Math.floor((info.value?.maxHistoryItems ?? DEFAULT_MAX_HISTORY_ITEMS) / 2)
+    return exchanges.slice(Math.max(0, exchanges.length - maxExchanges)).flat()
   }
 
   /** The server emits tool calls only after a model round has finished, so the text so far was not part of the answer. */
