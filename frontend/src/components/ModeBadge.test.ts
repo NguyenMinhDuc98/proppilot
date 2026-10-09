@@ -1,6 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AppInfo } from '../api/types'
 import ar from '../i18n/ar'
 import en from '../i18n/en'
@@ -23,6 +23,10 @@ async function mountBadge(reply: () => Promise<AppInfo>) {
 describe('ModeBadge', () => {
   beforeEach(() => {
     fetchInfo.mockReset()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
   })
 
   it('shows nothing until the mode is known, then says the demo is offline', async () => {
@@ -60,5 +64,19 @@ describe('ModeBadge', () => {
     await flushPromises()
 
     expect(wrapper.find('.badge').exists()).toBe(false)
+  })
+
+  it('appears once a retry reaches a backend that was still waking up', async () => {
+    vi.useFakeTimers()
+    let requests = 0
+    const { wrapper } = await mountBadge(() =>
+      requests++ === 0 ? Promise.reject(new Error('server asleep')) : Promise.resolve(claude),
+    )
+    await vi.advanceTimersByTimeAsync(0)
+    expect(wrapper.find('.badge').exists()).toBe(false)
+
+    await vi.advanceTimersByTimeAsync(10_000)
+
+    expect(wrapper.text()).toBe('Claude Haiku 4.5')
   })
 })
