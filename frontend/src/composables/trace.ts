@@ -2,8 +2,8 @@ import type { ChatMessage } from '../stores/chat'
 import { formatCost, formatCount, formatLatency, formatModel } from './format'
 
 export interface TraceStep {
-  kind: 'call' | 'result' | 'failed' | 'answer'
-  /** Tool name for `call`, the tool's summary for `result` and `failed`. */
+  kind: 'note' | 'call' | 'result' | 'failed' | 'answer'
+  /** The model's text for `note`, the tool name for `call`, the tool's summary for `result` and `failed`. */
   main?: string
   /** Tool arguments as compact JSON for `call`. */
   detail?: string
@@ -22,6 +22,7 @@ export interface TraceStat {
  */
 export function buildTrace(message: ChatMessage): { steps: TraceStep[]; stats: TraceStat[] } {
   const steps: TraceStep[] = []
+  if (message.preamble) steps.push({ kind: 'note', main: message.preamble })
   for (const tool of message.tools) {
     steps.push({ kind: 'call', main: tool.name, detail: JSON.stringify(tool.args) })
     if (tool.status === 'done') steps.push({ kind: 'result', main: tool.summary })

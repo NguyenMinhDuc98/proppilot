@@ -41,6 +41,7 @@ export default {
   },
   trace: {
     toggle: 'كيف توصلت للإجابة',
+    note: 'ملاحظة من النموذج',
     called: 'استدعاء أداة',
     returned: 'نتيجة الأداة',
     failed: 'فشلت الأداة',

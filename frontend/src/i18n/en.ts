@@ -41,6 +41,7 @@ export default {
   },
   trace: {
     toggle: 'How I answered',
+    note: 'Model note',
     called: 'Called a tool',
     returned: 'Tool returned',
     failed: 'Tool failed',

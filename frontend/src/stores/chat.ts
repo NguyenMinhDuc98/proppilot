@@ -14,7 +14,10 @@ export interface ToolChip {
 export interface ChatMessage {
   id: number
   role: 'user' | 'assistant'
+  /** The answer. For an assistant message that is only the text after its last tool call. */
   text: string
+  /** What the model wrote before calling tools ("Let me check..."), kept out of the answer and shown in the trace. */
+  preamble?: string
   tools: ToolChip[]
   usage?: DonePayload
   error?: string
@@ -43,9 +46,17 @@ export const useChatStore = defineStore('chat', () => {
     return turns
   }
 
+  /** The server emits tool calls only after a model round has finished, so the text so far was not part of the answer. */
+  function moveTextToPreamble(message: ChatMessage) {
+    const note = message.text.trim()
+    if (note) message.preamble = message.preamble ? `${message.preamble}\n\n${note}` : note
+    message.text = ''
+  }
+
   function apply(message: ChatMessage, event: ChatEvent) {
     switch (event.type) {
       case 'tool_call':
+        moveTextToPreamble(message)
         message.tools.push({ name: event.name, args: event.args, status: 'running' })
         break
       case 'tool_result': {

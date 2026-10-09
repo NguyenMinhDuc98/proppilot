@@ -47,6 +47,70 @@ describe('chat store', () => {
     expect(chat.busy).toBe(false)
   })
 
+  it('moves text written before a tool call into the preamble so the answer is only what follows', async () => {
+    script([
+      { type: 'token', text: 'Let me check ' },
+      { type: 'token', text: 'the units.' },
+      { type: 'tool_call', name: 'search_units', args: {} },
+      { type: 'tool_result', name: 'search_units', summary: '6 units found', error: false },
+      { type: 'token', text: 'There are 6 units' },
+      done,
+    ])
+    const chat = useChatStore()
+
+    await chat.send('how many units?')
+
+    expect(chat.messages[1]).toMatchObject({ preamble: 'Let me check the units.', text: 'There are 6 units' })
+  })
+
+  it('separates the text of several model rounds in the preamble with a blank line', async () => {
+    script([
+      { type: 'token', text: 'First I will look up the unit.' },
+      { type: 'tool_call', name: 'get_unit_details', args: {} },
+      { type: 'tool_result', name: 'get_unit_details', summary: 'A-203', error: false },
+      { type: 'token', text: 'Now the payments.' },
+      { type: 'tool_call', name: 'get_payment_history', args: {} },
+      { type: 'tool_result', name: 'get_payment_history', summary: '12 payments', error: false },
+      { type: 'token', text: 'Rent is paid up to March.' },
+      done,
+    ])
+    const chat = useChatStore()
+
+    await chat.send('is A-203 paid up?')
+
+    expect(chat.messages[1].preamble).toBe('First I will look up the unit.\n\nNow the payments.')
+    expect(chat.messages[1].text).toBe('Rent is paid up to March.')
+  })
+
+  it('adds nothing to the preamble for a round that wrote no text or several tool calls at once', async () => {
+    script([
+      { type: 'token', text: 'Checking both.' },
+      { type: 'tool_call', name: 'search_units', args: {} },
+      { type: 'tool_call', name: 'find_overdue_tenants', args: {} },
+      { type: 'tool_result', name: 'search_units', summary: '6 units', error: false },
+      { type: 'tool_result', name: 'find_overdue_tenants', summary: '19 tenants', error: false },
+      { type: 'tool_call', name: 'get_unit_details', args: {} },
+      { type: 'token', text: 'Done.' },
+      done,
+    ])
+    const chat = useChatStore()
+
+    await chat.send('both')
+
+    expect(chat.messages[1].preamble).toBe('Checking both.')
+    expect(chat.messages[1].text).toBe('Done.')
+  })
+
+  it('keeps the text as the answer when the model calls no tool', async () => {
+    script([{ type: 'token', text: 'I can only help with your portfolio.' }, done])
+    const chat = useChatStore()
+
+    await chat.send('what is the weather?')
+
+    expect(chat.messages[1].text).toBe('I can only help with your portfolio.')
+    expect(chat.messages[1].preamble).toBeUndefined()
+  })
+
   it('marks a failed tool call', async () => {
     script([
       { type: 'tool_call', name: 'get_unit_details', args: {} },
@@ -72,6 +136,26 @@ describe('chat store', () => {
     expect(streamChat.mock.calls[1][1]).toEqual([
       { role: 'user', text: 'first' },
       { role: 'assistant', text: 'first answer' },
+    ])
+  })
+
+  it('sends only the final answer as history, never the text written before tool calls', async () => {
+    script([
+      { type: 'token', text: 'Let me check the units.' },
+      { type: 'tool_call', name: 'search_units', args: {} },
+      { type: 'tool_result', name: 'search_units', summary: '6 units found', error: false },
+      { type: 'token', text: 'There are 6 units' },
+      done,
+    ])
+    script([{ type: 'token', text: 'ok' }, done])
+    const chat = useChatStore()
+
+    await chat.send('how many units?')
+    await chat.send('thanks')
+
+    expect(streamChat.mock.calls[1][1]).toEqual([
+      { role: 'user', text: 'how many units?' },
+      { role: 'assistant', text: 'There are 6 units' },
     ])
   })
 

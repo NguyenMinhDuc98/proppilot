@@ -28,6 +28,27 @@ describe('buildTrace', () => {
     ])
   })
 
+  it('starts with a note holding what the model wrote before its tool calls', () => {
+    const { steps } = buildTrace(
+      message({
+        preamble: 'Let me check the units.',
+        tools: [{ name: 'search_units', args: {}, status: 'done', summary: '6 units' }],
+        usage,
+      }),
+    )
+
+    expect(steps.map((s) => s.kind)).toEqual(['note', 'call', 'result', 'answer'])
+    expect(steps[0]).toEqual({ kind: 'note', main: 'Let me check the units.' })
+  })
+
+  it('has no note step when the model wrote nothing before its tool calls', () => {
+    const { steps } = buildTrace(
+      message({ tools: [{ name: 'search_units', args: {}, status: 'done', summary: '6 units' }], usage }),
+    )
+
+    expect(steps.map((s) => s.kind)).toEqual(['call', 'result', 'answer'])
+  })
+
   it('marks a failed tool call', () => {
     const { steps } = buildTrace(
       message({ tools: [{ name: 'get_unit_details', args: {}, status: 'failed', summary: 'No unit' }], usage }),

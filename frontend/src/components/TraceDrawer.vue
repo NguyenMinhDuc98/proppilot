@@ -11,7 +11,7 @@ const open = ref(false)
 const panelId = `trace-${useId()}`
 const trace = computed(() => buildTrace(props.message))
 
-const titleKey = { call: 'called', result: 'returned', failed: 'failed', answer: 'answered' } as const
+const titleKey = { note: 'note', call: 'called', result: 'returned', failed: 'failed', answer: 'answered' } as const
 </script>
 
 <template>
@@ -31,6 +31,7 @@ const titleKey = { call: 'called', result: 'returned', failed: 'failed', answer:
             <span class="step-title">{{ t(`trace.${titleKey[step.kind]}`) }}</span>
             <code v-if="step.kind === 'call'" class="mono">{{ step.main }}</code>
             <code v-if="step.detail && step.detail !== '{}'" class="mono dim">{{ step.detail }}</code>
+            <span v-if="step.kind === 'note'" class="detail note-text" dir="auto">{{ step.main }}</span>
             <span v-if="step.kind === 'result' || step.kind === 'failed'" class="detail" dir="auto">{{ step.main }}</span>
             <span v-if="step.kind === 'answer'" class="detail">{{ t('trace.answerTokens', { n: step.tokens ?? 0 }) }}</span>
           </div>
@@ -107,6 +108,7 @@ const titleKey = { call: 'called', result: 'returned', failed: 'failed', answer:
 .step-title { font-size: 12px; color: var(--pp-muted); font-weight: 600; }
 .mono { font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 12.5px; overflow-wrap: anywhere; direction: ltr; text-align: start; }
 .detail { font-size: 13px; overflow-wrap: anywhere; }
+.note-text { white-space: pre-line; }
 .dim { color: var(--pp-muted); }
 .stats { margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; }
 .stat { padding: 8px 12px; border-radius: 10px; background: var(--pp-bg); }
