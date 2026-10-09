@@ -66,7 +66,9 @@ public class AnthropicLlmClient implements LlmClient {
         return left.compareTo(configured) < 0 ? left : configured;
     }
 
+    /** One try. {@code timeout} covers waiting for the headers and reading the whole streamed reply. */
     private LlmResponse attempt(LlmRequest request, Duration timeout, Consumer<String> onTextDelta) {
+        long startedAt = System.nanoTime();
         var httpRequest = HttpRequest.newBuilder(URI.create(props.apiUrl()))
                 .timeout(timeout)
                 .header("content-type", "application/json")
@@ -83,13 +85,18 @@ public class AnthropicLlmClient implements LlmClient {
             Thread.currentThread().interrupt();
             throw new LlmException("Request interrupted", ErrorCode.LLM_ERROR, e);
         }
-        try (var body = response.body()) {
+        var body = response.body();
+        var watchdog = new StreamWatchdog(body, timeout.minus(Duration.ofNanos(System.nanoTime() - startedAt)));
+        try (body; watchdog) {
             if (response.statusCode() != 200) {
                 throw rejected(response, body);
             }
             var reader = new BufferedReader(new InputStreamReader(body, StandardCharsets.UTF_8));
             return new AnthropicStreamParser(json, onTextDelta).parse(reader);
         } catch (IOException e) {
+            if (watchdog.expired()) {
+                throw LlmException.retryable("Claude response stream timed out", ErrorCode.LLM_TIMEOUT, null, e);
+            }
             // Not e.getMessage(): a parse error quotes the response text.
             throw new LlmException("Claude response stream failed (" + e.getClass().getSimpleName() + ")", ErrorCode.LLM_ERROR, e);
         }
