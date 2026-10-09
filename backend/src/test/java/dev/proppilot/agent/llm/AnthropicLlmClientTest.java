@@ -134,10 +134,13 @@ class AnthropicLlmClientTest {
     }
 
     private AnthropicLlmClient client(int port, int timeoutSeconds, int maxRetries) {
-        var props = new LlmProperties("anthropic", API_KEY, "test-model", "http://127.0.0.1:" + port + "/v1/messages",
-                1024, timeoutSeconds, maxRetries, 1000, BigDecimal.ONE, BigDecimal.ONE);
-        return new AnthropicLlmClient(props, new ObjectMapper(),
+        return new AnthropicLlmClient(props(port, timeoutSeconds, maxRetries, 1000), new ObjectMapper(),
                 new RetryPolicy(maxRetries, Duration.ofSeconds(1), sleeps::add, () -> 0.5));
+    }
+
+    private static LlmProperties props(int port, int timeoutSeconds, int maxRetries, int retryBaseDelayMs) {
+        return new LlmProperties("anthropic", API_KEY, "test-model", "http://127.0.0.1:" + port + "/v1/messages",
+                1024, timeoutSeconds, maxRetries, retryBaseDelayMs, BigDecimal.ONE, BigDecimal.ONE);
     }
 
     private LlmResponse complete() {
@@ -329,6 +332,31 @@ class AnthropicLlmClientTest {
         assertThat(requests).hasValue(2);
         assertThat(sleeps).hasSize(1);
         assertThat(deltas).containsExactly("Hello ", "there");
+    }
+
+    @Test
+    void theConfiguredTimeoutCapsTheCallEvenWhenTheRequestsTimeBudgetIsLonger() {
+        replies.add(Reply.stream(ANSWER_STREAM).after(Duration.ofSeconds(4)));
+        long startedAt = System.nanoTime();
+
+        assertThatThrownBy(() -> client(server.getAddress().getPort(), 1, 0).complete(REQUEST, deltas::add))
+                .isInstanceOfSatisfying(LlmException.class, e -> assertThat(e.code()).isEqualTo(ErrorCode.LLM_TIMEOUT));
+
+        assertThat(Duration.ofNanos(System.nanoTime() - startedAt)).isLessThan(Duration.ofSeconds(3));
+        assertThat(deltas).isEmpty();
+    }
+
+    @Test
+    void theClientBuiltFromTheConfigurationRetriesAsOftenAsConfigured() {
+        for (int i = 0; i < 3; i++) {
+            replies.add(Reply.status(503));
+        }
+        var configured = new AnthropicLlmClient(props(server.getAddress().getPort(), 5, 1, 1), new ObjectMapper());
+
+        assertThatThrownBy(() -> configured.complete(REQUEST, deltas::add))
+                .isInstanceOfSatisfying(LlmException.class, e -> assertThat(e.code()).isEqualTo(ErrorCode.LLM_OVERLOADED));
+
+        assertThat(requests).hasValue(2);
     }
 
     @Test
