@@ -27,6 +27,9 @@ services:
         sync: false
       - key: ANTHROPIC_API_KEY
         sync: false
+      # Enables GET /api/admin/runs. 24+ characters (openssl rand -hex 24). Leave unset to switch the admin endpoints off.
+      - key: ADMIN_TOKEN
+        sync: false
       - key: CHAT_RATE_LIMIT_PER_MINUTE
         value: "10"
       - key: CHAT_DAILY_LIMIT
