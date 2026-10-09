@@ -171,6 +171,19 @@ class AnthropicLlmClientTest {
     }
 
     @Test
+    void aRetryAfterLongerThanTheTimeBudgetReportsTheOverloadInsteadOfWaitingForIt() {
+        replies.add(new Reply(429, Map.of("Retry-After", "30"), "{}", Duration.ZERO, Duration.ZERO));
+        replies.add(Reply.stream(ANSWER_STREAM));
+        var request = new LlmRequest("system", List.of(Message.user("hi")), List.of(), Duration.ofSeconds(5));
+
+        assertThatThrownBy(() -> client(server.getAddress().getPort()).complete(request, deltas::add))
+                .isInstanceOfSatisfying(LlmException.class, e -> assertThat(e.code()).isEqualTo(ErrorCode.LLM_OVERLOADED));
+
+        assertThat(requests).hasValue(1);
+        assertThat(sleeps).isEmpty();
+    }
+
+    @Test
     void authenticationFailuresAreNotRetried() {
         replies.add(Reply.status(401));
 

@@ -5,15 +5,18 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import dev.proppilot.agent.ErrorCode;
 import java.time.Duration;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.DoubleSupplier;
+import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
 
 class RetryPolicyTest {
 
     private static final Duration ONE_SECOND = Duration.ofSeconds(1);
+    private static final Supplier<Duration> PLENTY_OF_TIME = () -> Duration.ofHours(1);
 
     private final List<Duration> sleeps = new ArrayList<>();
     private final AtomicInteger attempts = new AtomicInteger();
@@ -27,7 +30,11 @@ class RetryPolicyTest {
     }
 
     private String alwaysFail(RetryPolicy policy, LlmException failure) {
-        return policy.execute(text -> { }, sink -> {
+        return alwaysFail(policy, PLENTY_OF_TIME, failure);
+    }
+
+    private String alwaysFail(RetryPolicy policy, Supplier<Duration> timeLeft, LlmException failure) {
+        return policy.execute(timeLeft, text -> { }, sink -> {
             attempts.incrementAndGet();
             throw failure;
         });
@@ -85,11 +92,53 @@ class RetryPolicyTest {
     }
 
     @Test
+    void doesNotSleepThroughARetryAfterThatOutlastsTheTimeLeftAndRethrowsTheOriginalFailure() {
+        var policy = policy(3, ONE_SECOND, () -> 0.5);
+        var failure = LlmException.retryable("slow down", ErrorCode.LLM_OVERLOADED, Duration.ofSeconds(30), null);
+
+        assertThatThrownBy(() -> alwaysFail(policy, () -> Duration.ofSeconds(5), failure)).isSameAs(failure);
+
+        assertThat(attempts).hasValue(1);
+        assertThat(sleeps).isEmpty();
+    }
+
+    @Test
+    void doesNotSleepThroughABackoffThatOutlastsTheTimeLeft() {
+        var policy = policy(3, Duration.ofSeconds(10), () -> 1.0);
+        var failure = transientFailure();
+
+        assertThatThrownBy(() -> alwaysFail(policy, () -> Duration.ofSeconds(9), failure)).isSameAs(failure);
+
+        assertThat(attempts).hasValue(1);
+        assertThat(sleeps).isEmpty();
+    }
+
+    @Test
+    void aWaitEqualToTheTimeLeftLeavesNothingForTheRetryAndIsSkipped() {
+        var policy = policy(3, ONE_SECOND, () -> 1.0);
+
+        assertThatThrownBy(() -> alwaysFail(policy, () -> ONE_SECOND, transientFailure())).isInstanceOf(LlmException.class);
+
+        assertThat(sleeps).isEmpty();
+    }
+
+    @Test
+    void readsTheTimeLeftAgainBeforeEveryRetry() {
+        var policy = policy(3, ONE_SECOND, () -> 0.5);
+        var remaining = new ArrayDeque<>(List.of(Duration.ofSeconds(10), ONE_SECOND));
+
+        assertThatThrownBy(() -> alwaysFail(policy, remaining::remove, transientFailure())).isInstanceOf(LlmException.class);
+
+        assertThat(sleeps).containsExactly(Duration.ofMillis(500));
+        assertThat(attempts).hasValue(2);
+    }
+
+    @Test
     void makesMaxRetriesPlusOneAttemptsThenRethrowsTheLastFailure() {
         var policy = policy(3, ONE_SECOND, () -> 0.5);
         var last = LlmException.retryable("the last one", ErrorCode.LLM_OVERLOADED);
 
-        assertThatThrownBy(() -> policy.execute(text -> { }, sink -> {
+        assertThatThrownBy(() -> policy.execute(PLENTY_OF_TIME, text -> { }, sink -> {
             if (attempts.incrementAndGet() == 4) {
                 throw last;
             }
@@ -125,7 +174,7 @@ class RetryPolicyTest {
     void returnsTheResultOfTheFirstAttemptThatSucceeds() {
         var policy = policy(3, ONE_SECOND, () -> 0.5);
 
-        var result = policy.execute(text -> { }, sink -> {
+        var result = policy.execute(PLENTY_OF_TIME, text -> { }, sink -> {
             if (attempts.incrementAndGet() < 3) {
                 throw transientFailure();
             }
@@ -142,7 +191,7 @@ class RetryPolicyTest {
         var policy = policy(3, ONE_SECOND, () -> 0.5);
         var delivered = new ArrayList<String>();
 
-        assertThatThrownBy(() -> policy.execute(delivered::add, sink -> {
+        assertThatThrownBy(() -> policy.execute(PLENTY_OF_TIME, delivered::add, sink -> {
             attempts.incrementAndGet();
             sink.accept("partial answer");
             throw transientFailure();
@@ -158,7 +207,7 @@ class RetryPolicyTest {
         var policy = policy(3, ONE_SECOND, () -> 0.5);
         var delivered = new ArrayList<String>();
 
-        var result = policy.execute(delivered::add, sink -> {
+        var result = policy.execute(PLENTY_OF_TIME, delivered::add, sink -> {
             if (attempts.incrementAndGet() == 1) {
                 throw transientFailure();
             }

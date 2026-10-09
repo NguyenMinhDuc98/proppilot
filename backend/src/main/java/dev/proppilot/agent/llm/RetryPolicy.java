@@ -6,12 +6,14 @@ import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 import java.util.function.DoubleSupplier;
+import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
  * Retries a model call that failed for a transient reason: exponential backoff with full jitter, or the wait the
- * provider asked for. Never retries once text has reached the caller, because the user has already seen it.
+ * provider asked for. Never retries once text has reached the caller, because the user has already seen it, and never
+ * waits longer than the time left, so the original failure is reported instead of a timeout after the wait.
  */
 final class RetryPolicy {
 
@@ -48,8 +50,12 @@ final class RetryPolicy {
         return new RetryPolicy(maxRetries, baseDelay, Thread::sleep, () -> ThreadLocalRandom.current().nextDouble());
     }
 
-    /** Runs the attempt up to {@code maxRetries + 1} times and rethrows the last failure. */
-    <T> T execute(Consumer<String> onTextDelta, Attempt<T> attempt) {
+    /**
+     * Runs the attempt up to {@code maxRetries + 1} times and rethrows the last failure.
+     *
+     * @param timeLeft the time the whole call may still take; a retry whose wait is not shorter than this is skipped
+     */
+    <T> T execute(Supplier<Duration> timeLeft, Consumer<String> onTextDelta, Attempt<T> attempt) {
         var textDelivered = new AtomicBoolean();
         Consumer<String> tracking = text -> {
             textDelivered.set(true);
@@ -63,6 +69,10 @@ final class RetryPolicy {
                     throw e;
                 }
                 var delay = delayBeforeRetry(retry, e);
+                if (delay.compareTo(timeLeft.get()) >= 0) {
+                    log.warn("Claude call failed ({}); not retrying, a {} ms wait would use up the time left", e.code(), delay.toMillis());
+                    throw e;
+                }
                 log.warn("Claude call failed ({}); retry {}/{} in {} ms", e.code(), retry + 1, maxRetries, delay.toMillis());
                 pause(delay);
             }

@@ -16,6 +16,7 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -53,17 +54,17 @@ public class AnthropicLlmClient implements LlmClient {
     @Override
     public LlmResponse complete(LlmRequest request, Consumer<String> onTextDelta) {
         long startedAt = System.nanoTime();
-        return retries.execute(onTextDelta, sink -> attempt(request, timeoutLeft(request, startedAt), sink));
+        Supplier<Duration> timeLeft = () -> request.timeout().minus(Duration.ofNanos(System.nanoTime() - startedAt));
+        return retries.execute(timeLeft, onTextDelta, sink -> attempt(request, attemptTimeout(timeLeft.get()), sink));
     }
 
     /** The configured limit, or less when the caller's time budget (shared by all retries) is nearly used up. */
-    private Duration timeoutLeft(LlmRequest request, long startedAt) {
-        var left = request.timeout().minus(Duration.ofNanos(System.nanoTime() - startedAt));
-        if (!left.isPositive()) {
+    private Duration attemptTimeout(Duration timeLeft) {
+        if (!timeLeft.isPositive()) {
             throw new LlmException("No time left for another Claude call", ErrorCode.LLM_TIMEOUT);
         }
         var configured = Duration.ofSeconds(props.timeoutSeconds());
-        return left.compareTo(configured) < 0 ? left : configured;
+        return timeLeft.compareTo(configured) < 0 ? timeLeft : configured;
     }
 
     /** One try. {@code timeout} covers waiting for the headers and reading the whole streamed reply. */
