@@ -3,9 +3,11 @@ package dev.proppilot.agent.llm;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import dev.proppilot.agent.ErrorCode;
 import dev.proppilot.config.LlmProperties;
 import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -14,30 +16,46 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.function.Consumer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
-/** Calls the Claude Messages API over plain HTTP with streaming enabled. */
+/** Calls the Claude Messages API over plain HTTP with streaming enabled, retrying transient failures. */
 @Component
 @ConditionalOnProperty(name = "proppilot.llm.provider", havingValue = "anthropic")
 public class AnthropicLlmClient implements LlmClient {
 
+    private static final Logger log = LoggerFactory.getLogger(AnthropicLlmClient.class);
     private static final String API_VERSION = "2023-06-01";
+    private static final int LOGGED_ERROR_BODY_BYTES = 500;
 
     private final LlmProperties props;
     private final ObjectMapper json;
+    private final RetryPolicy retries;
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
 
+    @Autowired
     public AnthropicLlmClient(LlmProperties props, ObjectMapper json) {
+        this(props, json, RetryPolicy.withBackoff(props.maxRetries(), Duration.ofMillis(props.retryBaseDelayMs())));
+    }
+
+    AnthropicLlmClient(LlmProperties props, ObjectMapper json, RetryPolicy retries) {
         if (props.apiKey() == null || props.apiKey().isBlank()) {
             throw new IllegalStateException("ANTHROPIC_API_KEY is required when LLM_PROVIDER=anthropic");
         }
         this.props = props;
         this.json = json;
+        this.retries = retries;
     }
 
     @Override
     public LlmResponse complete(LlmRequest request, Consumer<String> onTextDelta) {
+        return retries.execute(onTextDelta, sink -> attempt(request, sink));
+    }
+
+    private LlmResponse attempt(LlmRequest request, Consumer<String> onTextDelta) {
         var httpRequest = HttpRequest.newBuilder(URI.create(props.apiUrl()))
                 .timeout(Duration.ofSeconds(props.timeoutSeconds()))
                 .header("content-type", "application/json")
@@ -45,20 +63,37 @@ public class AnthropicLlmClient implements LlmClient {
                 .header("anthropic-version", API_VERSION)
                 .POST(HttpRequest.BodyPublishers.ofString(buildBody(request).toString()))
                 .build();
+        HttpResponse<InputStream> response;
         try {
-            var response = http.send(httpRequest, HttpResponse.BodyHandlers.ofInputStream());
-            try (var body = response.body()) {
-                if (response.statusCode() != 200) {
-                    throw new LlmException(describeFailure(response.statusCode(), new String(body.readAllBytes(), StandardCharsets.UTF_8)));
-                }
-                var reader = new BufferedReader(new InputStreamReader(body, StandardCharsets.UTF_8));
-                return new AnthropicStreamParser(json, onTextDelta).parse(reader);
-            }
+            response = http.send(httpRequest, HttpResponse.BodyHandlers.ofInputStream());
         } catch (IOException e) {
-            throw new LlmException("Could not reach the Claude API: " + e.getMessage(), e);
+            throw AnthropicErrors.unreachable(e);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new LlmException("Request interrupted", e);
+            throw new LlmException("Request interrupted", ErrorCode.LLM_ERROR, e);
+        }
+        try (var body = response.body()) {
+            if (response.statusCode() != 200) {
+                throw rejected(response, body);
+            }
+            var reader = new BufferedReader(new InputStreamReader(body, StandardCharsets.UTF_8));
+            return new AnthropicStreamParser(json, onTextDelta).parse(reader);
+        } catch (IOException e) {
+            throw new LlmException("Claude response stream failed: " + e.getMessage(), ErrorCode.LLM_ERROR, e);
+        }
+    }
+
+    /** Logs what the API said (never the key) and returns an exception that carries only the status. */
+    private LlmException rejected(HttpResponse<?> response, InputStream body) {
+        log.warn("Claude API returned {}: {}", response.statusCode(), readForLog(body));
+        return AnthropicErrors.forStatus(response.statusCode(), response.headers().firstValue("retry-after"));
+    }
+
+    private static String readForLog(InputStream body) {
+        try {
+            return new String(body.readNBytes(LOGGED_ERROR_BODY_BYTES), StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            return "(unreadable)";
         }
     }
 
@@ -104,15 +139,5 @@ public class AnthropicLlmClient implements LlmClient {
                         .put("content", result.content()).put("is_error", result.error());
             }
         }
-    }
-
-    private String describeFailure(int status, String body) {
-        String detail;
-        try {
-            detail = json.readTree(body).path("error").path("message").asText(body);
-        } catch (IOException e) {
-            detail = "unreadable response";
-        }
-        return "Claude API returned " + status + ": " + detail;
     }
 }

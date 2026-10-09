@@ -34,9 +34,15 @@ public class ScriptedLlmClient implements LlmClient {
         return this;
     }
 
-    public ScriptedLlmClient thenFail(String message) {
-        script.add(new LlmException(message));
+    public ScriptedLlmClient thenFail(ErrorCode code, String message) {
+        script.add(new LlmException(message, code));
         return this;
+    }
+
+    /** For tests that share one instance as a Spring bean. */
+    public void reset() {
+        script.clear();
+        requests.clear();
     }
 
     @Override

@@ -10,7 +10,7 @@ import org.junit.jupiter.api.Test;
 class CostCalculatorTest {
 
     private final CostCalculator calculator = new CostCalculator(new LlmProperties(
-            "anthropic", "k", "m", "u", 1024, 60, new BigDecimal("1.00"), new BigDecimal("5.00")));
+            "anthropic", "k", "m", "u", 1024, 60, 3, 1000, new BigDecimal("1.00"), new BigDecimal("5.00")));
 
     @Test
     void pricesInputAndOutputTokensPerMillion() {

@@ -34,6 +34,8 @@ proppilot:
     api-url: https://api.anthropic.com/v1/messages
     max-tokens: 1024
     timeout-seconds: 60
+    max-retries: ${LLM_MAX_RETRIES:3}
+    retry-base-delay-ms: 1000
     price-input-per-mtok: ${LLM_PRICE_INPUT_PER_MTOK:1.00}
     price-output-per-mtok: ${LLM_PRICE_OUTPUT_PER_MTOK:5.00}
   agent:

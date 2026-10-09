@@ -8,9 +8,13 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /** Turns an Anthropic Messages API server-sent-event stream into one {@link LlmResponse}, forwarding text deltas. */
 final class AnthropicStreamParser {
+
+    private static final Logger log = LoggerFactory.getLogger(AnthropicStreamParser.class);
 
     private final ObjectMapper json;
     private final Consumer<String> onTextDelta;
@@ -56,7 +60,11 @@ final class AnthropicStreamParser {
                 stopReason = mapStopReason(event.path("delta").path("stop_reason").asText());
                 outputTokens = event.path("usage").path("output_tokens").asInt(outputTokens);
             }
-            case "error" -> throw new LlmException("Claude API error: " + event.path("error").path("message").asText("unknown"));
+            case "error" -> {
+                var error = event.path("error");
+                log.warn("Claude stream reported an error: {}", error);
+                throw AnthropicErrors.forStreamError(error.path("type").asText("unknown"));
+            }
             default -> { }
         }
     }

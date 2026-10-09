@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.proppilot.agent.AgentEvent;
 import dev.proppilot.agent.AgentLoop;
 import dev.proppilot.agent.AgentResult;
+import dev.proppilot.agent.ErrorCode;
 import dev.proppilot.agent.llm.LlmClient;
 import jakarta.annotation.PreDestroy;
 import java.io.IOException;
@@ -65,7 +66,7 @@ public class ChatService {
             long latencyMs = Duration.ofNanos(System.nanoTime() - started).toMillis();
             var run = record(request.message(), result, toolNames, latencyMs);
             if (result.status() == AgentResult.Status.ERROR) {
-                send(emitter, "error", new ErrorPayload(result.answer()));
+                send(emitter, "error", ErrorPayload.of(result.errorCode()));
             }
             send(emitter, "done", DonePayload.of(run, llm));
             emitter.complete();
@@ -125,7 +126,12 @@ public class ChatService {
     record TokenPayload(String text) {
     }
 
-    record ErrorPayload(String message) {
+    /** {@code message} is a generic English fallback; clients show their own text for {@code code}. */
+    record ErrorPayload(String message, String code) {
+
+        static ErrorPayload of(ErrorCode code) {
+            return new ErrorPayload(code.message(), code.code());
+        }
     }
 
     record DonePayload(UUID runId, String status, String provider, String model, int inputTokens, int outputTokens,

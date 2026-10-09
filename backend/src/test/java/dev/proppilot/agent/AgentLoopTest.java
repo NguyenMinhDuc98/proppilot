@@ -132,13 +132,14 @@ class AgentLoopTest {
     }
 
     @Test
-    void llmFailureEndsTheRunWithAnErrorStatus() {
-        var llm = new ScriptedLlmClient().thenFail("Claude API returned 529: overloaded");
+    void llmFailureEndsTheRunWithAnErrorCodeAndNoProviderText() {
+        var llm = new ScriptedLlmClient().thenFail(ErrorCode.LLM_OVERLOADED, "Claude API returned 529: upstream-secret");
 
         var result = loop(llm, 6).run("hi", List.of(), e -> { });
 
         assertThat(result.status()).isEqualTo(AgentResult.Status.ERROR);
-        assertThat(result.answer()).contains("529");
+        assertThat(result.errorCode()).isEqualTo(ErrorCode.LLM_OVERLOADED);
+        assertThat(result.answer()).isEqualTo(ErrorCode.LLM_OVERLOADED.message()).doesNotContain("upstream-secret");
     }
 
     @Test

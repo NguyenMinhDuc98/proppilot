@@ -53,8 +53,8 @@ public class AgentLoop {
             try {
                 response = llm.complete(new LlmRequest(system, List.copyOf(messages), toolSpecs), text -> events.accept(new AgentEvent.Token(text)));
             } catch (LlmException e) {
-                log.warn("LLM call failed on iteration {}: {}", iteration, e.getMessage());
-                return new AgentResult(e.getMessage(), usage, toolCalls, iteration, AgentResult.Status.ERROR);
+                log.warn("LLM call failed on iteration {} ({}): {}", iteration, e.code(), e.getMessage());
+                return AgentResult.failed(e.code(), usage, toolCalls, iteration);
             }
             usage = usage.plus(response.usage());
             messages.add(new Message(Message.Role.ASSISTANT, response.content()));

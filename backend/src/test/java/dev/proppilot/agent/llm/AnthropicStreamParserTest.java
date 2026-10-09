@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.proppilot.agent.ErrorCode;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.StringReader;
@@ -83,10 +84,14 @@ class AnthropicStreamParserTest {
     }
 
     @Test
-    void streamedErrorEventBecomesLlmException() {
-        var stream = "data: {\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\",\"message\":\"Overloaded\"}}\n";
+    void streamedOverloadedErrorBecomesRetryableLlmExceptionWithoutProviderText() {
+        var stream = "data: {\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\",\"message\":\"provider-detail\"}}\n";
 
         assertThatThrownBy(() -> new AnthropicStreamParser(json, s -> { }).parse(new BufferedReader(new StringReader(stream))))
-                .isInstanceOf(LlmException.class).hasMessageContaining("Overloaded");
+                .isInstanceOfSatisfying(LlmException.class, e -> {
+                    assertThat(e.code()).isEqualTo(ErrorCode.LLM_OVERLOADED);
+                    assertThat(e.retryable()).isTrue();
+                    assertThat(e.getMessage()).doesNotContain("provider-detail");
+                });
     }
 }

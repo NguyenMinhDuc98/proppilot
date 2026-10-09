@@ -15,6 +15,8 @@ public record LlmProperties(
         String apiUrl,
         int maxTokens,
         int timeoutSeconds,
+        int maxRetries,
+        int retryBaseDelayMs,
         BigDecimal priceInputPerMtok,
         BigDecimal priceOutputPerMtok) {
 }
