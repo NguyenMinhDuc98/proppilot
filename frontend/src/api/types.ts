@@ -75,5 +75,4 @@ export interface Stats {
   totalInputTokens: number
   totalOutputTokens: number
   toolUsage: { tool: string; calls: number }[]
-  recentRuns: { at: string; question: string; toolCalls: number; latencyMs: number; costUsd: number; status: string }[]
 }

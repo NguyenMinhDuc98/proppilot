@@ -96,12 +96,6 @@ export default {
     tokens: 'Tokens in / out',
     totalCost: 'Total cost',
     toolUsage: 'Tool calls by tool',
-    recent: 'Recent questions',
-    question: 'Question',
-    latency: 'Latency',
-    cost: 'Cost',
-    tools: 'Tools',
-    when: 'When',
     none: 'No questions yet. Ask the assistant something first.',
   },
 }

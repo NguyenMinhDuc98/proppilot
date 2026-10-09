@@ -7,8 +7,6 @@ import org.springframework.data.jpa.repository.Query;
 
 public interface ChatRunRepository extends JpaRepository<ChatRun, UUID> {
 
-    List<ChatRun> findTop10ByOrderByCreatedAtDesc();
-
     @Query("""
             select count(r) as runs, sum(r.costUsd) as totalCost, avg(r.costUsd) as avgCost,
                    avg(r.latencyMs) as avgLatency, avg(r.toolCalls) as avgToolCalls,

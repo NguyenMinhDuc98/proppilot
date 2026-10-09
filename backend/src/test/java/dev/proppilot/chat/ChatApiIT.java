@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -72,8 +73,17 @@ class ChatApiIT extends PostgresIntegrationTest {
         mvc.perform(get("/api/stats"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.totalRuns").value(org.hamcrest.Matchers.greaterThanOrEqualTo(1)))
-                .andExpect(jsonPath("$.toolUsage[?(@.tool=='search_units')]").exists())
-                .andExpect(jsonPath("$.recentRuns[0].question").exists());
+                .andExpect(jsonPath("$.toolUsage[?(@.tool=='search_units')]").exists());
+    }
+
+    @Test
+    void publicStatsNeverExposeWhatVisitorsAsked() throws Exception {
+        chat("{\"message\":\"Which units in Dammam are vacant? (stats privacy marker)\"}");
+
+        mvc.perform(get("/api/stats"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.recentRuns").doesNotExist())
+                .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("privacy marker"))));
     }
 
     @Test
