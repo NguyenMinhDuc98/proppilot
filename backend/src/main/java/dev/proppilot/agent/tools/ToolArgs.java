@@ -35,7 +35,8 @@ public final class ToolArgs {
         if (node == null || node.isNull()) {
             return Optional.empty();
         }
-        if (!node.canConvertToInt() || node.isTextual()) {
+        // canConvertToInt alone accepts 2.7 and asInt would silently truncate it to 2
+        if (!node.isNumber() || !node.canConvertToInt() || !node.canConvertToExactIntegral()) {
             throw new ToolInputException(name + " must be an integer");
         }
         int value = node.asInt();
@@ -58,6 +59,17 @@ public final class ToolArgs {
             throw new ToolInputException(name + " must not be negative");
         }
         return Optional.of(value);
+    }
+
+    public Optional<Boolean> bool(String name) {
+        var node = input.get(name);
+        if (node == null || node.isNull()) {
+            return Optional.empty();
+        }
+        if (!node.isBoolean()) {
+            throw new ToolInputException(name + " must be a boolean");
+        }
+        return Optional.of(node.booleanValue());
     }
 
     public <E extends Enum<E>> Optional<E> enumValue(String name, Class<E> type) {

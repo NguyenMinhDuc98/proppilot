@@ -133,6 +133,21 @@ class ToolsIT extends PostgresIntegrationTest {
     }
 
     @Test
+    void paymentHistoryRejectsAFractionalNumberOfMonths() throws Exception {
+        var result = call("get_payment_history", "{\"unit_code\":\"" + chronicUnit() + "\",\"months\":2.7}");
+
+        assertThat(result.error()).isTrue();
+        assertThat(result.content()).contains("months must be an integer");
+    }
+
+    @Test
+    void paymentHistoryAcceptsAWholeNumberWrittenWithADecimalPoint() throws Exception {
+        var d = data(call("get_payment_history", "{\"unit_code\":\"" + chronicUnit() + "\",\"months\":2.0}"));
+
+        assertThat(d.get("payments")).hasSize(2);
+    }
+
+    @Test
     void paymentHistoryByAmbiguousNameAsksForClarification() throws Exception {
         var result = call("get_payment_history", "{\"tenant_name\":\"Ahmed\"}");
 
