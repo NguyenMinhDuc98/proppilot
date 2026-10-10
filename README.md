@@ -176,9 +176,9 @@ curl -X POST localhost:8080/api/actions/<id>/approve -H 'Idempotency-Key: my-fir
 
 ## Evals
 
-`evals/questions.json` has 26 cases with expected facts and expected tools: 20 read questions (10 English, 10 Arabic) and 6 write-action cases (3 English, 3 Arabic). `node evals/run.mjs` runs them against a live backend and prints pass rate, average cost and average latency.
+`evals/questions.json` has 26 cases with expected facts and expected tools: 20 read questions (10 English, 10 Arabic) and 6 write-action cases (3 English, 3 Arabic). `node evals/run.mjs` runs them against a live backend and prints pass rate, average cost and average latency. `--only` runs the cases whose id starts with a given prefix: `--only en-,ar-` for the read questions, `--only write-` for the write actions.
 
-Latest run of the 20 read questions against **real Claude** (`claude-haiku-4-5-20251001`, seeded data, backend on a laptop talking to the Anthropic API):
+Latest run of the 20 read questions against **real Claude** (`claude-haiku-4-5-20251001`, seeded data, backend on a laptop talking to the Anthropic API), made on 2026-10-08 at commit `1a9eaf7`:
 
 | Set | Passed | Pass rate | Avg cost / question | Avg latency |
 |---|---|---|---|---|
@@ -186,17 +186,22 @@ Latest run of the 20 read questions against **real Claude** (`claude-haiku-4-5-2
 | English | 10/10 | 100% | $0.0055 | 3.6 s |
 | Arabic | 10/10 | 100% | $0.0063 | 4.8 s |
 
+That run is older than the write actions. The agent then had its six read tools and the shorter system prompt; since then it has gained three tool definitions and more rules in the prompt, so every call now sends more input tokens. The cost per question is therefore higher than this table says, and the latency probably is too. I have not re-run it against Claude.
+
 Tool selection was correct on all 20 questions: the right tool was called every time, and the answers were in the language of the question.
 
 The first Claude run scored 16/20. I read the four failing answers: all were correct, and my grader was too literal (it wanted `4800` but Claude wrote `4,800`, and in Arabic Claude wrote `لم يُدفع` instead of the raw status `UNPAID`). I fixed the grader to ignore number formatting and accept alternative wordings of the same fact, and did not change what is being checked.
 
-The free **offline assistant** (a keyword router written against these question shapes) scores 26/26 at $0 and about 10 ms per question. That only shows the data, tools and streaming pipeline are correct; the Claude run above is the meaningful benchmark.
+The free **offline assistant** (a keyword router written against these question shapes) scores 26/26 at $0 and about 10 ms per question. That only shows the data, tools and streaming pipeline are correct; the Claude run above is the meaningful benchmark, for the agent as it was on that date.
 
-The 6 write cases ask to record a payment, open a maintenance request and send a rent reminder, in each language. A case passes when the proposing tool was called and the answer says the change waits for approval. They only propose, so nothing is approved and no data changes, but each run uses 6 of the day's proposals on the backend it runs against. I added them with the write actions and have run them against the offline assistant only; there is no Claude result for them yet.
+The 6 write cases ask to record a payment, open a maintenance request and send a rent reminder, in each language. A case passes when the proposing tool was called and the answer says the change waits for approval; the two maintenance cases also fail when the description they propose has a stray separator left in it (`absent` in `questions.json`). They only propose, so nothing is approved and no data changes, but a run leaves 6 `PROPOSED` actions on the Activity page of the backend it runs against, where every visitor of a public deployment sees them, and uses 6 of that day's proposals.
+
+They also expect the seeded data. The two payment cases need unit A-504 to have at least SAR 4,950 outstanding, which a payment a visitor approved on a public demo can reduce or use up; the answer then says the payment could not be proposed and the case fails for a reason that has nothing to do with the assistant. Run them against a local stack, or call `POST /api/admin/reset` first, and report them apart from the read questions. I added them with the write actions and have run them against the offline assistant only; there is no Claude result for them yet.
 
 ```bash
 CHAT_RATE_LIMIT_PER_MINUTE=1000 ./mvnw -f backend/pom.xml spring-boot:run   # or: docker compose up
 node evals/run.mjs --url http://localhost:8080
+node evals/run.mjs --url http://localhost:8080 --only en-,ar-   # the 20 read questions only
 ```
 
 ## Tech stack

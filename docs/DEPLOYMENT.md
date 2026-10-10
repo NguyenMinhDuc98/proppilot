@@ -44,8 +44,9 @@ Open the Vercel URL, switch to Arabic with the language button, and ask a questi
 
 1. In Render set `LLM_PROVIDER=anthropic`, `ANTHROPIC_API_KEY=<your key>`, optionally `ANTHROPIC_MODEL`.
 2. Keep `CHAT_DAILY_LIMIT` and `CHAT_RATE_LIMIT_PER_MINUTE` low so a public demo cannot run up your bill. Also set a monthly spend limit in the Anthropic console.
-3. Run the evals against the live URL and paste the table into the README:
-   `node evals/run.mjs --url https://<service>.onrender.com --delay-ms 7000` (the delay respects the per-minute rate limit).
+3. Run the read questions against the live URL and paste the table into the README, with the date and the commit it was measured at:
+   `node evals/run.mjs --only en-,ar- --url https://<service>.onrender.com --delay-ms 7000` (the delay respects the per-minute rate limit). The 20 questions use 20 of the day's `CHAT_DAILY_LIMIT`, and they expect the seeded data, which visitors can change by approving payments. Run them soon after the nightly reset, or restore the seed first: `curl -X POST https://<service>.onrender.com/api/admin/reset -H "X-Admin-Token: <ADMIN_TOKEN>"`.
+4. Keep the 6 write cases (`--only write-`) out of that run and out of that table. Every run leaves 6 proposals on the Activity page for all visitors to see and uses 6 of the day's proposals and of the daily chat limit, and the two payment cases pass only while unit A-504 has at least SAR 4,950 outstanding, so one approved payment makes them fail for a reason that has nothing to do with the model. Run them against a local stack, or on the live URL straight after a reset, and report their result on its own.
 
 ## 5. Keep it healthy
 
