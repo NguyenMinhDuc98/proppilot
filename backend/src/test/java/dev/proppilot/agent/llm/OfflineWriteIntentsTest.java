@@ -283,6 +283,25 @@ class OfflineWriteIntentsTest {
         assertThat(call.input().get("description").asText()).isEqualTo(description);
     }
 
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', textBlock = """
+            Create a maintenance request for unit A-504, plumbing, high priority, leaking pipe. | HIGH | PLUMBING | plumbing, leaking pipe
+            Create a maintenance request for unit A-203: leaking pipe, priority high, in the kitchen | HIGH | PLUMBING | leaking pipe, in the kitchen
+            Create a maintenance request for unit A-203: leaking pipe, priority high in the kitchen | HIGH | PLUMBING | leaking pipe, in the kitchen
+            Create a maintenance request for unit A-203: leaking pipe high priority in the kitchen | HIGH | PLUMBING | leaking pipe in the kitchen
+            Create a maintenance request for unit A-203: leaking pipe - high priority - in the kitchen | HIGH | PLUMBING | leaking pipe - in the kitchen
+            Create a maintenance request for unit A-203: leaking pipe; urgent priority; in the kitchen | URGENT | PLUMBING | leaking pipe; in the kitchen
+            أنشئ طلب صيانة للوحدة A-504، سباكة، أولوية عالية، تسرب في الماسورة. | HIGH | PLUMBING | سباكة، تسرب في الماسورة
+            """)
+    void aPriorityPhraseInTheMiddleLeavesNoStraySeparatorsInTheDescription(String question, String priority,
+                                                                         String category, String description) {
+        var call = route(question);
+
+        assertThat(call.input().get("priority").asText()).isEqualTo(priority);
+        assertThat(call.input().get("category").asText()).isEqualTo(category);
+        assertThat(call.input().get("description").asText()).isEqualTo(description);
+    }
+
     @Test
     void theKindOfProblemIsReadFromTheDescriptionOnly() {
         var call = route("The light in the lobby works. Please open a maintenance request for unit A-203: strange noise"

@@ -81,6 +81,13 @@ final class MaintenanceProblem {
     private static final Pattern TRAILING_LEVEL = Pattern.compile("(?:\\s*[,;،]|\\s+[-–—])\\s*(?<w>" + LEVELS
             + ")[\\s.!]*$|\\s+(?:is\\s+)?(?<s>" + SHOUTED + ")[\\s.!]*$", FLAGS);
 
+    /** What sets a phrase apart in a list: a comma or semicolon, or a dash with a space on both sides. */
+    private static final String SEPARATOR = "(?:[,;،]|(?<=\\s)[-–—](?=\\s))";
+    private static final Pattern ENDS_WITH_SEPARATOR = Pattern.compile(SEPARATOR + "\\s*$");
+    /** The space behind a removed priority phrase, and a separator too when one already stands in front of it. */
+    private static final Pattern GAP = Pattern.compile("\\s*");
+    private static final Pattern GAP_AFTER_SEPARATOR = Pattern.compile("\\s*(?:" + SEPARATOR + "\\s*)?");
+
     private static final String UNIT_WORDS = "unit|apartment|flat|(?:لل|ل)?(?:ال)?(?:وحده|شقه)|(?:لل|ل)?(?:وحدت|شقت)[يك]";
     /**
      * The description is the {@code keep} group: without the word that introduces the problem ("about", "because of")
@@ -130,16 +137,7 @@ final class MaintenanceProblem {
 
     /** The region without a priority phrase or a level at its edge, tidied up; the level is what was left out. */
     private static Described describe(String text, String folded, Region region) {
-        var kept = new StringBuilder();
-        int copied = region.from();
-        var phrase = PRIORITY_PHRASE.matcher(folded).region(region.from(), region.to());
-        while (phrase.find()) {
-            kept.append(text, copied, phrase.start());
-            copied = phrase.end();
-        }
-        kept.append(text, copied, region.to());
-
-        var description = kept.toString();
+        var description = withoutPriorityPhrases(text, folded, region);
         var foldedDescription = Folding.fold(description);
         String level = null;
         var leading = LEADING_LEVEL.matcher(foldedDescription);
@@ -158,6 +156,24 @@ final class MaintenanceProblem {
         // The keep group can take any text, so the pattern always matches.
         var tidied = tidy.matches() ? description.substring(tidy.start("keep"), tidy.end("keep")) : "";
         return new Described(tidied, level);
+    }
+
+    /**
+     * The region's text with each priority phrase cut out together with the space and separator that would otherwise
+     * be left behind: "plumbing, high priority, leaking pipe" becomes "plumbing, leaking pipe".
+     */
+    private static String withoutPriorityPhrases(String text, String folded, Region region) {
+        var kept = new StringBuilder();
+        int copied = region.from();
+        var phrase = PRIORITY_PHRASE.matcher(folded).region(region.from(), region.to());
+        while (phrase.find()) {
+            kept.append(text, copied, phrase.start());
+            var gap = (ENDS_WITH_SEPARATOR.matcher(kept).find() ? GAP_AFTER_SEPARATOR : GAP).matcher(folded)
+                    .region(phrase.end(), region.to());
+            gap.lookingAt(); // the gap may be empty, so it always matches
+            copied = gap.end();
+        }
+        return kept.append(text, copied, region.to()).toString();
     }
 
     /** The level a priority match names: each of its alternatives has exactly one group, and only one took part. */
