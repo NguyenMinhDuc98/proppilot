@@ -38,7 +38,7 @@ function onEnter(event: KeyboardEvent) {
 
 // Keep the newest content in view while the answer streams.
 watch(
-  () => chat.messages.map((m) => m.text.length + m.tools.length).join(),
+  () => chat.messages.map((m) => m.text.length + m.tools.length + m.actions.length).join(),
   async () => {
     await nextTick()
     scroller.value?.scrollTo({ top: scroller.value.scrollHeight })

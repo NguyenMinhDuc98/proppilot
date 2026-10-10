@@ -21,7 +21,7 @@ const label = computed(() => {
       <Warning v-else-if="chip.status === 'failed'" />
       <Check v-else />
     </ElIcon>
-    <span>{{ label }}</span>
+    <span class="label">{{ label }}</span>
     <!-- Summaries come from the server in English, so they are only inlined for English; others see them on hover. -->
     <span v-if="chip.summary && chip.status !== 'running' && locale === 'en'" class="summary">· {{ chip.summary }}</span>
   </span>
@@ -32,6 +32,7 @@ const label = computed(() => {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  max-width: 100%;
   padding: 3px 12px;
   font-size: 12px;
   font-weight: 600;
@@ -41,7 +42,9 @@ const label = computed(() => {
 }
 .chip.done { background: var(--pp-success-bg); color: var(--pp-success-ink); }
 .chip.failed { background: var(--pp-warn-bg); color: var(--pp-warn-ink); }
-.summary { font-weight: 500; opacity: 0.85; }
+.label { flex: none; }
+/* A long summary, such as a proposed change in full, is cut to one line; the whole text is in the tooltip. */
+.summary { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; opacity: 0.85; }
 .spin { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 </style>

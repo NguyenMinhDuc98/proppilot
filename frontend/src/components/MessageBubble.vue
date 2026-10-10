@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { formatCost, formatLatency } from '../composables/format'
 import { renderMarkdown } from '../composables/markdown'
 import type { ChatMessage } from '../stores/chat'
+import ApprovalCard from './ApprovalCard.vue'
 import ToolChip from './ToolChip.vue'
 import TraceDrawer from './TraceDrawer.vue'
 
@@ -61,6 +62,7 @@ const errorText = computed(() => {
         <!-- eslint-disable-next-line vue/no-v-html -- sanitised by DOMPurify in renderMarkdown -->
         <div v-if="message.text" class="markdown" dir="auto" v-html="html" />
         <div v-else-if="message.streaming && !message.tools.length" class="thinking">{{ t('chat.thinking') }}</div>
+        <ApprovalCard v-for="action in message.actions" :key="action.id" :action="action" />
         <div v-if="sources" class="sources">{{ sources }}</div>
         <div v-if="usage?.truncated" class="notice" role="note">{{ t('chat.truncated') }}</div>
         <div v-if="message.error" class="error" role="alert">{{ errorText }}</div>
