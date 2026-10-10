@@ -73,6 +73,7 @@ describe('MessageBubble data sources', () => {
   const toolNames = [
     'search_units', 'get_unit_details', 'find_overdue_tenants',
     'get_occupancy_summary', 'get_payment_history', 'draft_tenant_message',
+    'record_payment', 'create_maintenance_request', 'send_tenant_reminder',
   ] as const
 
   it.each(toolNames)('names %s with a friendly label in both languages instead of the tool name', async (name) => {
@@ -110,5 +111,27 @@ describe('MessageBubble data sources', () => {
     expect(sources(render({ text: 'Partial', tools: [toolChip('search_units')], streaming: true })).exists()).toBe(false)
     expect(sources(render({ text: 'Answer', usage })).exists()).toBe(false)
     expect(sources(render({ text: '', tools: [toolChip('search_units')], error: 'network' })).exists()).toBe(false)
+  })
+})
+
+describe('MessageBubble tool chips', () => {
+  const proposingTools = ['record_payment', 'create_maintenance_request', 'send_tenant_reminder'] as const
+  const chips = (wrapper: ReturnType<typeof render>) => wrapper.findAll('.chip').map((chip) => chip.text())
+
+  it.each(proposingTools)('labels %s while it runs and when it is done, in both languages', async (name) => {
+    const running = render({ streaming: true, tools: [toolChip(name, 'running')] })
+    const finished = render({ text: 'Proposed.', tools: [toolChip(name)], usage })
+
+    expect(chips(running)).toEqual([en.tools[name].running])
+    expect(chips(finished)).toEqual([en.tools[name].done])
+
+    i18n.global.locale.value = 'ar'
+    await nextTick()
+    expect(chips(running)).toEqual([ar.tools[name].running])
+    expect(chips(finished)).toEqual([ar.tools[name].done])
+  })
+
+  it('falls back to a neutral label for a tool it does not know', () => {
+    expect(chips(render({ tools: [toolChip('brand_new_tool', 'running')], streaming: true }))).toEqual([en.tools.unknown.running])
   })
 })
