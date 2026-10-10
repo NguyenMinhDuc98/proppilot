@@ -12,6 +12,7 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import javax.sql.DataSource;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -38,6 +39,8 @@ abstract class ActionIntegrationTest extends PostgresIntegrationTest {
     protected ObjectMapper json;
     @Autowired
     protected Clock clock;
+    @Autowired
+    protected DataSource dataSource;
 
     protected String unit;
     protected BigDecimal rent;
@@ -113,5 +116,17 @@ abstract class ActionIntegrationTest extends PostgresIntegrationTest {
 
     protected LocalDate today() {
         return LocalDate.now(clock);
+    }
+
+    /** Blocks until some statement waits for a lock held by another transaction, so a test can release it then. */
+    protected void waitUntilAStatementWaitsForALock() throws InterruptedException {
+        for (int i = 0; i < 100; i++) {
+            var waiting = jdbc.queryForObject("select count(*) from pg_stat_activity where wait_event_type = 'Lock'", Integer.class);
+            if (waiting > 0) {
+                return;
+            }
+            Thread.sleep(50);
+        }
+        throw new AssertionError("no statement ever waited for a lock");
     }
 }

@@ -16,6 +16,7 @@ import java.util.UUID;
 import java.util.function.Function;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Limit;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -120,6 +121,13 @@ public class ActionService {
             // The attempt was rolled back; the failure itself is recorded in a transaction of its own.
             recordFailure(id, idempotencyKey, actor, failed.error());
             throw failed.error();
+        } catch (DataIntegrityViolationException conflict) {
+            // Another approval committed this key between the up-front check and the write, and the unique index
+            // settled it. Anything else is not the caller's doing.
+            if (actions.existsByIdempotencyKey(idempotencyKey)) {
+                throw keyReused();
+            }
+            throw conflict;
         }
         return switch (outcome) {
             case Outcome.Decided decided -> new ApprovalView(ActionView.of(decided.action()), decided.replayed());
@@ -163,8 +171,7 @@ public class ActionService {
             return new Outcome.Expired();
         }
         if (actions.existsByIdempotencyKey(key)) {
-            throw new ActionException(ActionError.IDEMPOTENCY_KEY_REUSED,
-                    "This Idempotency-Key was already used for another action.");
+            throw keyReused();
         }
         return approveWith(executorFor(action.getKind()), action, key, edits, actor, now);
     }
@@ -193,6 +200,9 @@ public class ActionService {
             var execution = executor.execute(args, new ExecutionContext(action.getId(), now));
             action.approve(now, actor, key, execution.result());
             audit.approved(action, actor, execution);
+            // Written now rather than at commit, so a key another approval took first fails inside this try and the
+            // unit of the daily cap is given back below.
+            actions.flush();
             return new Outcome.Decided(action, false);
         } catch (ActionException refused) {
             limits.returnApproval();
@@ -299,6 +309,11 @@ public class ActionService {
                     "reason must be at most " + MAX_REASON_LENGTH + " characters.");
         }
         return cleaned.isEmpty() ? null : cleaned;
+    }
+
+    private static ActionException keyReused() {
+        return new ActionException(ActionError.IDEMPOTENCY_KEY_REUSED,
+                "This Idempotency-Key was already used for another action.");
     }
 
     private static ActionException notFound() {

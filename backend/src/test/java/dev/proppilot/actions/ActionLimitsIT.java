@@ -5,6 +5,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import dev.proppilot.config.ActionProperties;
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -82,6 +85,42 @@ class ActionLimitsIT extends ActionIntegrationTest {
                 .isEqualTo(ActionStatus.APPROVED);
         assertThat(refusal(() -> capped.approve(proposePayment("100").id(), newKey(), edits(), "visitor-test")))
                 .isEqualTo(ActionError.DAILY_APPROVAL_LIMIT_REACHED);
+    }
+
+    @Test
+    void aKeyThatAnotherApprovalClaimedFirstIsRefusedAndGivesTheBudgetBack() throws Exception {
+        var capped = withDailyCap(1);
+        var winner = proposePayment("100");
+        var loser = proposePayment("100");
+        var key = newKey();
+        var invoices = invoicesOfTenant7();
+        var pool = Executors.newSingleThreadExecutor();
+        try (var other = dataSource.getConnection()) {
+            // The winning approval has written the key but not committed yet, so the loser's check cannot see it.
+            other.setAutoCommit(false);
+            try (var claim = other.prepareStatement(
+                    "update pending_actions set status = 'APPROVED', idempotency_key = ? where id = ?")) {
+                claim.setString(1, key);
+                claim.setObject(2, winner.id());
+                claim.executeUpdate();
+            }
+            Future<ActionError> attempt = pool.submit(
+                    () -> refusal(() -> capped.approve(loser.id(), key, edits(), "visitor-test")));
+            waitUntilAStatementWaitsForALock();
+            other.commit();
+
+            var error = attempt.get(20, TimeUnit.SECONDS);
+
+            assertThat(error).isEqualTo(ActionError.IDEMPOTENCY_KEY_REUSED);
+            assertThat(error.status().value()).isEqualTo(409);
+        } finally {
+            pool.shutdownNow();
+        }
+
+        assertThat(actions.get(loser.id()).status()).isEqualTo(ActionStatus.PROPOSED);
+        assertThat(invoicesOfTenant7()).as("the loser's payment was rolled back").isEqualTo(invoices);
+        assertThat(capped.approve(loser.id(), newKey(), edits(), "visitor-test").action().status())
+                .as("with a budget of one, the refused attempt did not use it up").isEqualTo(ActionStatus.APPROVED);
     }
 
     @Test

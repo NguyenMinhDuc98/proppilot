@@ -13,15 +13,10 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import javax.sql.DataSource;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
 
 /** The payment action end to end through the service, against the seeded database. */
 class ActionServiceIT extends ActionIntegrationTest {
-
-    @Autowired
-    DataSource dataSource;
 
     private static BigDecimal bd(String value) {
         return new BigDecimal(value);
@@ -599,17 +594,6 @@ class ActionServiceIT extends ActionIntegrationTest {
         } finally {
             pool.shutdownNow();
         }
-    }
-
-    private void waitUntilAStatementWaitsForALock() throws InterruptedException {
-        for (int i = 0; i < 100; i++) {
-            var waiting = jdbc.queryForObject("select count(*) from pg_stat_activity where wait_event_type = 'Lock'", Integer.class);
-            if (waiting > 0) {
-                return;
-            }
-            Thread.sleep(50);
-        }
-        throw new AssertionError("the approval never waited for the invoices");
     }
 
     /** Runs the calls on separate threads, released together, and returns what each returned or threw. */
