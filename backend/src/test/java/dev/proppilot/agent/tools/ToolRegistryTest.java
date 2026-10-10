@@ -3,13 +3,19 @@ package dev.proppilot.agent.tools;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 import java.util.function.Function;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 
 class ToolRegistryTest {
 
@@ -59,5 +65,40 @@ class ToolRegistryTest {
 
         assertThat(result.error()).isTrue();
         assertThat(result.content()).doesNotContain("secret");
+    }
+
+    @Test
+    void aProposalToolRunsOutsideTheReadOnlyTransactionAndGetsTheRunContext() {
+        var transactions = mock(PlatformTransactionManager.class);
+        var seen = new ArrayList<ToolContext>();
+        var proposing = new ProposalTool() {
+            public String name() { return "propose"; }
+            public String description() { return "d"; }
+            public JsonNode inputSchema() { return ToolSchema.object().build(); }
+            public ToolResult propose(JsonNode input, ToolContext context) {
+                seen.add(context);
+                return ToolResult.error("stored");
+            }
+        };
+        var registry = new ToolRegistry(List.of(proposing), transactions);
+        var context = new ToolContext(UUID.randomUUID());
+
+        registry.execute("propose", EMPTY, context);
+        registry.execute("propose", EMPTY);
+
+        assertThat(seen).containsExactly(context, ToolContext.NONE);
+        verifyNoInteractions(transactions);
+    }
+
+    @Test
+    void everyOtherToolRunsInAReadOnlyTransaction() {
+        var transactions = mock(PlatformTransactionManager.class);
+        var registry = new ToolRegistry(List.of(tool("a", i -> ToolResult.error("x"))), transactions);
+
+        registry.execute("a", EMPTY);
+
+        var definition = ArgumentCaptor.forClass(TransactionDefinition.class);
+        verify(transactions).getTransaction(definition.capture());
+        assertThat(definition.getValue().isReadOnly()).isTrue();
     }
 }

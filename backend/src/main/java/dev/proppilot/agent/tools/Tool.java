@@ -2,7 +2,10 @@ package dev.proppilot.agent.tools;
 
 import com.fasterxml.jackson.databind.JsonNode;
 
-/** A read-only capability the model can call. Implement as a Spring bean to register it automatically. */
+/**
+ * A capability the model can call: it reads data, or it is a {@link ProposalTool} that proposes a change for a person
+ * to approve. No tool changes business data itself. Implement as a Spring bean to register it automatically.
+ */
 public interface Tool {
 
     String name();

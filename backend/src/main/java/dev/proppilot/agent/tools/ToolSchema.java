@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import java.util.Arrays;
 
 /** Tiny fluent builder for the JSON Schema of a tool's input object. */
 public final class ToolSchema {
@@ -43,6 +44,10 @@ public final class ToolSchema {
         }
         properties.set(name, prop);
         return this;
+    }
+
+    public <E extends Enum<E>> ToolSchema enumeration(String name, String description, Class<E> type) {
+        return enumeration(name, description, Arrays.stream(type.getEnumConstants()).map(Enum::name).toArray(String[]::new));
     }
 
     public ToolSchema required(String... names) {

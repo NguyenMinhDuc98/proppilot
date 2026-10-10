@@ -38,14 +38,20 @@ public class ToolRegistry {
                 .toList();
     }
 
-    /** Never throws: bad input and unexpected failures come back as an error result the model can react to. */
     public ToolResult execute(String name, JsonNode input) {
+        return execute(name, input, ToolContext.NONE);
+    }
+
+    /** Never throws: bad input and unexpected failures come back as an error result the model can react to. */
+    public ToolResult execute(String name, JsonNode input, ToolContext context) {
         var tool = tools.get(name);
         if (tool == null) {
             return ToolResult.error("Unknown tool '" + name + "'. Available tools: " + String.join(", ", tools.keySet()));
         }
         try {
-            return readOnlyTx.execute(status -> tool.execute(input));
+            return tool instanceof ProposalTool proposing
+                    ? proposing.propose(input, context)
+                    : readOnlyTx.execute(status -> tool.execute(input));
         } catch (ToolInputException e) {
             return ToolResult.error("Invalid input: " + e.getMessage());
         } catch (RuntimeException e) {

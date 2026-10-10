@@ -37,10 +37,10 @@ class ToolsIT extends PostgresIntegrationTest {
     }
 
     @Test
-    void registryExposesTheSixTools() {
+    void registryExposesTheReadAndTheProposalTools() {
         assertThat(registry.specs()).extracting("name").containsExactly(
-                "draft_tenant_message", "find_overdue_tenants", "get_occupancy_summary",
-                "get_payment_history", "get_unit_details", "search_units");
+                "create_maintenance_request", "draft_tenant_message", "find_overdue_tenants", "get_occupancy_summary",
+                "get_payment_history", "get_unit_details", "record_payment", "search_units", "send_tenant_reminder");
     }
 
     @Test
