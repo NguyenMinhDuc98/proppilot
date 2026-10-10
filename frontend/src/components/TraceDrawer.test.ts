@@ -13,6 +13,7 @@ const message: ChatMessage = {
   text: 'There are 6 units',
   preamble: 'Let me check the units.',
   tools: [{ name: 'search_units', args: {}, status: 'done', summary: '6 units found' }],
+  actions: [],
   streaming: false,
 }
 

@@ -1,12 +1,18 @@
+import { flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
 import { ApiError } from '../api/http'
-import type { AppInfo, ChatEvent } from '../api/types'
+import type { ActionView, AppInfo, ChatEvent } from '../api/types'
+import { paymentAction } from '../test/actionFixtures'
 import { useChatStore } from './chat'
 
 const streamChat = vi.fn()
-vi.mock('../api/chat', () => ({ streamChat: (...args: unknown[]) => streamChat(...args) }))
+const streamConfirmation = vi.fn()
+vi.mock('../api/chat', () => ({
+  streamChat: (...args: unknown[]) => streamChat(...args),
+  streamConfirmation: (...args: unknown[]) => streamConfirmation(...args),
+}))
 
 const info = ref<AppInfo | null>(null)
 vi.mock('../composables/useAppInfo', () => ({ useAppInfo: () => ({ info }) }))
@@ -26,10 +32,20 @@ function script(events: ChatEvent[]) {
   })
 }
 
+function scriptConfirmation(events: ChatEvent[]) {
+  streamConfirmation.mockImplementationOnce(async function* () {
+    yield* events
+  })
+}
+
+/** An `action_proposed` event as the stream delivers it: the action's fields next to the event type. */
+const proposal = (action: ActionView): ChatEvent => ({ type: 'action_proposed', ...action })
+
 describe('chat store', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     streamChat.mockReset()
+    streamConfirmation.mockReset()
     info.value = null
   })
 
@@ -319,5 +335,222 @@ describe('chat store', () => {
     chat.clear()
 
     expect(chat.messages).toEqual([])
+  })
+})
+
+describe('chat store proposed actions', () => {
+  const action = paymentAction()
+  const decided = (status: ActionView['status'], overrides: Partial<ActionView> = {}) =>
+    ({ ...action, status, ...overrides }) as ActionView
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    streamChat.mockReset()
+    streamConfirmation.mockReset()
+    info.value = null
+  })
+
+  /** A question whose answer proposed `action`, ready for a decision. */
+  async function proposed(chat: ReturnType<typeof useChatStore>) {
+    script([
+      { type: 'tool_call', name: 'record_payment', args: { unit_code: 'B-203', amount: 5000 } },
+      { type: 'tool_result', name: 'record_payment', summary: 'Proposed, waiting for approval', error: false },
+      proposal(action),
+      { type: 'token', text: 'It is waiting for your approval.' },
+      done,
+    ])
+    await chat.send('record 5000 for B-203')
+  }
+
+  it('attaches the action to the answer that proposed it, without the event type', async () => {
+    const chat = useChatStore()
+
+    await proposed(chat)
+
+    expect(chat.messages[1].actions).toEqual([action])
+    expect(chat.messages[1].actions[0]).not.toHaveProperty('type')
+    expect(chat.messages[1].text).toBe('It is waiting for your approval.')
+    expect(chat.messages[0].actions).toEqual([])
+  })
+
+  it('keeps several proposals of one answer in the order they arrived', async () => {
+    const second = paymentAction({ id: '44444444-4444-4444-8444-444444444444' })
+    script([proposal(action), proposal(second), done])
+    const chat = useChatStore()
+
+    await chat.send('record two payments')
+
+    expect(chat.messages[1].actions.map((a) => a.id)).toEqual([action.id, second.id])
+  })
+
+  it('shows a decision in its card and asks the assistant once to confirm it, with no question bubble', async () => {
+    const chat = useChatStore()
+    await proposed(chat)
+    scriptConfirmation([{ type: 'token', text: 'Done, SAR 5,000.00 was recorded.' }, done])
+
+    chat.settleAction(decided('APPROVED'))
+    await flushPromises()
+
+    expect(chat.messages[1].actions[0].status).toBe('APPROVED')
+    expect(streamConfirmation).toHaveBeenCalledTimes(1)
+    expect(streamConfirmation.mock.calls[0][0]).toBe(action.id)
+    expect(chat.messages.map((m) => m.role)).toEqual(['user', 'assistant', 'assistant'])
+    expect(chat.messages[2]).toMatchObject({ text: 'Done, SAR 5,000.00 was recorded.', streaming: false })
+    expect(chat.busy).toBe(false)
+  })
+
+  it('confirms the decision of an action only once, however often its card is updated', async () => {
+    const chat = useChatStore()
+    await proposed(chat)
+    scriptConfirmation([{ type: 'token', text: 'Done.' }, done])
+
+    chat.settleAction(decided('APPROVED'))
+    chat.settleAction(decided('APPROVED'))
+    await flushPromises()
+    chat.settleAction(decided('APPROVED'))
+    await flushPromises()
+
+    expect(streamConfirmation).toHaveBeenCalledTimes(1)
+    expect(chat.messages).toHaveLength(3)
+  })
+
+  it.each(['REJECTED', 'FAILED'] as const)('confirms a %s decision too', async (status) => {
+    const chat = useChatStore()
+    await proposed(chat)
+    scriptConfirmation([{ type: 'token', text: 'Noted.' }, done])
+
+    chat.settleAction(decided(status))
+    await flushPromises()
+
+    expect(streamConfirmation).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([
+    ['still waiting for a decision', decided('PROPOSED')],
+    ['expired', decided('EXPIRED')],
+    ['already confirmed in the chat', decided('APPROVED', { confirmedAt: '2026-10-10T15:05:00Z' })],
+  ])('asks for no confirmation of an action that is %s, but still updates its card', async (_name, view) => {
+    const chat = useChatStore()
+    await proposed(chat)
+
+    chat.settleAction(view)
+    await flushPromises()
+
+    expect(streamConfirmation).not.toHaveBeenCalled()
+    expect(chat.messages[1].actions[0].status).toBe(view.status)
+  })
+
+  it('ignores an action that is in no message, such as one from a chat that was cleared', async () => {
+    const chat = useChatStore()
+    await proposed(chat)
+    chat.clear()
+
+    chat.settleAction(decided('APPROVED'))
+    await flushPromises()
+
+    expect(streamConfirmation).not.toHaveBeenCalled()
+    expect(chat.messages).toEqual([])
+  })
+
+  it('keeps the confirmation out of the history, so the next question carries only real exchanges', async () => {
+    const chat = useChatStore()
+    await proposed(chat)
+    scriptConfirmation([{ type: 'token', text: 'Done, it was recorded.' }, done])
+    chat.settleAction(decided('APPROVED'))
+    await flushPromises()
+    script([{ type: 'token', text: 'ok' }, done])
+
+    await chat.send('thanks')
+
+    const expected = [
+      { role: 'user', text: 'record 5000 for B-203' },
+      { role: 'assistant', text: 'It is waiting for your approval.' },
+    ]
+    expect(streamConfirmation.mock.calls[0][1]).toEqual(expected)
+    expect(streamChat.mock.calls[1][1]).toEqual(expected)
+  })
+
+  it('waits for the reply that is streaming and confirms the decision after it', async () => {
+    const chat = useChatStore()
+    await proposed(chat)
+    let release: () => void = () => {}
+    streamChat.mockImplementationOnce(async function* () {
+      await new Promise<void>((resolve) => (release = resolve))
+      yield { type: 'token', text: 'second answer' } as ChatEvent
+      yield done
+    })
+    scriptConfirmation([{ type: 'token', text: 'Done.' }, done])
+
+    const asking = chat.send('and unit A-101?')
+    chat.settleAction(decided('APPROVED'))
+    await flushPromises()
+    expect(streamConfirmation).not.toHaveBeenCalled()
+
+    release()
+    await asking
+    await flushPromises()
+
+    expect(streamConfirmation).toHaveBeenCalledTimes(1)
+    expect(chat.messages.map((m) => m.text)).toEqual([
+      'record 5000 for B-203',
+      'It is waiting for your approval.',
+      'and unit A-101?',
+      'second answer',
+      'Done.',
+    ])
+    // The reply that was streaming is the only exchange the confirmation may carry as history.
+    expect(streamConfirmation.mock.calls[0][1]).toEqual([
+      { role: 'user', text: 'record 5000 for B-203' },
+      { role: 'assistant', text: 'It is waiting for your approval.' },
+      { role: 'user', text: 'and unit A-101?' },
+      { role: 'assistant', text: 'second answer' },
+    ])
+  })
+
+  it('drops a confirmation that could not start, because the card already shows the outcome', async () => {
+    const chat = useChatStore()
+    await proposed(chat)
+    streamConfirmation.mockImplementationOnce(async function* () {
+      throw new ApiError(409, 'Conflict', 'action_already_confirmed')
+    })
+
+    chat.settleAction(decided('APPROVED'))
+    await flushPromises()
+
+    expect(chat.messages).toHaveLength(2)
+    expect(chat.busy).toBe(false)
+  })
+
+  it('keeps the error a confirmation stream reports, shown with its code', async () => {
+    const chat = useChatStore()
+    await proposed(chat)
+    scriptConfirmation([
+      { type: 'error', message: 'The AI service is busy right now.', code: 'llm_overloaded' },
+      { ...done, status: 'ERROR' },
+    ])
+
+    chat.settleAction(decided('APPROVED'))
+    await flushPromises()
+
+    expect(chat.messages[2]).toMatchObject({ errorCode: 'llm_overloaded', streaming: false })
+  })
+
+  it('does not confirm after the chat was cleared while the decision waited for a reply', async () => {
+    const chat = useChatStore()
+    await proposed(chat)
+    let release: () => void = () => {}
+    streamChat.mockImplementationOnce(async function* () {
+      await new Promise<void>((resolve) => (release = resolve))
+      yield done
+    })
+
+    const asking = chat.send('another question')
+    chat.settleAction(decided('APPROVED'))
+    chat.clear()
+    release()
+    await asking
+    await flushPromises()
+
+    expect(streamConfirmation).not.toHaveBeenCalled()
   })
 })

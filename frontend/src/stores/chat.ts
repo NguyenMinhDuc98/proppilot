@@ -1,8 +1,8 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
-import { streamChat } from '../api/chat'
+import { streamChat, streamConfirmation } from '../api/chat'
 import { ApiError } from '../api/http'
-import type { ChatEvent, DonePayload, ErrorCode, HistoryTurn } from '../api/types'
+import type { ActionView, ChatEvent, DonePayload, ErrorCode, HistoryTurn } from '../api/types'
 import { useAppInfo } from '../composables/useAppInfo'
 
 export interface ToolChip {
@@ -20,6 +20,8 @@ export interface ChatMessage {
   /** What the model wrote before calling tools ("Let me check..."), kept out of the answer and shown in the trace. */
   preamble?: string
   tools: ToolChip[]
+  /** Changes this answer proposed. Each waits for a person to approve or reject it. */
+  actions: ActionView[]
   usage?: DonePayload
   error?: string
   /** Set when the server reported the failure; the UI shows localised text for it instead of `error`. */
@@ -30,25 +32,33 @@ export interface ChatMessage {
 /** The server's proppilot.chat.max-history-items default, assumed until /api/info has reported the real limit. */
 const DEFAULT_MAX_HISTORY_ITEMS = 20
 
+/** A decision is final, so it is the only kind the assistant is asked to confirm. */
+const DECIDED: ReadonlySet<ActionView['status']> = new Set(['APPROVED', 'REJECTED', 'FAILED'])
+
 export const useChatStore = defineStore('chat', () => {
   const { info } = useAppInfo()
   const messages = ref<ChatMessage[]>([])
   const busy = ref(false)
   let nextId = 1
   let controller: AbortController | null = null
+  /** Actions whose decision the assistant has been asked to confirm, so that never happens twice. */
+  const confirmed = new Set<string>()
+  /** Decisions taken while a reply was streaming; they are confirmed one by one once it has ended. */
+  const waiting: string[] = []
 
   const hasMessages = computed(() => messages.value.length > 0)
 
   /**
    * Only exchanges that completed successfully, so a failed or half-streamed answer never pollutes the next question.
    * Capped to what the server accepts, dropping the oldest whole exchanges so a question never loses its answer.
+   * The confirmation of a decision follows an answer, not a question, so it is never part of an exchange.
    */
   function history(): HistoryTurn[] {
     const exchanges: HistoryTurn[][] = []
-    for (let i = 0; i + 1 < messages.value.length; i += 2) {
+    for (let i = 0; i + 1 < messages.value.length; i++) {
       const question = messages.value[i]
       const answer = messages.value[i + 1]
-      if (answer.streaming || answer.error || answer.text.trim() === '') continue
+      if (question.role !== 'user' || answer.streaming || answer.error || answer.text.trim() === '') continue
       exchanges.push([
         { role: 'user', text: question.text },
         { role: 'assistant', text: answer.text },
@@ -80,6 +90,11 @@ export const useChatStore = defineStore('chat', () => {
         }
         break
       }
+      case 'action_proposed': {
+        const { type: _type, ...proposed } = event
+        message.actions.push(proposed)
+        break
+      }
       case 'token':
         message.text += event.text
         break
@@ -95,29 +110,75 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
+  /** Adds a message and returns it as the store holds it, so that later changes to it are seen by the UI. */
+  function append(role: ChatMessage['role'], text = '', streaming = false): ChatMessage {
+    messages.value.push({ id: nextId++, role, text, tools: [], actions: [], streaming })
+    return messages.value[messages.value.length - 1]
+  }
+
+  /** Streams one reply into `answer`; a stream that fails is reported to `onFailure`, one the person stopped is not. */
+  async function stream(
+    answer: ChatMessage,
+    open: (signal: AbortSignal) => AsyncGenerator<ChatEvent>,
+    onFailure: (failure: unknown) => void,
+  ) {
+    busy.value = true
+    controller = new AbortController()
+    try {
+      for await (const event of open(controller.signal)) {
+        apply(answer, event)
+      }
+    } catch (e) {
+      if (!(e instanceof DOMException && e.name === 'AbortError')) onFailure(e)
+    } finally {
+      answer.streaming = false
+      busy.value = false
+      controller = null
+    }
+  }
+
   async function send(question: string) {
     const text = question.trim()
     if (!text || busy.value) return
 
     const past = history()
-    messages.value.push({ id: nextId++, role: 'user', text, tools: [], streaming: false })
-    messages.value.push({ id: nextId++, role: 'assistant', text: '', tools: [], streaming: true })
-    const answer = messages.value[messages.value.length - 1]
+    append('user', text)
+    const answer = append('assistant', '', true)
+    await stream(answer, (signal) => streamChat(text, past, signal), (failure) => {
+      answer.error = failure instanceof ApiError ? failure.message : 'network'
+    })
+    await confirmWaiting()
+  }
 
-    busy.value = true
-    controller = new AbortController()
-    try {
-      for await (const event of streamChat(text, past, controller.signal)) {
-        apply(answer, event)
-      }
-    } catch (e) {
-      if (!(e instanceof DOMException && e.name === 'AbortError')) {
-        answer.error = e instanceof ApiError ? e.message : 'network'
-      }
-    } finally {
-      answer.streaming = false
-      busy.value = false
-      controller = null
+  /** The reply has no question above it: the server writes that turn from the stored decision. */
+  async function confirm(actionId: string) {
+    const past = history()
+    const reply = append('assistant', '', true)
+    await stream(reply, (signal) => streamConfirmation(actionId, past, signal), () => {
+      // The card already shows the outcome, so a reply that never started is dropped rather than reported.
+      messages.value = messages.value.filter((message) => message !== reply)
+    })
+  }
+
+  async function confirmWaiting() {
+    while (!busy.value && waiting.length > 0) {
+      const [actionId] = waiting.splice(0, 1)
+      await confirm(actionId)
+    }
+  }
+
+  /**
+   * Puts the server's latest word on a proposal into its card. A decision that has just been taken is then confirmed
+   * by the assistant, once, after any reply that is streaming now.
+   */
+  function settleAction(view: ActionView) {
+    const holder = messages.value.find((message) => message.actions.some((action) => action.id === view.id))
+    if (!holder) return
+    holder.actions = holder.actions.map((action) => (action.id === view.id ? view : action))
+    if (DECIDED.has(view.status) && view.confirmedAt === null && !confirmed.has(view.id)) {
+      confirmed.add(view.id)
+      waiting.push(view.id)
+      void confirmWaiting()
     }
   }
 
@@ -127,8 +188,9 @@ export const useChatStore = defineStore('chat', () => {
 
   function clear() {
     stop()
+    waiting.length = 0
     messages.value = []
   }
 
-  return { messages, busy, hasMessages, send, stop, clear }
+  return { messages, busy, hasMessages, send, settleAction, stop, clear }
 })

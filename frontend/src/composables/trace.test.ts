@@ -9,7 +9,7 @@ const usage: DonePayload = {
 }
 
 const message = (overrides: Partial<ChatMessage>): ChatMessage => ({
-  id: 1, role: 'assistant', text: 'answer', tools: [], streaming: false, ...overrides,
+  id: 1, role: 'assistant', text: 'answer', tools: [], actions: [], streaming: false, ...overrides,
 })
 
 describe('buildTrace', () => {
