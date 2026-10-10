@@ -1,6 +1,7 @@
 package dev.proppilot.chat;
 
 import dev.proppilot.actions.ActionException;
+import dev.proppilot.actions.VisitorActors;
 import dev.proppilot.agent.ChatTurn;
 import dev.proppilot.agent.DecisionNotice;
 import dev.proppilot.config.ChatProperties;
@@ -22,11 +23,13 @@ public class ChatController {
     private final ChatService chat;
     private final ChatRateLimiter limiter;
     private final ChatProperties props;
+    private final VisitorActors visitors;
 
-    public ChatController(ChatService chat, ChatRateLimiter limiter, ChatProperties props) {
+    public ChatController(ChatService chat, ChatRateLimiter limiter, ChatProperties props, VisitorActors visitors) {
         this.chat = chat;
         this.limiter = limiter;
         this.props = props;
+        this.visitors = visitors;
     }
 
     @PostMapping
@@ -40,7 +43,7 @@ public class ChatController {
             case ALLOWED -> { }
         }
         try {
-            return chat.start(request);
+            return chat.start(request, visitors.actorFor(http.getRemoteAddr()));
         } catch (ActionException refused) {
             throw new ResponseStatusException(refused.error().status(), refused.getMessage());
         }

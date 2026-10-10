@@ -603,14 +603,16 @@ class ActionServiceIT extends ActionIntegrationTest {
         var rejected = proposePayment("200");
         actions.reject(rejected.id(), "wrong unit", "visitor-test");
 
-        var confirmed = actions.claimConfirmation(approved.id());
+        var confirmed = actions.claimConfirmation(approved.id(), "visitor-test");
 
         assertThat(confirmed.status()).isEqualTo(ActionStatus.APPROVED);
         assertThat(confirmed.confirmedAt()).isNotNull();
         assertThat(pendingActionRow(approved.id()).get("confirmed_at")).isNotNull();
-        assertThat(errorOf(() -> actions.claimConfirmation(approved.id()))).isEqualTo(ActionError.ACTION_ALREADY_CONFIRMED);
-        assertThat(actions.claimConfirmation(rejected.id()).decisionReason()).isEqualTo("wrong unit");
-        assertThat(errorOf(() -> actions.claimConfirmation(rejected.id()))).isEqualTo(ActionError.ACTION_ALREADY_CONFIRMED);
+        assertThat(errorOf(() -> actions.claimConfirmation(approved.id(), "visitor-test")))
+                .isEqualTo(ActionError.ACTION_ALREADY_CONFIRMED);
+        assertThat(actions.claimConfirmation(rejected.id(), "visitor-test").decisionReason()).isEqualTo("wrong unit");
+        assertThat(errorOf(() -> actions.claimConfirmation(rejected.id(), "visitor-test")))
+                .isEqualTo(ActionError.ACTION_ALREADY_CONFIRMED);
     }
 
     @Test
@@ -620,7 +622,7 @@ class ActionServiceIT extends ActionIntegrationTest {
         actions.approve(proposePayment(amount).id(), newKey(), edits(), "visitor-test");
         errorOf(() -> actions.approve(stale.id(), newKey(), edits(), "visitor-test"));
 
-        var confirmed = actions.claimConfirmation(stale.id());
+        var confirmed = actions.claimConfirmation(stale.id(), "visitor-test");
 
         assertThat(confirmed.status()).isEqualTo(ActionStatus.FAILED);
         assertThat(confirmed.decisionReason()).contains("outstanding");
@@ -632,20 +634,24 @@ class ActionServiceIT extends ActionIntegrationTest {
         var expired = proposePayment("500");
         jdbc.update("update pending_actions set expires_at = now() - interval '1 second' where id = ?", expired.id());
 
-        assertThat(errorOf(() -> actions.claimConfirmation(waiting.id()))).isEqualTo(ActionError.ACTION_NOT_DECIDED);
-        assertThat(errorOf(() -> actions.claimConfirmation(expired.id()))).isEqualTo(ActionError.ACTION_NOT_DECIDED);
-        assertThat(errorOf(() -> actions.claimConfirmation(UUID.randomUUID()))).isEqualTo(ActionError.ACTION_NOT_FOUND);
+        assertThat(errorOf(() -> actions.claimConfirmation(waiting.id(), "visitor-test")))
+                .isEqualTo(ActionError.ACTION_NOT_DECIDED);
+        assertThat(errorOf(() -> actions.claimConfirmation(expired.id(), "visitor-test")))
+                .isEqualTo(ActionError.ACTION_NOT_DECIDED);
+        assertThat(errorOf(() -> actions.claimConfirmation(UUID.randomUUID(), "visitor-test")))
+                .isEqualTo(ActionError.ACTION_NOT_FOUND);
         assertThat(pendingActionRow(waiting.id())).containsEntry("status", "PROPOSED").containsEntry("confirmed_at", null);
     }
 
     @Test
     void anActionThatWasNotConfirmedYetCanStillBeConfirmedAfterItWasDecidedOn() {
         var proposed = proposePayment("1000");
-        assertThat(errorOf(() -> actions.claimConfirmation(proposed.id()))).isEqualTo(ActionError.ACTION_NOT_DECIDED);
+        assertThat(errorOf(() -> actions.claimConfirmation(proposed.id(), "visitor-test")))
+                .isEqualTo(ActionError.ACTION_NOT_DECIDED);
 
         actions.approve(proposed.id(), newKey(), edits(), "visitor-test");
 
-        assertThat(actions.claimConfirmation(proposed.id()).confirmedAt()).isNotNull();
+        assertThat(actions.claimConfirmation(proposed.id(), "visitor-test").confirmedAt()).isNotNull();
     }
 
     @Test
@@ -653,11 +659,49 @@ class ActionServiceIT extends ActionIntegrationTest {
         var proposed = proposePayment("1000");
         actions.approve(proposed.id(), newKey(), edits(), "visitor-test");
 
-        var outcomes = inParallel(() -> actions.claimConfirmation(proposed.id()), () -> actions.claimConfirmation(proposed.id()));
+        var outcomes = inParallel(() -> actions.claimConfirmation(proposed.id(), "visitor-test"),
+                () -> actions.claimConfirmation(proposed.id(), "visitor-test"));
 
         assertThat(outcomes.stream().filter(o -> o instanceof ActionView)).hasSize(1);
         assertThat(outcomes.stream().filter(o -> o instanceof ActionException).map(o -> ((ActionException) o).error()))
                 .containsExactly(ActionError.ACTION_ALREADY_CONFIRMED);
+    }
+
+    @Test
+    void onlyThePersonWhoDecidedCanTakeTheConfirmation() {
+        var approved = proposePayment("1000");
+        actions.approve(approved.id(), newKey(), edits(), "visitor-decider");
+        var rejected = proposePayment("200");
+        actions.reject(rejected.id(), null, "visitor-decider");
+
+        assertThat(errorOf(() -> actions.claimConfirmation(approved.id(), "visitor-other")))
+                .isEqualTo(ActionError.ACTION_DECIDED_BY_SOMEONE_ELSE);
+        assertThat(errorOf(() -> actions.claimConfirmation(rejected.id(), "visitor-other")))
+                .isEqualTo(ActionError.ACTION_DECIDED_BY_SOMEONE_ELSE);
+        assertThat(pendingActionRow(approved.id()).get("confirmed_at")).as("not used up by the other visitor").isNull();
+        assertThat(pendingActionRow(rejected.id()).get("confirmed_at")).isNull();
+
+        assertThat(actions.claimConfirmation(approved.id(), "visitor-decider").confirmedAt()).isNotNull();
+        assertThat(actions.claimConfirmation(rejected.id(), "visitor-decider").confirmedAt()).isNotNull();
+    }
+
+    @Test
+    void aConfirmationThatWasGivenBackCanBeTakenAgain() {
+        var proposed = proposePayment("1000");
+        actions.approve(proposed.id(), newKey(), edits(), "visitor-test");
+        actions.claimConfirmation(proposed.id(), "visitor-test");
+
+        actions.releaseConfirmation(proposed.id());
+
+        assertThat(pendingActionRow(proposed.id()).get("confirmed_at")).isNull();
+        assertThat(actions.claimConfirmation(proposed.id(), "visitor-test").confirmedAt()).isNotNull();
+        assertThat(errorOf(() -> actions.claimConfirmation(proposed.id(), "visitor-test")))
+                .isEqualTo(ActionError.ACTION_ALREADY_CONFIRMED);
+    }
+
+    @Test
+    void givingBackTheConfirmationOfAnActionThatIsGoneIsHarmless() {
+        actions.releaseConfirmation(UUID.randomUUID());
     }
 
     /** Runs the calls on separate threads, released together, and returns what each returned or threw. */

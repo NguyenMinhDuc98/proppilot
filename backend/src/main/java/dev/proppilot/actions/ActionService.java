@@ -178,17 +178,23 @@ public class ActionService {
     }
 
     /**
-     * Takes the one confirmation a decided action gets in the chat. The marker is set under the row lock, so of two
-     * simultaneous claims exactly one wins.
+     * Takes the one confirmation a decided action gets in the chat. Only the person who decided can take it, so nobody
+     * else can use it up. The marker is set under the row lock, so of two simultaneous claims exactly one wins.
      *
-     * @throws ActionException {@code action_not_found}, {@code action_not_decided} or {@code action_already_confirmed}
+     * @param actor who is asking, as {@link VisitorActors} names a visitor
+     * @throws ActionException {@code action_not_found}, {@code action_not_decided}, {@code action_decided_by_someone_else}
+     *                         or {@code action_already_confirmed}
      */
-    public ActionView claimConfirmation(UUID id) {
+    public ActionView claimConfirmation(UUID id, String actor) {
         return tx.execute(status -> {
             var action = lock(id);
             if (action.getStatus() == ActionStatus.PROPOSED || action.getStatus() == ActionStatus.EXPIRED) {
                 throw new ActionException(ActionError.ACTION_NOT_DECIDED,
                         "Nobody has decided on this proposal, so there is nothing to confirm.");
+            }
+            if (!actor.equals(action.getActor())) {
+                throw new ActionException(ActionError.ACTION_DECIDED_BY_SOMEONE_ELSE,
+                        "Only the person who decided on this proposal can have it confirmed in the chat.");
             }
             if (action.getConfirmedAt() != null) {
                 throw new ActionException(ActionError.ACTION_ALREADY_CONFIRMED,
@@ -197,6 +203,14 @@ public class ActionService {
             action.confirm(clock.instant());
             return ActionView.of(action);
         });
+    }
+
+    /**
+     * Gives back a confirmation that was taken but never reached the person (the model failed, the run timed out or
+     * the client went away), so the decision can be confirmed again.
+     */
+    public void releaseConfirmation(UUID id) {
+        tx.executeWithoutResult(status -> actions.findForUpdate(id).ifPresent(PendingAction::unconfirm));
     }
 
     private Outcome approveLocked(UUID id, String key, ObjectNode edits, String actor) {

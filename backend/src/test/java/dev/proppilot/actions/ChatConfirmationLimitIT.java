@@ -23,6 +23,8 @@ class ChatConfirmationLimitIT extends ActionIntegrationTest {
 
     @Autowired
     MockMvc mvc;
+    @Autowired
+    VisitorActors visitors;
 
     private static MockHttpServletRequestBuilder chatFrom(String address, String body) {
         return post("/api/chat").contentType(MediaType.APPLICATION_JSON).content(body).with(r -> {
@@ -45,7 +47,7 @@ class ChatConfirmationLimitIT extends ActionIntegrationTest {
     @Test
     void aConfirmationTheLimitRefusedCanStillBeMadeLater() throws Exception {
         var proposed = proposePayment("100");
-        actions.approve(proposed.id(), newKey(), edits(), "visitor-test");
+        actions.approve(proposed.id(), newKey(), edits(), visitors.actorFor("203.0.113.21"));
         var body = "{\"message\":\"\",\"actionId\":\"" + proposed.id() + "\"}";
         var question = mvc.perform(chatFrom("203.0.113.20", "{\"message\":\"Which units in Riyadh are vacant?\"}"))
                 .andExpect(request().asyncStarted()).andReturn();

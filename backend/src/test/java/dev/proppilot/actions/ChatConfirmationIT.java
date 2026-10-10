@@ -48,6 +48,13 @@ class ChatConfirmationIT extends ActionIntegrationTest {
         return asClient(post("/api/chat").contentType(MediaType.APPLICATION_JSON).content(body));
     }
 
+    private static MockHttpServletRequestBuilder chatRequestFrom(String address, String body) {
+        return post("/api/chat").contentType(MediaType.APPLICATION_JSON).content(body).with(r -> {
+            r.setRemoteAddr(address);
+            return r;
+        });
+    }
+
     private String streamed(String body) throws Exception {
         var started = mvc.perform(chatRequest(body)).andExpect(request().asyncStarted()).andReturn();
         started.getAsyncResult(10_000);
@@ -163,6 +170,18 @@ class ChatConfirmationIT extends ActionIntegrationTest {
 
         approveThroughTheApi(proposed.id());
         assertThat(answerOf(streamed(confirmationOf(proposed.id(), "[]")))).contains("Approved and done");
+    }
+
+    @Test
+    void onlyTheVisitorWhoDecidedCanHaveTheDecisionConfirmed() throws Exception {
+        var proposed = proposePayment("100");
+        approveThroughTheApi(proposed.id());
+
+        mvc.perform(chatRequestFrom("203.0.113.200", confirmationOf(proposed.id(), "[]"))).andExpect(status().isForbidden());
+
+        assertThat(confirmedAt(proposed.id())).as("the stranger did not use it up").isNull();
+        assertThat(answerOf(streamed(confirmationOf(proposed.id(), "[]")))).contains("Approved and done");
+        assertThat(confirmedAt(proposed.id())).isNotNull();
     }
 
     @Test

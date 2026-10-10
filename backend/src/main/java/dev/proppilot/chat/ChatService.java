@@ -15,6 +15,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -36,7 +37,8 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
  *   <li>{@code done}: the usage and outcome of the run</li>
  * </ul>
  *
- * <p>A turn is a question, or the confirmation of a decision a person took on a proposal ({@code actionId}).
+ * <p>A turn is a question, or the confirmation of a decision a person took on a proposal ({@code actionId}). A
+ * decision is confirmed once, but a run that ends without delivering the confirmation gives it back.
  */
 @Service
 public class ChatService {
@@ -68,35 +70,34 @@ public class ChatService {
     }
 
     /**
-     * @throws dev.proppilot.actions.ActionException when the request confirms an action that is unknown, undecided or
-     *                                               already confirmed; nothing is streamed then
+     * @param visitor who is asking, as {@link dev.proppilot.actions.VisitorActors} names a visitor; only the visitor
+     *                who decided on a proposal can have its decision confirmed
+     * @throws dev.proppilot.actions.ActionException when the request confirms an action that is unknown, undecided,
+     *                                               decided by someone else or already confirmed; nothing is streamed
+     *                                               then
      */
-    public SseEmitter start(ChatRequest request) {
-        var turn = turnOf(request, UUID.randomUUID());
+    public SseEmitter start(ChatRequest request, String visitor) {
+        var turn = turnOf(request, UUID.randomUUID(), visitor);
         var emitter = new SseEmitter(emitterTimeoutMs);
         var client = new ClientStream(emitter, json);
-        executor.execute(() -> runAndStream(turn, client));
+        executor.execute(() -> runAndStream(turn, request.actionId(), client));
         return emitter;
     }
 
-    private AgentRequest turnOf(ChatRequest request, UUID runId) {
+    private AgentRequest turnOf(ChatRequest request, UUID runId, String visitor) {
         var history = request.historyOrEmpty();
         if (request.actionId() == null) {
             return AgentRequest.question(request.message(), history, runId);
         }
-        return AgentRequest.confirmation(followUp.claim(request.actionId()), history, runId);
+        return AgentRequest.confirmation(followUp.claim(request.actionId(), visitor), history, runId);
     }
 
-    private void runAndStream(AgentRequest turn, ClientStream client) {
+    /** @param confirming the action whose decision this run confirms, or null when it answers a question */
+    private void runAndStream(AgentRequest turn, UUID confirming, ClientStream client) {
         var started = System.nanoTime();
         var toolNames = new ArrayList<String>();
         try {
-            var result = agent.run(turn, event -> {
-                if (event instanceof AgentEvent.ToolCall call) {
-                    toolNames.add(call.name());
-                }
-                send(client, event);
-            }, client::isGone);
+            var result = runAgent(turn, confirming, client, toolNames);
             long latencyMs = Duration.ofNanos(System.nanoTime() - started).toMillis();
             var run = record(turn, result, toolNames, latencyMs);
             if (!client.isGone()) {
@@ -108,6 +109,35 @@ public class ChatService {
         }
     }
 
+    /**
+     * Runs the agent. A confirmation the run did not deliver is given back before anyone hears how the run ended, so a
+     * retry sent on seeing the error finds it free.
+     */
+    private AgentResult runAgent(AgentRequest turn, UUID confirming, ClientStream client, List<String> toolNames) {
+        AgentResult result;
+        try {
+            result = agent.run(turn, event -> {
+                if (event instanceof AgentEvent.ToolCall call) {
+                    toolNames.add(call.name());
+                }
+                send(client, event);
+            }, client::isGone);
+        } catch (RuntimeException failed) {
+            giveBack(confirming);
+            throw failed;
+        }
+        if (result.status() != AgentResult.Status.OK) {
+            giveBack(confirming);
+        }
+        return result;
+    }
+
+    private void giveBack(UUID confirming) {
+        if (confirming != null) {
+            followUp.release(confirming);
+        }
+    }
+
     private void finish(ClientStream client, AgentResult result, ChatRun run) {
         if (result.status() == AgentResult.Status.ERROR) {
             client.send("error", ErrorPayload.of(result.errorCode()));
@@ -116,7 +146,7 @@ public class ChatService {
         client.complete();
     }
 
-    private ChatRun record(AgentRequest turn, AgentResult result, ArrayList<String> toolNames, long latencyMs) {
+    private ChatRun record(AgentRequest turn, AgentResult result, List<String> toolNames, long latencyMs) {
         var cost = costs.cost(result.usage(), llm.billable());
         var run = new ChatRun(turn.runId(), Instant.now(clock), truncate(turn.message()), llm.provider(), llm.model(),
                 result, toolNames, latencyMs, cost);

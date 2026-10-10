@@ -103,6 +103,11 @@ public class PendingAction {
         this.confirmedAt = at;
     }
 
+    /** The confirmation never reached the person, so the decision may be confirmed again. */
+    void unconfirm() {
+        this.confirmedAt = null;
+    }
+
     private void decide(ActionStatus to, Instant at, String actor) {
         requireProposed();
         this.status = to;

@@ -107,7 +107,7 @@ class ChatRunOutcomesIT extends PostgresIntegrationTest {
                 .thenToolCall("t1", "get_occupancy_summary", "{}")
                 .thenText("never reached");
 
-        var emitter = chatService.start(new ChatRequest("outcome: disconnect", null, null));
+        var emitter = chatService.start(new ChatRequest("outcome: disconnect", null, null), "visitor-test");
         emitter.complete();
         held.countDown();
 
@@ -126,7 +126,8 @@ class ChatRunOutcomesIT extends PostgresIntegrationTest {
         var held = new CountDownLatch(1);
         llm.beforeEachCall(() -> awaitUninterruptibly(held)).thenText("an answer nobody received");
 
-        var emitter = chatService.start(new ChatRequest("outcome: disconnect during the answer", null, null));
+        var emitter = chatService.start(new ChatRequest("outcome: disconnect during the answer", null, null),
+                "visitor-test");
         emitter.complete();
         held.countDown();
 
@@ -143,7 +144,7 @@ class ChatRunOutcomesIT extends PostgresIntegrationTest {
     void theStreamStaysOpenFifteenSecondsLongerThanTheRunDeadline() {
         llm.thenText("hello");
 
-        var emitter = chatService.start(new ChatRequest("outcome: emitter timeout", null, null));
+        var emitter = chatService.start(new ChatRequest("outcome: emitter timeout", null, null), "visitor-test");
 
         assertThat(emitter.getTimeout()).isEqualTo(agentProps.runTimeout().plusSeconds(15).toMillis());
         await().atMost(Duration.ofSeconds(10)).until(() -> runExists("outcome: emitter timeout"));
