@@ -11,6 +11,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.proppilot.PostgresIntegrationTest;
 import dev.proppilot.actions.ActionKind;
 import dev.proppilot.actions.ActionService;
+import dev.proppilot.actions.VisitorActors;
 import dev.proppilot.admin.DemoResetService;
 import dev.proppilot.agent.DecisionNotice;
 import dev.proppilot.agent.ScriptedLlmClient;
@@ -29,6 +30,7 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 /**
  * What a model sees and what the browser gets around a proposed change, with a scripted model instead of the offline
@@ -53,11 +55,15 @@ class ChatProposalFlowIT extends PostgresIntegrationTest {
     @Autowired
     ActionService actions;
     @Autowired
+    VisitorActors visitors;
+    @Autowired
     DemoResetService demo;
     @Autowired
     JdbcTemplate jdbc;
     @Autowired
     ObjectMapper json;
+
+    private static final String VISITOR_ADDRESS = "198.51.100.9";
 
     private String unit;
 
@@ -73,9 +79,15 @@ class ChatProposalFlowIT extends PostgresIntegrationTest {
         demo.reset();
     }
 
+    private static MockHttpServletRequestBuilder chatRequest(String body) {
+        return post("/api/chat").contentType(MediaType.APPLICATION_JSON).content(body).with(r -> {
+            r.setRemoteAddr(VISITOR_ADDRESS);
+            return r;
+        });
+    }
+
     private String chat(String body) throws Exception {
-        var started = mvc.perform(post("/api/chat").contentType(MediaType.APPLICATION_JSON).content(body))
-                .andExpect(request().asyncStarted()).andReturn();
+        var started = mvc.perform(chatRequest(body)).andExpect(request().asyncStarted()).andReturn();
         started.getAsyncResult(10_000);
         return mvc.perform(asyncDispatch(started)).andExpect(status().isOk()).andReturn()
                 .getResponse().getContentAsString(StandardCharsets.UTF_8);
@@ -143,7 +155,8 @@ class ChatProposalFlowIT extends PostgresIntegrationTest {
     void theConfirmationTurnIsWrittenByTheServerAndTheModelGetsNoTools() throws Exception {
         var proposed = actions.propose(ActionKind.RECORD_PAYMENT,
                 json.createObjectNode().put("unit_code", unit).put("amount", 100).put("method", "CASH"), null);
-        actions.approve(proposed.id(), UUID.randomUUID().toString(), json.createObjectNode(), "visitor-test");
+        actions.approve(proposed.id(), UUID.randomUUID().toString(), json.createObjectNode(),
+                visitors.actorFor(VISITOR_ADDRESS));
         llm.thenText("Done, the payment was recorded.");
 
         var sse = chat("""
@@ -169,19 +182,16 @@ class ChatProposalFlowIT extends PostgresIntegrationTest {
         var proposed = actions.propose(ActionKind.RECORD_PAYMENT,
                 json.createObjectNode().put("unit_code", unit).put("amount", 100).put("method", "CASH"), null);
         var body = "{\"message\":\"\",\"actionId\":\"" + proposed.id() + "\"}";
-        mvc.perform(post("/api/chat").contentType(MediaType.APPLICATION_JSON).content(body))
-                .andExpect(status().isConflict());
+        mvc.perform(chatRequest(body)).andExpect(status().isConflict());
         assertThat(llm.requests).as("no model call for a refused confirmation").isEmpty();
 
-        actions.reject(proposed.id(), "not now", "visitor-test");
+        actions.reject(proposed.id(), "not now", visitors.actorFor(VISITOR_ADDRESS));
         llm.thenText("Understood, rejected.");
         chat(body);
 
         assertThat(textOf(llm.requests.get(0).messages().get(0))).contains("\"outcome\":\"REJECTED\"", "\"reason\":\"not now\"");
-        mvc.perform(post("/api/chat").contentType(MediaType.APPLICATION_JSON).content(body))
-                .andExpect(status().isConflict());
-        mvc.perform(post("/api/chat").contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"message\":\"\",\"actionId\":\"" + UUID.randomUUID() + "\"}"))
+        mvc.perform(chatRequest(body)).andExpect(status().isConflict());
+        mvc.perform(chatRequest("{\"message\":\"\",\"actionId\":\"" + UUID.randomUUID() + "\"}"))
                 .andExpect(status().isNotFound());
     }
 
