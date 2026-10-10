@@ -5,8 +5,6 @@ import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
-import java.util.UUID;
-import java.util.regex.Pattern;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -21,8 +19,6 @@ import org.springframework.web.bind.annotation.RestController;
 public class ActionController {
 
     static final int LATEST = 50;
-    private static final Pattern UUID_FORMAT =
-            Pattern.compile("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
 
     private final ActionService actions;
     private final ActionLimits limits;
@@ -41,7 +37,7 @@ public class ActionController {
 
     @GetMapping("/{id}")
     public ActionView get(@PathVariable String id) {
-        return actions.get(parseId(id));
+        return actions.get(ActionIds.parse(id));
     }
 
     /** Recomputes the diff, optionally with the edits an approval would carry. Changes nothing. */
@@ -49,7 +45,7 @@ public class ActionController {
     public PreviewView preview(@PathVariable String id, @RequestBody(required = false) JsonNode body,
                                HttpServletRequest http) {
         limits.requireDecisionAllowed(http.getRemoteAddr());
-        return actions.preview(parseId(id), edits(body));
+        return actions.preview(ActionIds.parse(id), edits(body));
     }
 
     @PostMapping("/{id}/approve")
@@ -57,22 +53,14 @@ public class ActionController {
                                 @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
                                 @RequestBody(required = false) JsonNode body, HttpServletRequest http) {
         limits.requireDecisionAllowed(http.getRemoteAddr());
-        return actions.approve(parseId(id), idempotencyKey, edits(body), visitors.actorFor(http.getRemoteAddr()));
+        return actions.approve(ActionIds.parse(id), idempotencyKey, edits(body), visitors.actorFor(http.getRemoteAddr()));
     }
 
     @PostMapping("/{id}/reject")
     public ActionView reject(@PathVariable String id, @RequestBody(required = false) JsonNode body,
                              HttpServletRequest http) {
         limits.requireDecisionAllowed(http.getRemoteAddr());
-        return actions.reject(parseId(id), reason(body), visitors.actorFor(http.getRemoteAddr()));
-    }
-
-    /** Only the canonical form: {@link UUID#fromString} would also take sloppy input such as {@code 1-1-1-1-1}. */
-    private static UUID parseId(String raw) {
-        if (!UUID_FORMAT.matcher(raw).matches()) {
-            throw new ActionException(ActionError.INVALID_ACTION_ID, "The action id is not a valid UUID.");
-        }
-        return UUID.fromString(raw);
+        return actions.reject(ActionIds.parse(id), reason(body), visitors.actorFor(http.getRemoteAddr()));
     }
 
     private static ObjectNode edits(JsonNode body) {

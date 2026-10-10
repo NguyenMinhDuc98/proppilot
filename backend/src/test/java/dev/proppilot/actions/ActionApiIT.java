@@ -361,6 +361,42 @@ class ActionApiIT extends ActionIntegrationTest {
     }
 
     @Test
+    void theAuditLogCanBeNarrowedToOneActionWhateverHasHappenedSince() throws Exception {
+        var older = proposePayment("1000");
+        mvc.perform(approve(older.id(), "key-1", "{\"amount\":800}")).andExpect(status().isOk());
+        var other = proposePayment("200");
+        jdbc.update("""
+                insert into audit_log (at, actor, event, entity_type, entity_id)
+                select now() + interval '1 hour' + n * interval '1 second', 'agent', 'PROPOSED', 'PENDING_ACTION', 'new-' || n
+                from generate_series(1, 150) n""");
+
+        mvc.perform(get("/api/audit")).andExpect(jsonPath("$", hasSize(100)))
+                .andExpect(jsonPath("$[?(@.actionId == '" + older.id() + "')]").isEmpty());
+        mvc.perform(get("/api/audit").param("actionId", older.id().toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(3)))
+                .andExpect(jsonPath("$[0].event").value("APPROVED"))
+                .andExpect(jsonPath("$[1].event").value("EDITED"))
+                .andExpect(jsonPath("$[2].event").value("PROPOSED"))
+                .andExpect(jsonPath("$[?(@.actionId != '" + older.id() + "')]").isEmpty());
+        mvc.perform(get("/api/audit").param("actionId", other.id().toString()))
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].event").value("PROPOSED"));
+    }
+
+    @Test
+    void anActionWithoutEntriesHasAnEmptyTrailAndAMalformedIdIsABadRequest() throws Exception {
+        mvc.perform(get("/api/audit").param("actionId", UUID.randomUUID().toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(0)));
+        for (String id : new String[] {"not-a-uuid", "1-1-1-1-1", ""}) {
+            mvc.perform(get("/api/audit").param("actionId", id))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.code").value("invalid_action_id"));
+        }
+    }
+
+    @Test
     void theBrowserMayCallApproveAcrossOriginsWithItsKeyHeader() throws Exception {
         var proposed = proposePayment("1000");
 

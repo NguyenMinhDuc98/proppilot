@@ -6,8 +6,8 @@ import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
-/** Answers every refusal of the actions API with the same body: {@code {code, message}}. */
-@RestControllerAdvice(assignableTypes = ActionController.class)
+/** Answers every refusal of the actions and audit API with the same body: {@code {code, message}}. */
+@RestControllerAdvice(assignableTypes = {ActionController.class, AuditController.class})
 class ActionExceptionHandler {
 
     record ErrorBody(String code, String message) {

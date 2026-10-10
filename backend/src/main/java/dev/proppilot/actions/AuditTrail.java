@@ -72,6 +72,11 @@ public class AuditTrail {
         return entries.findAllByOrderByOccurredAtDescIdDesc(Limit.of(limit));
     }
 
+    /** What happened to one action, newest first: a proposal, at most one edit and one decision. */
+    public List<AuditEntry> of(UUID actionId) {
+        return entries.findAllByActionIdOrderByOccurredAtDescIdDesc(actionId);
+    }
+
     private void record(String actor, AuditEvent event, UUID actionId, String entityType, String entityId,
                         JsonNode before, JsonNode after, String note) {
         entries.save(new AuditEntry(clock.instant(), actor, event, actionId, entityType, entityId, before, after, note));
