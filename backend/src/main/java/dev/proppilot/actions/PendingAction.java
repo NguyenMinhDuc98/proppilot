@@ -79,14 +79,12 @@ public class PendingAction {
     void approve(Instant at, String actor, String idempotencyKey, JsonNode result) {
         decide(ActionStatus.APPROVED, at, actor);
         this.idempotencyKey = idempotencyKey;
-        this.confirmedAt = at;
         this.result = result;
     }
 
     void fail(Instant at, String actor, String idempotencyKey, JsonNode failure, String reason) {
         decide(ActionStatus.FAILED, at, actor);
         this.idempotencyKey = idempotencyKey;
-        this.confirmedAt = at;
         this.decisionReason = reason;
         this.result = failure;
     }
@@ -98,6 +96,11 @@ public class PendingAction {
 
     void expire(Instant at) {
         decide(ActionStatus.EXPIRED, at, null);
+    }
+
+    /** The assistant told the person in the chat how their decision turned out. */
+    void confirm(Instant at) {
+        this.confirmedAt = at;
     }
 
     private void decide(ActionStatus to, Instant at, String actor) {

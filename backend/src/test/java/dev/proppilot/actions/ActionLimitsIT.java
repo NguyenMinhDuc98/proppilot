@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import dev.proppilot.config.ActionProperties;
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
@@ -29,7 +30,13 @@ class ActionLimitsIT extends ActionIntegrationTest {
     PlatformTransactionManager transactions;
 
     private ActionService withDailyCap(int cap) {
-        var props = new ActionProperties(15, 1000, cap);
+        var props = new ActionProperties(15, 1000, cap, 3, 200);
+        return new ActionService(executors, repository, auditTrail, new ActionLimits(props, clock), props, clock, json,
+                transactions);
+    }
+
+    private ActionService withProposalCaps(int perRun, int perDay) {
+        var props = new ActionProperties(15, 1000, 1000, perRun, perDay);
         return new ActionService(executors, repository, auditTrail, new ActionLimits(props, clock), props, clock, json,
                 transactions);
     }
@@ -134,5 +141,80 @@ class ActionLimitsIT extends ActionIntegrationTest {
 
         assertThat(capped.approve(proposed.id(), newKey(), edits(), "visitor-test").action().status())
                 .isEqualTo(ActionStatus.APPROVED);
+    }
+
+    @Test
+    void aRunMayProposeOnlyUpToItsCapAndTheNextRunStartsAgain() {
+        var capped = withProposalCaps(2, 100);
+        var run = UUID.randomUUID();
+        capped.propose(ActionKind.RECORD_PAYMENT, paymentArgs("100"), run);
+        capped.propose(ActionKind.RECORD_PAYMENT, paymentArgs("100"), run);
+        var proposals = count("pending_actions");
+
+        var error = refusal(() -> capped.propose(ActionKind.RECORD_PAYMENT, paymentArgs("100"), run));
+
+        assertThat(error).isEqualTo(ActionError.RUN_PROPOSAL_LIMIT_REACHED);
+        assertThat(error.status().value()).isEqualTo(429);
+        assertThat(count("pending_actions")).as("nothing was stored").isEqualTo(proposals);
+        assertThat(capped.propose(ActionKind.RECORD_PAYMENT, paymentArgs("100"), UUID.randomUUID()).status())
+                .isEqualTo(ActionStatus.PROPOSED);
+    }
+
+    @Test
+    void theCapOnProposalsPerRunComesFromTheProperty() {
+        var capped = withProposalCaps(1, 100);
+        var run = UUID.randomUUID();
+        capped.propose(ActionKind.RECORD_PAYMENT, paymentArgs("100"), run);
+
+        assertThat(refusal(() -> capped.propose(ActionKind.RECORD_PAYMENT, paymentArgs("100"), run)))
+                .isEqualTo(ActionError.RUN_PROPOSAL_LIMIT_REACHED);
+    }
+
+    @Test
+    void aProposalWithoutARunHasNoPerRunCap() {
+        var capped = withProposalCaps(1, 100);
+
+        for (int i = 0; i < 3; i++) {
+            capped.propose(ActionKind.RECORD_PAYMENT, paymentArgs("100"), null);
+        }
+
+        assertThat(count("pending_actions")).isEqualTo(3);
+    }
+
+    @Test
+    void theDailyCapOnProposalsStopsEveryoneAndIsAnswered429() {
+        var capped = withProposalCaps(100, 2);
+        capped.propose(ActionKind.RECORD_PAYMENT, paymentArgs("100"), UUID.randomUUID());
+        capped.propose(ActionKind.RECORD_PAYMENT, paymentArgs("100"), UUID.randomUUID());
+
+        var error = refusal(() -> capped.propose(ActionKind.RECORD_PAYMENT, paymentArgs("100"), UUID.randomUUID()));
+
+        assertThat(error).isEqualTo(ActionError.DAILY_PROPOSAL_LIMIT_REACHED);
+        assertThat(error.status().value()).isEqualTo(429);
+        assertThat(count("pending_actions")).isEqualTo(2);
+    }
+
+    @Test
+    void aProposalThatIsRefusedDoesNotUseUpTheDailyBudget() {
+        var capped = withProposalCaps(100, 1);
+        var invalid = paymentArgs("100").put("amount", 0);
+
+        assertThat(refusal(() -> capped.propose(ActionKind.RECORD_PAYMENT, invalid, null)))
+                .isEqualTo(ActionError.INVALID_AMOUNT);
+
+        assertThat(capped.propose(ActionKind.RECORD_PAYMENT, paymentArgs("100"), null).status())
+                .as("the one proposal of the day is still there").isEqualTo(ActionStatus.PROPOSED);
+        assertThat(refusal(() -> capped.propose(ActionKind.RECORD_PAYMENT, paymentArgs("100"), null)))
+                .isEqualTo(ActionError.DAILY_PROPOSAL_LIMIT_REACHED);
+    }
+
+    @Test
+    void theRunIdIsStoredOnTheProposal() {
+        var run = UUID.randomUUID();
+
+        var proposed = actions.propose(ActionKind.RECORD_PAYMENT, paymentArgs("100"), run);
+
+        assertThat(proposed.runId()).isEqualTo(run);
+        assertThat(pendingActionRow(proposed.id())).containsEntry("run_id", run);
     }
 }

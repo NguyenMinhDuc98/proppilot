@@ -4,7 +4,12 @@ import com.fasterxml.jackson.databind.JsonNode;
 import java.time.Instant;
 import java.util.UUID;
 
-/** A proposal as the API shows it. The idempotency key stays server-side. */
+/**
+ * A proposal as the API shows it. The idempotency key stays server-side.
+ *
+ * @param confirmedAt when the assistant confirmed the decision in the chat; null until it did
+ * @param runId the chat run whose answer proposed it, when there was one
+ */
 public record ActionView(
         UUID id,
         ActionKind kind,

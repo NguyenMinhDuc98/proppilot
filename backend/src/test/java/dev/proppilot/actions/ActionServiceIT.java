@@ -82,7 +82,7 @@ class ActionServiceIT extends ActionIntegrationTest {
         assertThat(action.status()).isEqualTo(ActionStatus.APPROVED);
         assertThat(action.actor()).isEqualTo("visitor-1a2b3c4d");
         assertThat(action.decidedAt()).isNotNull();
-        assertThat(action.confirmedAt()).isNotNull();
+        assertThat(action.confirmedAt()).as("the chat has not confirmed it yet").isNull();
 
         var invoices = invoicesOfTenant7();
         var previewedIds = new java.util.HashSet<Long>();
@@ -594,6 +594,70 @@ class ActionServiceIT extends ActionIntegrationTest {
         } finally {
             pool.shutdownNow();
         }
+    }
+
+    @Test
+    void aDecidedActionIsConfirmedInTheChatOnce() {
+        var approved = proposePayment("1000");
+        actions.approve(approved.id(), newKey(), edits(), "visitor-test");
+        var rejected = proposePayment("200");
+        actions.reject(rejected.id(), "wrong unit", "visitor-test");
+
+        var confirmed = actions.claimConfirmation(approved.id());
+
+        assertThat(confirmed.status()).isEqualTo(ActionStatus.APPROVED);
+        assertThat(confirmed.confirmedAt()).isNotNull();
+        assertThat(pendingActionRow(approved.id()).get("confirmed_at")).isNotNull();
+        assertThat(errorOf(() -> actions.claimConfirmation(approved.id()))).isEqualTo(ActionError.ACTION_ALREADY_CONFIRMED);
+        assertThat(actions.claimConfirmation(rejected.id()).decisionReason()).isEqualTo("wrong unit");
+        assertThat(errorOf(() -> actions.claimConfirmation(rejected.id()))).isEqualTo(ActionError.ACTION_ALREADY_CONFIRMED);
+    }
+
+    @Test
+    void aFailedApprovalCanBeConfirmedToo() {
+        var amount = rent.multiply(bd("3")).toPlainString();
+        var stale = proposePayment(amount);
+        actions.approve(proposePayment(amount).id(), newKey(), edits(), "visitor-test");
+        errorOf(() -> actions.approve(stale.id(), newKey(), edits(), "visitor-test"));
+
+        var confirmed = actions.claimConfirmation(stale.id());
+
+        assertThat(confirmed.status()).isEqualTo(ActionStatus.FAILED);
+        assertThat(confirmed.decisionReason()).contains("outstanding");
+    }
+
+    @Test
+    void anUndecidedOrExpiredOrUnknownActionHasNothingToConfirm() {
+        var waiting = proposePayment("1000");
+        var expired = proposePayment("500");
+        jdbc.update("update pending_actions set expires_at = now() - interval '1 second' where id = ?", expired.id());
+
+        assertThat(errorOf(() -> actions.claimConfirmation(waiting.id()))).isEqualTo(ActionError.ACTION_NOT_DECIDED);
+        assertThat(errorOf(() -> actions.claimConfirmation(expired.id()))).isEqualTo(ActionError.ACTION_NOT_DECIDED);
+        assertThat(errorOf(() -> actions.claimConfirmation(UUID.randomUUID()))).isEqualTo(ActionError.ACTION_NOT_FOUND);
+        assertThat(pendingActionRow(waiting.id())).containsEntry("status", "PROPOSED").containsEntry("confirmed_at", null);
+    }
+
+    @Test
+    void anActionThatWasNotConfirmedYetCanStillBeConfirmedAfterItWasDecidedOn() {
+        var proposed = proposePayment("1000");
+        assertThat(errorOf(() -> actions.claimConfirmation(proposed.id()))).isEqualTo(ActionError.ACTION_NOT_DECIDED);
+
+        actions.approve(proposed.id(), newKey(), edits(), "visitor-test");
+
+        assertThat(actions.claimConfirmation(proposed.id()).confirmedAt()).isNotNull();
+    }
+
+    @Test
+    void ofTwoSimultaneousConfirmationsExactlyOneWins() throws Exception {
+        var proposed = proposePayment("1000");
+        actions.approve(proposed.id(), newKey(), edits(), "visitor-test");
+
+        var outcomes = inParallel(() -> actions.claimConfirmation(proposed.id()), () -> actions.claimConfirmation(proposed.id()));
+
+        assertThat(outcomes.stream().filter(o -> o instanceof ActionView)).hasSize(1);
+        assertThat(outcomes.stream().filter(o -> o instanceof ActionException).map(o -> ((ActionException) o).error()))
+                .containsExactly(ActionError.ACTION_ALREADY_CONFIRMED);
     }
 
     /** Runs the calls on separate threads, released together, and returns what each returned or threw. */

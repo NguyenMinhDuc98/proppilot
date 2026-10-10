@@ -24,6 +24,10 @@ class ActionErrorTest {
         assertThat(ActionError.ACTION_NOT_FOUND.status()).isEqualTo(HttpStatus.NOT_FOUND);
         assertThat(ActionError.ACTION_ALREADY_DECIDED.status()).isEqualTo(HttpStatus.CONFLICT);
         assertThat(ActionError.IDEMPOTENCY_KEY_REUSED.status()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(ActionError.ACTION_NOT_DECIDED.status()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(ActionError.ACTION_ALREADY_CONFIRMED.status()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(ActionError.RUN_PROPOSAL_LIMIT_REACHED.status()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+        assertThat(ActionError.DAILY_PROPOSAL_LIMIT_REACHED.status()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
         assertThat(ActionError.ACTION_EXPIRED.status()).isEqualTo(HttpStatus.GONE);
         assertThat(ActionError.INVALID_AMOUNT.status()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);
         assertThat(ActionError.NO_OVERDUE_RENT.status()).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY);

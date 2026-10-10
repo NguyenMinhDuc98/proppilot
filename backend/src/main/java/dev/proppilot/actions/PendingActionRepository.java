@@ -17,6 +17,8 @@ public interface PendingActionRepository extends JpaRepository<PendingAction, UU
 
     boolean existsByIdempotencyKey(String idempotencyKey);
 
+    long countByRunId(UUID runId);
+
     @Query("select a.id from PendingAction a where a.status = dev.proppilot.actions.ActionStatus.PROPOSED and a.expiresAt <= :now")
     List<UUID> findIdsDueForExpiry(@Param("now") Instant now);
 

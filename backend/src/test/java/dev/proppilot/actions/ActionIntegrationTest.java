@@ -26,7 +26,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
  * <p>Tenant 7 is the seeded "chronic" non-payer: the invoices of the last four months are unpaid. The caps of the
  * public demo are lifted here; {@link ActionLimitsIT} covers them.
  */
-@SpringBootTest(properties = {"proppilot.actions.decisions-per-minute=1000", "proppilot.actions.max-approvals-per-day=1000"})
+@SpringBootTest(properties = {"proppilot.actions.decisions-per-minute=1000", "proppilot.actions.max-approvals-per-day=1000",
+        "proppilot.actions.max-proposals-per-day=100000"})
 abstract class ActionIntegrationTest extends PostgresIntegrationTest {
 
     @Autowired

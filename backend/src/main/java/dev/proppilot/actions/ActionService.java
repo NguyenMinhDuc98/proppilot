@@ -65,19 +65,36 @@ public class ActionService {
     }
 
     /**
-     * Stores a proposal; nothing in the business tables changes.
+     * Stores a proposal; nothing in the business tables changes. A run may propose only so many changes and the demo
+     * only so many a day; a proposal that is refused does not use up the daily budget.
      *
+     * @param runId the chat run that proposes it, or null when there is none and no per-run cap applies
      * @throws ActionException when the change may not be made, with a code the caller can act on
      */
     public ActionView propose(ActionKind kind, JsonNode rawArgs, UUID runId) {
-        var plan = plan(executorFor(kind), rawArgs);
-        var now = clock.instant();
-        var action = new PendingAction(UUID.randomUUID(), kind, plan, now, now.plus(props.ttl()), runId);
-        tx.executeWithoutResult(status -> {
-            actions.save(action);
-            audit.proposed(action);
-        });
-        return ActionView.of(action);
+        requireRoomInRun(runId);
+        limits.takeProposal();
+        try {
+            var plan = plan(executorFor(kind), rawArgs);
+            var now = clock.instant();
+            var action = new PendingAction(UUID.randomUUID(), kind, plan, now, now.plus(props.ttl()), runId);
+            tx.executeWithoutResult(status -> {
+                actions.save(action);
+                audit.proposed(action);
+            });
+            return ActionView.of(action);
+        } catch (RuntimeException failed) {
+            limits.returnProposal();
+            throw failed;
+        }
+    }
+
+    private void requireRoomInRun(UUID runId) {
+        if (runId != null && actions.countByRunId(runId) >= props.maxProposalsPerRun()) {
+            throw new ActionException(ActionError.RUN_PROPOSAL_LIMIT_REACHED, "No more changes can be proposed in this "
+                    + "reply: at most " + props.maxProposalsPerRun() + " are allowed. Tell the user which changes are "
+                    + "still open and to ask for them in a new message.");
+        }
     }
 
     public ActionView get(UUID id) {
@@ -158,6 +175,28 @@ public class ActionService {
             case Outcome.Decided decided -> ActionView.of(decided.action());
             case Outcome.Expired ignored -> throw expiredError();
         };
+    }
+
+    /**
+     * Takes the one confirmation a decided action gets in the chat. The marker is set under the row lock, so of two
+     * simultaneous claims exactly one wins.
+     *
+     * @throws ActionException {@code action_not_found}, {@code action_not_decided} or {@code action_already_confirmed}
+     */
+    public ActionView claimConfirmation(UUID id) {
+        return tx.execute(status -> {
+            var action = lock(id);
+            if (action.getStatus() == ActionStatus.PROPOSED || action.getStatus() == ActionStatus.EXPIRED) {
+                throw new ActionException(ActionError.ACTION_NOT_DECIDED,
+                        "Nobody has decided on this proposal, so there is nothing to confirm.");
+            }
+            if (action.getConfirmedAt() != null) {
+                throw new ActionException(ActionError.ACTION_ALREADY_CONFIRMED,
+                        "This decision was already confirmed in the chat.");
+            }
+            action.confirm(clock.instant());
+            return ActionView.of(action);
+        });
     }
 
     private Outcome approveLocked(UUID id, String key, ObjectNode edits, String actor) {

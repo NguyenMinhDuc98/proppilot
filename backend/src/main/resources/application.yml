@@ -53,3 +53,5 @@ proppilot:
     ttl-minutes: ${ACTION_TTL_MINUTES:15}
     decisions-per-minute: ${ACTION_DECISIONS_PER_MINUTE:30}
     max-approvals-per-day: ${ACTION_MAX_APPROVALS_PER_DAY:100}
+    max-proposals-per-run: ${ACTION_MAX_PROPOSALS_PER_RUN:3}
+    max-proposals-per-day: ${ACTION_MAX_PROPOSALS_PER_DAY:200}
