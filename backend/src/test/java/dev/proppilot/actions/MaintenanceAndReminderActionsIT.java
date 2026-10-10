@@ -99,9 +99,13 @@ class MaintenanceAndReminderActionsIT extends ActionIntegrationTest {
 
         var proposed = actions.propose(ActionKind.SEND_TENANT_REMINDER, args, null);
 
+        var months = overdueMonthsOfTenant7();
+
         assertThat(count("outbox_messages")).isZero();
+        assertThat(months).as("the seed leaves tenant 7 three or four months behind").isBetween(3, 4);
         assertThat(proposed.preview().get("subject").asText()).startsWith("Friendly reminder");
-        assertThat(proposed.preview().get("body").asText()).contains("Dear Ahmed Al-Harbi").contains("4 month(s)");
+        assertThat(proposed.preview().get("body").asText()).contains("Dear Ahmed Al-Harbi").contains(months + " month(s)")
+                .contains("SAR " + overdueAmountOfTenant7().stripTrailingZeros().toPlainString());
         assertThat(proposed.preview().get("delivered").asBoolean()).isFalse();
         assertThat(proposed.summaryEn()).contains("rent reminder").contains("English").contains("nothing is sent");
         assertThat(proposed.summaryAr()).contains("تذكير بالإيجار").contains("الإنجليزية").contains(unit);
@@ -193,12 +197,16 @@ class MaintenanceAndReminderActionsIT extends ActionIntegrationTest {
     @Test
     void theMessageIsWrittenFromTheFiguresOfTheMomentItIsApproved() {
         var reminder = actions.propose(ActionKind.SEND_TENANT_REMINDER, reminderArgs("RENT_REMINDER").put("language", "EN"), null);
+        var monthsAtProposal = overdueMonthsOfTenant7();
         actions.approve(proposePayment(rent.toPlainString()).id(), newKey(), edits(), "visitor-test");
+        var monthsNow = overdueMonthsOfTenant7();
 
         actions.approve(reminder.id(), newKey(), edits(), "visitor-test");
 
         var body = jdbc.queryForObject("select body from outbox_messages", String.class);
-        assertThat(body).contains("3 month(s)").contains("SAR " + rent.multiply(BigDecimal.valueOf(3)).stripTrailingZeros().toPlainString());
+        assertThat(monthsNow).as("the payment settled the oldest overdue month").isEqualTo(monthsAtProposal - 1);
+        assertThat(body).contains(monthsNow + " month(s)")
+                .contains("SAR " + overdueAmountOfTenant7().stripTrailingZeros().toPlainString());
     }
 
     @Test

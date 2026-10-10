@@ -118,6 +118,22 @@ abstract class ActionIntegrationTest extends PostgresIntegrationTest {
         return LocalDate.now(clock);
     }
 
+    /**
+     * Months of tenant 7's rent that are overdue and what is still owed on them. An invoice is overdue once its due
+     * date has passed, so on the first of a month the invoice due that day is not counted yet.
+     */
+    protected int overdueMonthsOfTenant7() {
+        return jdbc.queryForObject("""
+                select count(*) from payments p join leases l on l.id = p.lease_id
+                where l.tenant_id = 7 and p.paid_on is null and p.due_date < ?""", Integer.class, today());
+    }
+
+    protected BigDecimal overdueAmountOfTenant7() {
+        return jdbc.queryForObject("""
+                select coalesce(sum(p.amount - p.paid_amount), 0) from payments p join leases l on l.id = p.lease_id
+                where l.tenant_id = 7 and p.paid_on is null and p.due_date < ?""", BigDecimal.class, today());
+    }
+
     /** Blocks until some statement waits for a lock held by another transaction, so a test can release it then. */
     protected void waitUntilAStatementWaitsForALock() throws InterruptedException {
         for (int i = 0; i < 100; i++) {

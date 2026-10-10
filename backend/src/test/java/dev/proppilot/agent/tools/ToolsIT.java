@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.proppilot.PostgresIntegrationTest;
+import java.time.Clock;
+import java.time.LocalDate;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -18,6 +20,8 @@ class ToolsIT extends PostgresIntegrationTest {
     ObjectMapper json;
     @Autowired
     JdbcTemplate jdbc;
+    @Autowired
+    Clock clock;
 
     private ToolResult call(String tool, String args) throws Exception {
         return registry.execute(tool, json.readTree(args));
@@ -176,10 +180,14 @@ class ToolsIT extends PostgresIntegrationTest {
 
     @Test
     void draftsEnglishReminderMentioningTheAmount() throws Exception {
+        // an invoice is overdue once its due date has passed, so on the first of a month the one due that day is not
+        var overdueMonths = jdbc.queryForObject("""
+                select count(*) from payments p join leases l on l.id = p.lease_id
+                where l.tenant_id = 7 and p.paid_on is null and p.due_date < ?""", Integer.class, LocalDate.now(clock));
         var d = data(call("draft_tenant_message",
                 "{\"tenant_name\":\"Ahmed\",\"unit_code\":\"" + chronicUnit() + "\",\"purpose\":\"RENT_REMINDER\",\"language\":\"EN\"}"));
 
-        assertThat(d.get("body").asText()).contains("Dear Ahmed Al-Harbi").contains("SAR").contains("4 month(s)");
+        assertThat(d.get("body").asText()).contains("Dear Ahmed Al-Harbi").contains("SAR").contains(overdueMonths + " month(s)");
     }
 
     @Test
