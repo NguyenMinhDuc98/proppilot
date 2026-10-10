@@ -34,3 +34,9 @@ services:
         value: "10"
       - key: CHAT_DAILY_LIMIT
         value: "100"
+      - key: ACTION_TTL_MINUTES
+        value: "15"
+      - key: ACTION_DECISIONS_PER_MINUTE
+        value: "30"
+      - key: ACTION_MAX_APPROVALS_PER_DAY
+        value: "100"
