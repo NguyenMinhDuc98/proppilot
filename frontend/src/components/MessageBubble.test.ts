@@ -131,6 +131,23 @@ describe('MessageBubble tool chips', () => {
     expect(chips(finished)).toEqual([ar.tools[name].done])
   })
 
+  it.each(proposingTools)('does not call a refused %s a prepared change, in either language', async (name) => {
+    const wrapper = render({ text: 'It could not be proposed.', tools: [toolChip(name, 'failed')], usage })
+
+    expect(chips(wrapper)).toEqual([en.tools[name].failed])
+    expect(en.tools[name].failed).not.toBe(en.tools[name].done)
+
+    i18n.global.locale.value = 'ar'
+    await nextTick()
+    expect(chips(wrapper)).toEqual([ar.tools[name].failed])
+    expect(ar.tools[name].failed).not.toBe(ar.tools[name].done)
+  })
+
+  it('words a failed read tool and an unknown one by their own failed label', () => {
+    expect(chips(render({ tools: [toolChip('search_units', 'failed')] }))).toEqual([en.tools.search_units.failed])
+    expect(chips(render({ tools: [toolChip('brand_new_tool', 'failed')] }))).toEqual([en.tools.unknown.failed])
+  })
+
   it('falls back to a neutral label for a tool it does not know', () => {
     expect(chips(render({ tools: [toolChip('brand_new_tool', 'running')], streaming: true }))).toEqual([en.tools.unknown.running])
   })

@@ -10,7 +10,7 @@ const { t, te, locale } = useI18n()
 
 const label = computed(() => {
   const key = te(`tools.${props.chip.name}.running`) ? props.chip.name : 'unknown'
-  return t(`tools.${key}.${props.chip.status === 'running' ? 'running' : 'done'}`)
+  return t(`tools.${key}.${props.chip.status}`)
 })
 </script>
 
