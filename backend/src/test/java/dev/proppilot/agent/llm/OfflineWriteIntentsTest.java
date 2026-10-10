@@ -9,6 +9,7 @@ import dev.proppilot.agent.DecisionNotice;
 import dev.proppilot.agent.llm.offline.OfflineLlmClient;
 import java.time.Duration;
 import java.util.List;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -39,6 +40,7 @@ class OfflineWriteIntentsTest {
             I want to register a payment of 4800 from unit a203 | record_payment | 4800
             Can you add a payment of 1000 riyals for B-101 | record_payment | 1000
             Record 1200 received for unit B-101 | record_payment | 1200
+            Record a payment of 1200SAR for unit B-101 | record_payment | 1200
             سجّل دفعة بمبلغ 2500 للوحدة A-203 | record_payment | 2500
             سجل دفعة بمبلغ ٢٥٠٠ ريال للوحدة A-203 | record_payment | 2500
             أريد تسجيل دفعة بقيمة 1,200 ريال للوحدة B-101 | record_payment | 1200
@@ -180,6 +182,14 @@ class OfflineWriteIntentsTest {
             Write a message to remind tenant Ahmed in unit A-203 | draft_tenant_message
             ما سجل الدفعة الأخيرة للوحدة A-203؟ | get_payment_history
             اكتب تذكيرًا لأرسله إلى الوحدة A-203 | draft_tenant_message
+            Log payment history for unit A-203 | get_payment_history
+            Enter payment history for A-203 | get_payment_history
+            Add the payment history for unit B-101 | get_payment_history
+            How do I record a payment of 100 for unit A-203? | get_unit_details
+            Don't record a payment for unit A-203 | get_unit_details
+            What happens if I send a reminder to unit A-203? | draft_tenant_message
+            Draft a reminder, then send a reminder to unit A-203 | draft_tenant_message
+            Open the maintenance request list for unit A-203 | get_unit_details
             """)
     void readQuestionsStillGoToTheReadAndDraftTools(String question, String expectedTool) {
         assertThat(route(question).name()).isEqualTo(expectedTool);
@@ -190,6 +200,168 @@ class OfflineWriteIntentsTest {
             "Create a maintenance request for unit A-203: broken lock", "Send a reminder to unit A-203"})
     void aWriteRequestIsNeverAnsweredWithDataFromTheReadTools(String question) {
         assertThat(route(question).name()).isIn("record_payment", "create_maintenance_request", "send_tenant_reminder");
+    }
+
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', textBlock = """
+            Log a maintenance request for A-203: the payment machine in the lobby is broken | the payment machine in the lobby is broken
+            Add a maintenance request for unit A-203: the tenant received a flood notice | the tenant received a flood notice
+            Add a maintenance request for unit B-101, the payment terminal in the lobby is broken | the payment terminal in the lobby is broken
+            سجل طلب صيانة للوحدة A-203: جهاز الدفع دفعة معطل | جهاز الدفع دفعة معطل
+            """)
+    void aMaintenanceRequestThatMentionsAPaymentOrSomethingReceivedIsStillAMaintenanceRequest(String question,
+                                                                                            String description) {
+        var call = route(question);
+
+        assertThat(call.name()).isEqualTo("create_maintenance_request");
+        assertThat(call.input().get("description").asText()).isEqualTo(description);
+    }
+
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', textBlock = """
+            Record a payment of -500 for unit A-203 | -500
+            Record a payment of .5 for unit A-203 | 0.5
+            Record a payment of SAR 0.50 for unit A-203 | 0.50
+            سجل دفعة بمبلغ ٫٥ للوحدة A-203 | 0.5
+            """)
+    void theAmountIsExactlyWhatWasWrittenSoTheExecutorCanRefuseANegativeOne(String question, String amount) {
+        assertThat(route(question).input().get("amount").decimalValue()).isEqualByComparingTo(amount);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"Record a payment of 2.5k for unit A-203", "Record a payment of 2.500,50 for unit A-203",
+            "Record a payment of 1.000 for unit A-203", "Record a payment for unit A-203 on March 10",
+            "Record a payment for unit A-203 on 10/03/2026", "Record a payment of 3 months for unit A-203",
+            "Record a payment of 5 million for unit A-203", "Record a payment for unit A-203 on the 10th",
+            "Record a payment of 100 000 for unit A-203", "Record a payment of 1e3 for unit A-203",
+            "Record a payment of 12,34 for unit A-203"})
+    void anAmountThatCannotBeTrustedIsLeftOutSoTheToolAsksForIt(String question) {
+        var call = route(question);
+
+        assertThat(call.name()).isEqualTo("record_payment");
+        assertThat(call.input().has("amount")).isFalse();
+    }
+
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', textBlock = """
+            Record a payment for unit A-203 on March 10 of 750 | 750
+            Record a payment for unit A-203 received on 10/03/2026, amount 750 | 750
+            Record a payment for unit A-203 on 10th March 2026 of 750 | 750
+            Record a payment for unit A-203 on 10 Mar 2026, 750 SAR | 750
+            Record a payment for unit A-203 on March 10 750 | 750
+            Record a payment for 3 months of rent, amount 7500, unit A-203 | 7500
+            سجل دفعة للوحدة A-203 بتاريخ 10 مارس 2026 بمبلغ 750 ريال | 750
+            """)
+    void aDateIsNotTakenForTheAmount(String question, String amount) {
+        var call = route(question);
+
+        assertThat(call.input().get("amount").decimalValue()).isEqualByComparingTo(amount);
+        assertThat(call.input().get("unit_code").asText()).isEqualTo("A-203");
+    }
+
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', textBlock = """
+            Create a maintenance request for unit A-203: low water pressure in the shower | MEDIUM | low water pressure in the shower
+            Create a maintenance request for unit A-203: high ceiling light is broken | MEDIUM | high ceiling light is broken
+            Create a maintenance request for unit A-203: the water pressure is low | MEDIUM | the water pressure is low
+            Create a maintenance request for unit A-203: emergency exit light is out | MEDIUM | emergency exit light is out
+            أنشئ طلب صيانة للوحدة A-203: ضغط الماء منخفض | MEDIUM | ضغط الماء منخفض
+            Create a maintenance request for unit A-203: urgent: leaking pipe | URGENT | leaking pipe
+            Create a maintenance request for unit A-203: leaking pipe, urgent | URGENT | leaking pipe
+            Create an urgent maintenance request for unit A-203: leaking pipe | URGENT | leaking pipe
+            Create a maintenance request for unit A-203: leaking pipe, priority low | LOW | leaking pipe
+            Create a low priority maintenance request for unit A-203: leaking pipe | LOW | leaking pipe
+            أنشئ طلب صيانة للوحدة A-203: تسرب مياه، أولوية منخفضة | LOW | تسرب مياه
+            أنشئ طلب صيانة عاجل للوحدة A-203: انقطاع الكهرباء | URGENT | انقطاع الكهرباء
+            افتح طلب صيانة عاجل بسبب تسرب في الوحدة B-101 | URGENT | تسرب
+            """)
+    void theWordsOfTheProblemAreNotAPriorityOnlyWhatWasSaidAboutPriorityIs(String question, String priority,
+                                                                         String description) {
+        var call = route(question);
+
+        assertThat(call.input().get("priority").asText()).isEqualTo(priority);
+        assertThat(call.input().get("description").asText()).isEqualTo(description);
+    }
+
+    @Test
+    void theKindOfProblemIsReadFromTheDescriptionOnly() {
+        var call = route("The light in the lobby works. Please open a maintenance request for unit A-203: strange noise"
+                + " in the hallway");
+
+        assertThat(call.input().get("category").asText()).isEqualTo("OTHER");
+        assertThat(call.input().get("description").asText()).isEqualTo("strange noise in the hallway");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"Open a maintenance request for the unit A-203", "Open a maintenance request for my unit A-203",
+            "Open a maintenance request for the apartment B-101", "Open a maintenance request in unit A-203",
+            "افتح طلب صيانة للوحدة A-203", "افتح طلب صيانة لوحدتي A-203"})
+    void aMaintenanceRequestThatOnlyNamesTheUnitHasNoDescriptionSoTheToolAsksForIt(String question) {
+        var call = route(question);
+
+        assertThat(call.name()).isEqualTo("create_maintenance_request");
+        assertThat(call.input().get("unit_code").asText()).matches("[A-F]-\\d{3}");
+        assertThat(call.input().has("description")).isFalse();
+    }
+
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', textBlock = """
+            Open a maintenance request about the leaking tap in my unit B-101 | the leaking tap
+            Open a maintenance request for leaking tap in unit B-101 | leaking tap
+            For unit B-101, please open a maintenance request: leaking tap | leaking tap
+            """)
+    void theDescriptionIsTheProblemWithoutTheWordsThatPointAtTheUnit(String question, String description) {
+        assertThat(route(question).input().get("description").asText()).isEqualTo(description);
+    }
+
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', textBlock = """
+            Now record a payment of 100 for unit A-203 | record_payment
+            Hi, record a payment of 100 for unit A-203 | record_payment
+            Go ahead and log a payment of 100 for unit A-203 | record_payment
+            Thanks! Now please record a payment of 100 for unit A-203 | record_payment
+            For unit A-203, record a payment of 100 | record_payment
+            I’d like to record a payment of 100 for unit A-203 | record_payment
+            أريد أن أسجل دفعة بمبلغ 500 للوحدة A-203 | record_payment
+            هل يمكنك تسجيل دفعة بمبلغ 500 للوحدة A-203 | record_payment
+            Yes, please send a reminder to unit B-203 | send_tenant_reminder
+            OK send a reminder to unit B-203 | send_tenant_reminder
+            ممكن ترسل تذكير للوحدة A-203 | send_tenant_reminder
+            Great. Open a maintenance request for unit A-203: broken lock | create_maintenance_request
+            """)
+    void aCommandMayFollowFillerOrAnEarlierSentence(String question, String tool) {
+        var call = route(question);
+
+        assertThat(call.name()).isEqualTo(tool);
+        assertThat(call.input().get("unit_code").asText()).matches("[A-F]-\\d{3}");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"Open maintenance requests for building A", "Open the maintenance request list",
+            "Send reminders to all overdue tenants"})
+    void aListOfRequestsOrBulkRemindersAreNotACommandToCreateOne(String question) {
+        var response = ask(List.of(Message.user(question)));
+
+        assertThat(response.toolUses()).isEmpty();
+    }
+
+    @Test
+    void theFirstCommandInTheMessageWins() {
+        assertThat(route("Send a reminder to unit A-203, then record a payment of 100 for unit A-203").name())
+                .isEqualTo("send_tenant_reminder");
+        assertThat(route("Record a payment of 100 for unit A-203. Then send a reminder to unit A-203").name())
+                .isEqualTo("record_payment");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {".", ", ", ": ", ".,;:!? ", "a. "})
+    void aLongRunOfPunctuationIsAnsweredQuickly(String unit) {
+        var hostile = unit.repeat(5000 / unit.length()) + " Show me unit A-203";
+
+        var response = Assertions.assertTimeoutPreemptively(Duration.ofSeconds(2),
+                () -> ask(List.of(Message.user(hostile))));
+
+        assertThat(response.toolUses()).extracting(ContentBlock.ToolUse::name).containsExactly("get_unit_details");
     }
 
     private LlmResponse answerAfter(String question, String tool, String resultJson) {
