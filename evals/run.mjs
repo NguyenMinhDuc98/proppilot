@@ -1,11 +1,16 @@
 #!/usr/bin/env node
 // Runs evals/questions.json against a running PropPilot backend and prints pass rate, avg cost and avg latency.
 //
-//   node evals/run.mjs [--url http://localhost:8080] [--delay-ms 0]
+//   node evals/run.mjs [--url http://localhost:8080] [--delay-ms 0] [--only en-,ar-]
 //
-// A question passes when every `expect` entry appears in the streamed answer and every tool in `tools` was called.
-// An entry is a string, or an array of alternative wordings of which any one counts. Matching is case-insensitive
-// and ignores number formatting (4,800 = 4800 = ٤٨٠٠), because models format numbers freely. Start the backend with CHAT_RATE_LIMIT_PER_MINUTE=1000 to run without throttling.
+// A question passes when every `expect` entry appears in the streamed answer, no `absent` entry does, and every tool
+// in `tools` was called. An entry is a string, or an array of alternative wordings of which any one counts. Matching
+// is case-insensitive and ignores number formatting (4,800 = 4800 = ٤٨٠٠), because models format numbers freely.
+// Start the backend with CHAT_RATE_LIMIT_PER_MINUTE=1000 to run without throttling.
+//
+// --only runs the cases whose id starts with one of the comma-separated prefixes: en-,ar- for the read questions,
+// write- for the write actions. The write cases leave proposals on the backend they run against and expect its
+// seeded data, so run them against a local stack, or on a shared deployment right after its reset.
 
 import { readFile, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
@@ -20,6 +25,7 @@ for (let i = 2; i < process.argv.length; i++) {
 }
 const baseUrl = (args.get('url') ?? 'http://localhost:8080').replace(/\/$/, '')
 const delayMs = Number(args.get('delay-ms') ?? 0)
+const only = (args.get('only') ?? '').split(',').filter(Boolean)
 const dir = dirname(fileURLToPath(import.meta.url))
 
 /** Minimal SSE reader: yields { event, data } for each blank-line terminated block. */
@@ -67,11 +73,18 @@ function grade(item, run) {
   const answer = normalize(run.answer)
   const present = (fact) => [fact].flat().some((alternative) => answer.includes(normalize(alternative)))
   const missingFacts = item.expect.filter((fact) => !present(fact))
+  const unwantedFacts = (item.absent ?? []).filter(present)
   const missingTools = (item.tools ?? []).filter((tool) => !run.tools.includes(tool))
-  return { missingFacts, missingTools, pass: !run.error && missingFacts.length === 0 && missingTools.length === 0 }
+  const pass = !run.error && missingFacts.length === 0 && unwantedFacts.length === 0 && missingTools.length === 0
+  return { missingFacts, unwantedFacts, missingTools, pass }
 }
 
-const questions = JSON.parse(await readFile(join(dir, 'questions.json'), 'utf8'))
+const cases = JSON.parse(await readFile(join(dir, 'questions.json'), 'utf8'))
+const questions = only.length ? cases.filter((item) => only.some((prefix) => item.id.startsWith(prefix))) : cases
+if (questions.length === 0) {
+  console.error(`No case has an id starting with ${only.join(' or ')}.`)
+  process.exit(2)
+}
 const results = []
 for (const item of questions) {
   try {
@@ -86,11 +99,14 @@ for (const item of questions) {
       answer: run.answer, tools: run.tools,
     })
   } catch (error) {
-    results.push({ id: item.id, lang: item.lang, question: item.question, pass: false, error: String(error), missingFacts: [], missingTools: [], latencyMs: 0, costUsd: 0 })
+    results.push({ id: item.id, lang: item.lang, question: item.question, pass: false, error: String(error), missingFacts: [], unwantedFacts: [], missingTools: [], latencyMs: 0, costUsd: 0 })
   }
   const last = results.at(-1)
   console.log(`${last.pass ? 'PASS' : 'FAIL'}  ${last.id}  ${last.question}`)
-  if (!last.pass) console.log(`      missing facts: ${JSON.stringify(last.missingFacts)} tools: ${JSON.stringify(last.missingTools)} ${last.error ?? ''}`)
+  if (!last.pass) {
+    console.log(`      missing facts: ${JSON.stringify(last.missingFacts)} unwanted facts: ${JSON.stringify(last.unwantedFacts)}`
+      + ` tools: ${JSON.stringify(last.missingTools)} ${last.error ?? ''}`)
+  }
   if (delayMs) await new Promise((resolve) => setTimeout(resolve, delayMs))
 }
 

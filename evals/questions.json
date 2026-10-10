@@ -129,7 +129,8 @@
     "id": "write-02", "lang": "en",
     "question": "Create a maintenance request for unit A-504, plumbing, high priority, leaking pipe.",
     "tools": ["create_maintenance_request"],
-    "expect": ["A-504", "plumbing", "high", "leak", "approv"]
+    "expect": ["A-504", "plumbing", "high", "leak", "approv"],
+    "absent": [", ,"]
   },
   {
     "id": "write-03", "lang": "en",
@@ -147,7 +148,8 @@
     "id": "write-05", "lang": "ar",
     "question": "أنشئ طلب صيانة للوحدة A-504، سباكة، أولوية عالية، تسرب في الماسورة.",
     "tools": ["create_maintenance_request"],
-    "expect": ["A-504", ["عالية", "عالي", "مرتفعة"], ["موافقة", "موافقتك"]]
+    "expect": ["A-504", "سباكة", ["عالية", "عالي", "مرتفعة"], ["تسرب", "تسريب"], ["موافقة", "موافقتك"]],
+    "absent": ["، ،"]
   },
   {
     "id": "write-06", "lang": "ar",
