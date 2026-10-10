@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import type { ReminderPreview } from '../api/types'
+import type { ReminderPreview, ReminderResult } from '../api/types'
 
-const props = defineProps<{ preview: ReminderPreview }>()
+const props = defineProps<{ preview: ReminderPreview | ReminderResult }>()
 const { t, locale } = useI18n()
 
 const lang = computed(() => props.preview.language.toLowerCase())
-const direction = computed(() => (props.preview.language === 'AR' ? 'rtl' : 'ltr'))
+const direction = computed(() => (lang.value === 'ar' ? 'rtl' : 'ltr'))
 </script>
 
 <template>
@@ -21,7 +21,7 @@ const direction = computed(() => (props.preview.language === 'AR' ? 'rtl' : 'ltr
       <dt>{{ t('actions.reminder.purpose') }}</dt>
       <dd>{{ t(`actions.reminder.purposes.${preview.purpose}`) }}</dd>
       <dt>{{ t('actions.reminder.language') }}</dt>
-      <dd>{{ t(`actions.reminder.languages.${preview.language}`) }}</dd>
+      <dd>{{ t(`actions.reminder.languages.${lang.toUpperCase()}`) }}</dd>
     </dl>
 
     <!-- The message is in its own language, which may differ from the language of the page. -->

@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
+import { newIdempotencyKey } from '../api/actions'
 import { streamChat, streamConfirmation } from '../api/chat'
 import { ApiError } from '../api/http'
 import type { ActionView, ChatEvent, DonePayload, ErrorCode, HistoryTurn } from '../api/types'
@@ -32,6 +33,9 @@ export interface ChatMessage {
 /** The server's proppilot.chat.max-history-items default, assumed until /api/info has reported the real limit. */
 const DEFAULT_MAX_HISTORY_ITEMS = 20
 
+/** The decision of a card that is on its way to the server. */
+export type Decision = 'approving' | 'rejecting'
+
 /** A decision is final, so it is the only kind the assistant is asked to confirm. */
 const DECIDED: ReadonlySet<ActionView['status']> = new Set(['APPROVED', 'REJECTED', 'FAILED'])
 
@@ -45,6 +49,13 @@ export const useChatStore = defineStore('chat', () => {
   const confirmed = new Set<string>()
   /** Decisions taken while a reply was streaming; they are confirmed one by one once it has ended. */
   const waiting: string[] = []
+  /**
+   * Decisions on their way, by action id. A card is mounted anew when the chat is left and entered again, so what
+   * it must not do twice or at once is kept here rather than in the card.
+   */
+  const deciding = ref<Record<string, Decision>>({})
+  /** One key for every approval attempt of an action, so a retry from any card of it can only replay the first. */
+  const approvalKeys = new Map<string, string>()
 
   const hasMessages = computed(() => messages.value.length > 0)
 
@@ -182,6 +193,24 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
+  function beginDecision(actionId: string, decision: Decision) {
+    deciding.value[actionId] = decision
+  }
+
+  function endDecision(actionId: string) {
+    delete deciding.value[actionId]
+  }
+
+  /**
+   * An action can be approved only once, so a double click, a retry after a lost response or a second card of it
+   * can only ever replay the first outcome, never make the change twice.
+   */
+  function approvalKey(actionId: string): string {
+    const key = approvalKeys.get(actionId) ?? newIdempotencyKey()
+    approvalKeys.set(actionId, key)
+    return key
+  }
+
   function stop() {
     controller?.abort()
   }
@@ -189,8 +218,11 @@ export const useChatStore = defineStore('chat', () => {
   function clear() {
     stop()
     waiting.length = 0
+    approvalKeys.clear()
     messages.value = []
   }
 
-  return { messages, busy, hasMessages, send, settleAction, stop, clear }
+  return {
+    messages, busy, hasMessages, deciding, send, settleAction, beginDecision, endDecision, approvalKey, stop, clear,
+  }
 })

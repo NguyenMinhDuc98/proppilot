@@ -115,7 +115,6 @@ onMounted(() => field.value?.focus())
       <strong>{{ t('actions.editor.exceedsTitle') }}</strong>
       <i18n-t keypath="actions.editor.exceeds" tag="p">
         <template #amount><bdi>{{ money(refused) }}</bdi></template>
-        <template #outstanding><bdi>{{ money(action.preview.outstandingBefore) }}</bdi></template>
       </i18n-t>
     </div>
 

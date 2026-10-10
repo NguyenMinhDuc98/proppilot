@@ -161,10 +161,17 @@ export interface MaintenanceResult {
   status: string
 }
 
+/** The message as the outbox stored it, written again when the reminder was approved. */
 export interface ReminderResult {
   messageId: string
   unitCode: string
+  tenantEn: string
+  tenantAr: string
+  purpose: ReminderPurpose
+  /** The outbox keeps the language in lower case, unlike the preview. */
+  language: 'en' | 'ar'
   subject: string
+  body: string
   delivered: boolean
 }
 

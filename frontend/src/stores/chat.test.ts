@@ -470,6 +470,35 @@ describe('chat store proposed actions', () => {
     expect(streamChat.mock.calls[1][1]).toEqual(expected)
   })
 
+  it('pairs every question with its own answer when a confirmation sits between exchanges', async () => {
+    const chat = useChatStore()
+    await proposed(chat)
+    scriptConfirmation([{ type: 'token', text: 'Done, it was recorded.' }, done])
+    chat.settleAction(decided('APPROVED'))
+    await flushPromises()
+    script([{ type: 'token', text: 'A-101 is vacant.' }, done])
+    await chat.send('and unit A-101?')
+    script([{ type: 'token', text: 'ok' }, done])
+
+    await chat.send('thanks')
+
+    expect(chat.messages.map((m) => m.text)).toEqual([
+      'record 5000 for B-203',
+      'It is waiting for your approval.',
+      'Done, it was recorded.',
+      'and unit A-101?',
+      'A-101 is vacant.',
+      'thanks',
+      'ok',
+    ])
+    expect(streamChat.mock.calls[2][1]).toEqual([
+      { role: 'user', text: 'record 5000 for B-203' },
+      { role: 'assistant', text: 'It is waiting for your approval.' },
+      { role: 'user', text: 'and unit A-101?' },
+      { role: 'assistant', text: 'A-101 is vacant.' },
+    ])
+  })
+
   it('waits for the reply that is streaming and confirms the decision after it', async () => {
     const chat = useChatStore()
     await proposed(chat)
@@ -552,5 +581,46 @@ describe('chat store proposed actions', () => {
     await flushPromises()
 
     expect(streamConfirmation).not.toHaveBeenCalled()
+  })
+})
+
+describe('chat store decisions', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    streamChat.mockReset()
+    streamConfirmation.mockReset()
+    info.value = null
+  })
+
+  it('remembers which decisions are on their way, per action, until they end', () => {
+    const chat = useChatStore()
+
+    chat.beginDecision('a1', 'approving')
+    chat.beginDecision('a2', 'rejecting')
+
+    expect(chat.deciding).toEqual({ a1: 'approving', a2: 'rejecting' })
+
+    chat.endDecision('a1')
+
+    expect(chat.deciding).toEqual({ a2: 'rejecting' })
+  })
+
+  it('gives an action one approval key for every attempt and another action its own', () => {
+    const chat = useChatStore()
+
+    const first = chat.approvalKey('a1')
+
+    expect(first).toMatch(/^[0-9a-f-]{36}$/)
+    expect(chat.approvalKey('a1')).toBe(first)
+    expect(chat.approvalKey('a2')).not.toBe(first)
+  })
+
+  it('starts the keys over with a new chat', () => {
+    const chat = useChatStore()
+    const first = chat.approvalKey('a1')
+
+    chat.clear()
+
+    expect(chat.approvalKey('a1')).not.toBe(first)
   })
 })

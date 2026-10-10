@@ -238,6 +238,102 @@ describe('ApprovalCard approving', () => {
     expect(streamConfirmation.mock.calls[0][0]).toBe(action.id)
   })
 
+  it('shows no proposal-time diff on an approved payment: its outcome is what approval made of the invoices', async () => {
+    const action = paymentAction()
+    const { wrapper } = await show(action)
+    // Another payment was recorded after this one was proposed, so approval met a balance of 3,000, not 14,400.
+    approveAction.mockResolvedValue({
+      action: approved(action, { ...paymentResult, amount: 1000, applied: 1000, outstandingAfter: 2000 }),
+      replayed: false,
+    })
+
+    await press(wrapper, en.actions.approve)
+
+    const card = wrapper.get('[role="group"]')
+    expect(card.find('tbody').exists()).toBe(false)
+    expect(card.find('.outstanding').exists()).toBe(false)
+    expect(card.text()).not.toContain('14,400')
+    expect(card.get('.outcome').text()).toContain('Recorded SAR 1,000.00')
+    expect(card.get('.outcome').text()).toContain('SAR 2,000.00 is still outstanding')
+  })
+
+  it('says how much of an approved overpayment was not applied to any invoice', async () => {
+    const action = paymentAction()
+    const { wrapper } = await show(action)
+    approveAction.mockResolvedValue({
+      action: approved(action, { ...paymentResult, amount: 20000, applied: 14400, overpaymentCredit: 5600, outstandingAfter: 0 }),
+      replayed: false,
+    })
+
+    await press(wrapper, en.actions.approve)
+
+    const outcome = wrapper.get('.outcome').text()
+    expect(outcome).toContain('Recorded SAR 14,400.00')
+    expect(outcome).toContain('SAR 5,600.00 was more than was owed')
+
+    i18n.global.locale.value = 'ar'
+    await nextTick()
+    expect(wrapper.get('.outcome').text()).toContain('5,600.00')
+    expect(wrapper.get('.outcome').text()).toContain('لم يُطبَّق')
+  })
+
+  it('names the request an approved maintenance request opened, in both languages', async () => {
+    const action = maintenanceAction()
+    const { wrapper } = await show(action)
+    approveAction.mockResolvedValue({
+      action: approved(action, { requestId: 4711, unitCode: 'A-301', status: 'OPEN' }),
+      replayed: false,
+    })
+
+    await press(wrapper, en.actions.approve)
+
+    const card = wrapper.get('[role="group"]')
+    expect(card.classes()).toContain('approved')
+    expect(card.get('.outcome').text()).toBe('Maintenance request #4711 was opened.')
+    expect(card.get('.outcome bdi').text()).toBe('4711')
+    expect(card.get('.facts').text()).toContain('Kitchen sink leaks')
+    expect(streamConfirmation).toHaveBeenCalledTimes(1)
+
+    i18n.global.locale.value = 'ar'
+    await nextTick()
+    expect(card.get('.outcome').text()).toBe('فُتح طلب الصيانة رقم 4711.')
+    expect(card.get('.outcome bdi').text()).toBe('4711')
+  })
+
+  it('shows the message an approved reminder stored, which is written again at approval, not the proposed one', async () => {
+    const action = reminderAction()
+    const { wrapper } = await show(action)
+    const stored = {
+      messageId: '9f0c2f3e-0000-4000-8000-000000000001',
+      unitCode: 'B-203',
+      tenantEn: 'Ahmed Al-Harbi',
+      tenantAr: 'أحمد الحربي',
+      purpose: 'RENT_REMINDER',
+      language: 'en',
+      subject: 'Rent reminder for B-203',
+      body: 'Dear Ahmed, SAR 1,000.00 of your rent is overdue.',
+      delivered: false,
+    }
+    approveAction.mockResolvedValue({ action: approved(action, stored), replayed: false })
+
+    await press(wrapper, en.actions.approve)
+
+    const card = wrapper.get('[role="group"]')
+    expect(card.classes()).toContain('approved')
+    expect(card.text()).toContain('Rent reminder for B-203')
+    expect(card.text()).toContain('SAR 1,000.00 of your rent is overdue.')
+    expect(card.text()).not.toContain('عزيزي أحمد')
+    expect(card.get('.body').attributes('dir')).toBe('ltr')
+    expect(card.get('.body').attributes('lang')).toBe('en')
+    expect(card.get('.facts').text()).toContain(en.actions.reminder.languages.EN)
+    expect(card.get('.outcome').text()).toBe(en.actions.outcome.reminder)
+
+    i18n.global.locale.value = 'ar'
+    await nextTick()
+    expect(card.get('.outcome').text()).toBe(ar.actions.outcome.reminder)
+    expect(card.get('.facts').text()).toContain(ar.actions.reminder.languages.EN)
+  })
+
   it('locks the card while the approval is on its way', async () => {
     const action = paymentAction()
     const { wrapper } = await show(action)
@@ -313,6 +409,118 @@ describe('ApprovalCard approving', () => {
     }
 
     expect(approveAction.mock.calls[0][1]).not.toBe(approveAction.mock.calls[1][1])
+  })
+})
+
+describe('ApprovalCard shown again', () => {
+  const mountAgain = (chat: ReturnType<typeof useChatStore>) =>
+    mount(MessageBubble, { props: { message: chat.messages[1] }, global: { plugins: [i18n] } })
+
+  it('is still locked while its approval is on its way, so it cannot be decided twice or against itself', async () => {
+    const action = paymentAction()
+    const { chat, wrapper } = await show(action)
+    let resolve: (value: unknown) => void = () => {}
+    approveAction.mockReturnValue(new Promise((r) => (resolve = r)))
+    await buttonLabelled(wrapper, en.actions.approve)?.trigger('click')
+    // The chat is left and entered again, which mounts the card anew.
+    wrapper.unmount()
+
+    const again = mountAgain(chat)
+
+    const card = again.get('[role="group"]')
+    expect(card.attributes('aria-busy')).toBe('true')
+    expect(card.text()).toContain(en.actions.status.APPROVING)
+    for (const button of card.findAll('.buttons button')) {
+      expect(button.attributes('disabled')).toBeDefined()
+    }
+    await buttonLabelled(again, en.actions.approve)?.trigger('click')
+    expect(approveAction).toHaveBeenCalledTimes(1)
+
+    resolve({ action: approved(action, paymentResult), replayed: false })
+    await flushPromises()
+
+    expect(again.get('[role="group"]').classes()).toContain('approved')
+    expect(again.get('[role="group"]').attributes('aria-busy')).toBe('false')
+  })
+
+  it('retries with the key of the first attempt, so the change cannot be made twice', async () => {
+    const action = paymentAction()
+    const { chat, wrapper } = await show(action)
+    approveAction.mockRejectedValueOnce(new TypeError('Failed to fetch'))
+    approveAction.mockResolvedValueOnce({ action: approved(action, paymentResult), replayed: true })
+    await press(wrapper, en.actions.approve)
+    wrapper.unmount()
+
+    const again = mountAgain(chat)
+    await press(again, en.actions.approve)
+
+    expect(approveAction).toHaveBeenCalledTimes(2)
+    expect(approveAction.mock.calls[1][1]).toBe(approveAction.mock.calls[0][1])
+    expect(again.get('[role="group"]').classes()).toContain('approved')
+  })
+})
+
+describe('ApprovalCard when the proposal is settled while it is being edited', () => {
+  async function editedTo1000(action: ActionView) {
+    const shown = await show(action)
+    await press(shown.wrapper, en.actions.editAmount)
+    previewAction.mockResolvedValue(paymentPreviewView(1000))
+    await typeAmount(shown.wrapper, '1000')
+    await updatePreview(shown.wrapper)
+    expect(shown.wrapper.get('.summary').text()).toContain('SAR 1000.00')
+    return shown
+  }
+
+  it('shows what the server holds after a refusal (409), not the edit that was never sent', async () => {
+    const action = paymentAction()
+    const { wrapper } = await editedTo1000(action)
+    // Somebody else approved the proposal as it was.
+    approveAction.mockRejectedValue(new ApiError(409, 'Conflict', 'action_already_decided'))
+    fetchAction.mockResolvedValue(approved(action, paymentResult, 'visitor-99999999'))
+
+    await press(wrapper, en.actions.approve)
+
+    const card = wrapper.get('[role="group"]')
+    expect(card.classes()).toContain('approved')
+    expect(card.get('.summary').text()).toBe(action.summaryEn)
+    expect(card.get('.summary').text()).not.toContain('1000.00')
+    expect(card.find('.outstanding').exists()).toBe(false)
+    expect(card.find('form').exists()).toBe(false)
+    expect(card.get('.outcome').text()).toContain('Recorded SAR 5,000.00')
+  })
+
+  it('shows the proposal again when it is gone (404)', async () => {
+    const action = paymentAction()
+    const { wrapper } = await editedTo1000(action)
+    approveAction.mockRejectedValue(new ApiError(404, 'Not Found', 'action_not_found'))
+
+    await press(wrapper, en.actions.approve)
+
+    const card = wrapper.get('[role="group"]')
+    expect(card.get('.summary').text()).toBe(action.summaryEn)
+    expect(card.find('form').exists()).toBe(false)
+    expect(card.find('.buttons').exists()).toBe(false)
+  })
+
+  it('shows the proposal as expired when the time is up with the editor open', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-10-10T15:00:00Z'))
+    const action = paymentAction({ expiresAt: '2026-10-10T15:15:00Z' })
+    const { wrapper } = await show(action)
+    previewAction.mockResolvedValue(paymentPreviewView(1000))
+    await buttonLabelled(wrapper, en.actions.editAmount)?.trigger('click')
+    await typeAmount(wrapper, '1000')
+    await wrapper.get('form').trigger('submit')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(wrapper.get('.summary').text()).toContain('SAR 1000.00')
+    fetchAction.mockResolvedValue({ ...action, status: 'EXPIRED', decidedAt: '2026-10-10T15:15:00Z' })
+
+    await vi.advanceTimersByTimeAsync(15 * 60_000 + 1000)
+
+    const card = wrapper.get('[role="group"]')
+    expect(card.text()).toContain(en.actions.status.EXPIRED)
+    expect(card.get('.summary').text()).toBe(action.summaryEn)
+    expect(card.find('form').exists()).toBe(false)
   })
 })
 
@@ -462,7 +670,6 @@ describe('ApprovalCard editing the amount', () => {
     const warning = wrapper.get('.warning')
     expect(warning.text()).toContain(en.actions.editor.exceedsTitle)
     expect(warning.text()).toContain('SAR 20,000.00')
-    expect(warning.text()).toContain('SAR 14,400.00')
     expect(wrapper.find('tbody').exists()).toBe(false)
     const approve = () => buttonLabelled(wrapper, en.actions.approve)
     expect(approve()?.attributes('disabled')).toBeDefined()
@@ -542,6 +749,18 @@ describe('ApprovalCard editing the amount', () => {
 
     expect(wrapper.get('.warning').text()).toContain('SAR 5,000.00')
     expect(buttonLabelled(wrapper, en.actions.approve)?.attributes('disabled')).toBeDefined()
+  })
+
+  it('does not quote the balance the proposal was made against, which may have changed since', async () => {
+    const { wrapper } = await openEditor()
+    // The proposal was made when SAR 14,400.00 was owed; the server refuses against what is owed now.
+    previewAction.mockRejectedValue(new ApiError(422, 'Unprocessable', 'amount_exceeds_outstanding'))
+
+    await updatePreview(wrapper)
+
+    const warning = wrapper.get('.warning').text()
+    expect(warning).toContain('SAR 5,000.00')
+    expect(warning).not.toContain('14,400')
   })
 
   it('words a refused preview in the viewer language and keeps the previous diff', async () => {

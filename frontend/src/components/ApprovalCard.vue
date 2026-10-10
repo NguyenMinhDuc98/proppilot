@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { approveAction, fetchAction, newIdempotencyKey, rejectAction } from '../api/actions'
+import { approveAction, fetchAction, rejectAction } from '../api/actions'
 import { ApiError } from '../api/http'
 import type { ActionState, ActionView } from '../api/types'
 import { useActionErrors } from '../composables/actionErrors'
 import { formatCountdown } from '../composables/format'
 import type { PaymentDraft } from '../composables/paymentEdit'
 import { useCountdown } from '../composables/useCountdown'
-import { useChatStore } from '../stores/chat'
+import { useChatStore, type Decision } from '../stores/chat'
 import ActionKindIcon from './ActionKindIcon.vue'
 import ActionOutcome from './ActionOutcome.vue'
 import ActionStatusPill from './ActionStatusPill.vue'
@@ -23,8 +23,6 @@ const chat = useChatStore()
 const { describe } = useActionErrors()
 const titleId = `approval-${useId()}`
 
-/** The decision on its way to the server, if any. Everything is locked while it is. */
-const phase = ref<'idle' | 'approving' | 'rejecting'>('idle')
 const mode = ref<'view' | 'edit' | 'reject'>('view')
 const reason = ref('')
 const reasonField = ref<HTMLTextAreaElement | null>(null)
@@ -32,26 +30,37 @@ const error = ref('')
 /** The server answered that this proposal does not exist (the demo data was reset), so there is nothing to decide. */
 const gone = ref(false)
 const draft = ref<PaymentDraft | null>(null)
-/**
- * One key for every approval attempt of this card. A proposal can be approved only once, so a double click, a retry
- * after a lost response or a second tab can only ever replay the first outcome, never make the change twice.
- */
-let approvalKey: string | undefined
 
+/** The decision on its way to the server, if any. Everything is locked while it is, in every card of the action. */
+const phase = computed(() => chat.deciding[props.action.id])
 const open = computed(() => props.action.status === 'PROPOSED')
-const busy = computed(() => phase.value !== 'idle')
+/** Still to be decided by the person looking at it: nobody else has settled it and it has not been deleted. */
+const waiting = computed(() => open.value && !gone.value)
+const busy = computed(() => phase.value !== undefined)
 const state = computed<ActionState>(() => {
   if (phase.value === 'approving') return 'APPROVING'
   if (phase.value === 'rejecting') return 'REJECTING'
   return props.action.status
 })
 const canApprove = computed(() => draft.value?.ready ?? true)
-const showDetails = computed(() => props.action.status === 'PROPOSED' || props.action.status === 'APPROVED')
+const approved = computed(() => props.action.status === 'APPROVED')
+const showDetails = computed(() => open.value || approved.value)
 
-/** The diff of a payment: the one for the amount being edited, or the proposal's own. Null while it is not known. */
+/**
+ * The diff of a payment that is waiting: the one for the amount being edited, or the proposal's own. Null while it is
+ * not known. An approved payment shows none: it was worked out against the invoices as they were when it was
+ * proposed, and approval works from the invoices as they are, so its outcome is what the card says instead.
+ */
 const paymentPreview = computed(() => {
-  if (props.action.kind !== 'RECORD_PAYMENT') return null
+  if (props.action.kind !== 'RECORD_PAYMENT' || !open.value) return null
   return draft.value ? (draft.value.preview?.preview ?? null) : props.action.preview
+})
+/** A reminder is written again when it is approved, so an approved card shows the message that was stored. */
+const reminder = computed(() => {
+  const a = props.action
+  if (a.kind !== 'SEND_TENANT_REMINDER') return null
+  if (open.value) return a.preview
+  return approved.value && a.result && 'messageId' in a.result ? a.result : null
 })
 const summary = computed(() => {
   const source = draft.value?.preview ?? props.action
@@ -70,6 +79,15 @@ watch(
   { immediate: true },
 )
 
+// An edit that was never sent must not outlive the proposal it was for: once somebody else has decided it, or it has
+// expired or is gone, the card shows the proposal as the server has it.
+watch(waiting, (stillWaiting) => {
+  if (!stillWaiting) {
+    mode.value = 'view'
+    draft.value = null
+  }
+})
+
 // An edit belongs to the editor: leaving it, for the reject form or a decision, leaves the proposal as it was.
 watch(mode, async (current) => {
   if (current !== 'edit') draft.value = null
@@ -87,9 +105,10 @@ async function reread() {
   }
 }
 
-async function decide(next: 'approving' | 'rejecting', call: () => Promise<ActionView>) {
+async function decide(next: Decision, call: () => Promise<ActionView>) {
   if (busy.value) return
-  phase.value = next
+  const { id } = props.action
+  chat.beginDecision(id, next)
   error.value = ''
   try {
     chat.settleAction(await call())
@@ -103,15 +122,15 @@ async function decide(next: 'approving' | 'rejecting', call: () => Promise<Actio
       await reread()
     }
   } finally {
-    phase.value = 'idle'
+    chat.endDecision(id)
   }
 }
 
 const approve = () =>
   decide('approving', async () => {
-    approvalKey ??= newIdempotencyKey()
+    const { id } = props.action
     const edit = draft.value?.edit ?? undefined
-    return (await approveAction(props.action.id, approvalKey, edit)).action
+    return (await approveAction(id, chat.approvalKey(id), edit)).action
   })
 
 const reject = () => decide('rejecting', () => rejectAction(props.action.id, reason.value.trim() || undefined))
@@ -130,12 +149,12 @@ const reject = () => decide('rejecting', () => rejectAction(props.action.id, rea
     <template v-if="showDetails">
       <PaymentDiff v-if="paymentPreview" :preview="paymentPreview" />
       <MaintenanceDetails v-else-if="action.kind === 'CREATE_MAINTENANCE_REQUEST'" :preview="action.preview" />
-      <ReminderDetails v-else-if="action.kind === 'SEND_TENANT_REMINDER'" :preview="action.preview" />
+      <ReminderDetails v-else-if="reminder" :preview="reminder" />
     </template>
 
     <ActionOutcome v-if="!open" :action="action" />
 
-    <template v-if="open && !gone">
+    <template v-if="waiting">
       <p class="expiry" role="timer">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>
         <i18n-t v-if="remainingMs > 0" keypath="actions.expiresIn" tag="span">

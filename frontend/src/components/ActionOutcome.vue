@@ -29,10 +29,15 @@ const failure = computed(() => {
 <template>
   <div class="outcome" :class="action.status.toLowerCase()">
     <template v-if="action.status === 'APPROVED'">
-      <i18n-t v-if="payment" keypath="actions.outcome.payment" tag="p">
-        <template #applied><bdi>{{ money(payment.applied) }}</bdi></template>
-        <template #outstanding><bdi>{{ money(payment.outstandingAfter) }}</bdi></template>
-      </i18n-t>
+      <template v-if="payment">
+        <i18n-t keypath="actions.outcome.payment" tag="p">
+          <template #applied><bdi>{{ money(payment.applied) }}</bdi></template>
+          <template #outstanding><bdi>{{ money(payment.outstandingAfter) }}</bdi></template>
+        </i18n-t>
+        <i18n-t v-if="payment.overpaymentCredit > 0" keypath="actions.outcome.credit" tag="p">
+          <template #credit><bdi>{{ money(payment.overpaymentCredit) }}</bdi></template>
+        </i18n-t>
+      </template>
       <i18n-t v-else-if="requestId !== null" keypath="actions.outcome.maintenance" tag="p">
         <template #id><bdi>{{ requestId }}</bdi></template>
       </i18n-t>
