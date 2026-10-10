@@ -37,18 +37,18 @@ afterEach(() => {
 })
 
 describe('reading', () => {
-  it('lists the latest actions, one action and the audit log with plain GETs', async () => {
+  it('lists the latest actions, one action and the audit trail of one action with plain GETs', async () => {
     answer([])
     answer({ id: 'a1' })
     answer([])
 
     await fetchActions()
     await fetchAction('a1')
-    await fetchAudit()
+    await fetchAudit('a1')
 
     expect(request(0)).toMatchObject({ url: '/api/actions', method: 'GET' })
     expect(request(1)).toMatchObject({ url: '/api/actions/a1', method: 'GET' })
-    expect(request(2)).toMatchObject({ url: '/api/audit', method: 'GET' })
+    expect(request(2)).toMatchObject({ url: '/api/audit?actionId=a1', method: 'GET' })
   })
 })
 

@@ -241,6 +241,8 @@ export default {
     decidedBy: 'Decided by {actor}',
     undecided: 'No decision yet',
     auditTrail: 'Audit trail',
+    auditLoading: 'Loading the audit trail…',
+    auditError: 'Could not load the audit trail.',
     auditEmpty: 'No audit entries for this action.',
     before: 'Before',
     after: 'After',

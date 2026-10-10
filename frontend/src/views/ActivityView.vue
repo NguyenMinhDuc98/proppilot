@@ -1,32 +1,20 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { fetchActions, fetchAudit } from '../api/actions'
-import type { ActionView, AuditEntry } from '../api/types'
+import { fetchActions } from '../api/actions'
+import type { ActionView } from '../api/types'
 import ActivityItem from '../components/ActivityItem.vue'
 
 const { t } = useI18n()
 const actions = ref<ActionView[]>([])
-const trails = ref<Record<string, AuditEntry[]>>({})
 const loading = ref(true)
 const failed = ref(false)
-
-/** The audit log comes newest first; a trail reads from the proposal onwards. */
-function groupByAction(entries: AuditEntry[]): Record<string, AuditEntry[]> {
-  const grouped: Record<string, AuditEntry[]> = {}
-  for (const entry of [...entries].reverse()) {
-    if (entry.actionId) (grouped[entry.actionId] ??= []).push(entry)
-  }
-  return grouped
-}
 
 async function load() {
   loading.value = true
   failed.value = false
   try {
-    const [latest, entries] = await Promise.all([fetchActions(), fetchAudit()])
-    actions.value = latest
-    trails.value = groupByAction(entries)
+    actions.value = await fetchActions()
   } catch {
     failed.value = true
   } finally {
@@ -59,7 +47,7 @@ onMounted(load)
     <p v-else-if="!actions.length" class="card muted">{{ t('activity.empty') }}</p>
 
     <ul v-else class="list">
-      <ActivityItem v-for="action in actions" :key="action.id" :action="action" :entries="trails[action.id] ?? []" />
+      <ActivityItem v-for="action in actions" :key="action.id" :action="action" />
     </ul>
   </div>
 </template>

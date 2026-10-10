@@ -15,7 +15,9 @@ export const fetchActions = () => getJson<ActionView[]>('/api/actions')
 
 export const fetchAction = (id: string) => getJson<ActionView>(`/api/actions/${id}`)
 
-export const fetchAudit = () => getJson<AuditEntry[]>('/api/audit')
+/** Every audit entry of one action, newest first. The unfiltered feed holds only the latest entries of all actions. */
+export const fetchAudit = (actionId: string) =>
+  getJson<AuditEntry[]>(`/api/audit?actionId=${encodeURIComponent(actionId)}`)
 
 /** Recomputes the diff for an edit without deciding anything. */
 export const previewAction = (id: string, edit: PaymentEdit) =>

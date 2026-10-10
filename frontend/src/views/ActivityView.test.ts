@@ -12,7 +12,7 @@ const fetchActions = vi.fn()
 const fetchAudit = vi.fn()
 vi.mock('../api/actions', () => ({
   fetchActions: () => fetchActions(),
-  fetchAudit: () => fetchAudit(),
+  fetchAudit: (...args: unknown[]) => fetchAudit(...args),
 }))
 
 async function render() {
@@ -40,7 +40,6 @@ afterEach(() => {
 describe('ActivityView', () => {
   it('tells visitors that the demo resets every night and that others see the entries', async () => {
     fetchActions.mockResolvedValue([])
-    fetchAudit.mockResolvedValue([])
 
     const wrapper = await render()
 
@@ -54,7 +53,6 @@ describe('ActivityView', () => {
 
   it('lists each action with its status, kind, summary, time and who decided', async () => {
     fetchActions.mockResolvedValue([approvedPayment, waitingRequest])
-    fetchAudit.mockResolvedValue([])
 
     const wrapper = await render()
 
@@ -72,7 +70,6 @@ describe('ActivityView', () => {
 
   it('shows the summary in the language of the page', async () => {
     fetchActions.mockResolvedValue([approvedPayment])
-    fetchAudit.mockResolvedValue([])
     const wrapper = await render()
 
     i18n.global.locale.value = 'ar'
@@ -84,7 +81,7 @@ describe('ActivityView', () => {
     expect(item.text()).toContain(ar.activity.auditTrail)
   })
 
-  it('keeps the audit trail closed until it is asked for, then shows its entries oldest first', async () => {
+  it('reads the audit trail of an action only when it is opened, then shows its entries oldest first', async () => {
     fetchActions.mockResolvedValue([approvedPayment])
     // The server answers newest first.
     fetchAudit.mockResolvedValue([
@@ -95,20 +92,24 @@ describe('ActivityView', () => {
       }),
       auditEntry({ id: 2, event: 'EDITED', actor: 'visitor-1a2b3c4d', at: '2026-10-10T15:01:00Z', before: { amount: 5000 }, after: { amount: 4800 } }),
       auditEntry({ id: 1, event: 'PROPOSED', actor: 'agent', at: '2026-10-10T15:00:00Z', before: null, after: { kind: 'RECORD_PAYMENT' } }),
-      auditEntry({ id: 9, event: 'PROPOSED', actionId: 'another-action' }),
     ])
     const wrapper = await render()
     const toggle = wrapper.get('button.toggle')
     const trail = wrapper.get('.trail')
 
+    expect(fetchAudit).not.toHaveBeenCalled()
     expect(toggle.attributes('aria-expanded')).toBe('false')
-    expect(toggle.text()).toContain('(3)')
+    expect(toggle.text()).toBe(en.activity.auditTrail)
     expect(trail.attributes('style')).toContain('display: none')
 
     await toggle.trigger('click')
+    await flushPromises()
 
+    expect(fetchAudit).toHaveBeenCalledTimes(1)
+    expect(fetchAudit).toHaveBeenCalledWith(approvedPayment.id)
     expect(toggle.attributes('aria-expanded')).toBe('true')
     expect(toggle.attributes('aria-controls')).toBe(trail.attributes('id'))
+    expect(toggle.text()).toBe(`${en.activity.auditTrail} (3)`)
     expect(trail.attributes('style') ?? '').not.toContain('display: none')
     const heads = trail.findAll('.entry-head').map((head) => head.text())
     expect(heads).toHaveLength(3)
@@ -119,6 +120,75 @@ describe('ActivityView', () => {
     expect(heads[2]).toContain('visitor-1a2b3c4d')
   })
 
+  it('asks for the trail of each action by itself, so an older action is as whole as a new one', async () => {
+    fetchActions.mockResolvedValue([waitingRequest, approvedPayment])
+    fetchAudit.mockImplementation(async (id: string) => [
+      auditEntry({ id: id === approvedPayment.id ? 1 : 2, actionId: id, event: id === approvedPayment.id ? 'PROPOSED' : 'REJECTED' }),
+    ])
+    const wrapper = await render()
+
+    for (const toggle of wrapper.findAll('button.toggle')) await toggle.trigger('click')
+    await flushPromises()
+
+    expect(fetchAudit.mock.calls.map((call) => call[0])).toEqual([waitingRequest.id, approvedPayment.id])
+    const items = wrapper.findAll('li.item')
+    expect(items[0].get('.entry-head').text()).toContain(en.activity.events.REJECTED)
+    expect(items[1].get('.entry-head').text()).toContain(en.activity.events.PROPOSED)
+  })
+
+  it('reads the trail once, however often it is closed and opened again', async () => {
+    fetchActions.mockResolvedValue([approvedPayment])
+    fetchAudit.mockResolvedValue([auditEntry()])
+    const wrapper = await render()
+    const toggle = wrapper.get('button.toggle')
+
+    await toggle.trigger('click')
+    await flushPromises()
+    await toggle.trigger('click')
+    await toggle.trigger('click')
+    await flushPromises()
+
+    expect(fetchAudit).toHaveBeenCalledTimes(1)
+  })
+
+  it('says that the trail is being read, and what it holds once it has arrived', async () => {
+    fetchActions.mockResolvedValue([approvedPayment])
+    let arrive: (entries: unknown[]) => void = () => {}
+    fetchAudit.mockReturnValue(new Promise((resolve) => (arrive = resolve)))
+    const wrapper = await render()
+
+    await wrapper.get('button.toggle').trigger('click')
+
+    expect(wrapper.get('.trail [role="status"]').text()).toBe(en.activity.auditLoading)
+    expect(wrapper.get('.trail').text()).not.toContain(en.activity.auditEmpty)
+
+    arrive([auditEntry()])
+    await flushPromises()
+
+    expect(wrapper.find('.trail [role="status"]').exists()).toBe(false)
+    expect(wrapper.findAll('.entry')).toHaveLength(1)
+  })
+
+  it('says when the trail could not be read, instead of claiming that there is none, and can try again', async () => {
+    fetchActions.mockResolvedValue([approvedPayment])
+    fetchAudit.mockRejectedValueOnce(new TypeError('Failed to fetch'))
+    fetchAudit.mockResolvedValueOnce([auditEntry()])
+    const wrapper = await render()
+
+    await wrapper.get('button.toggle').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('.trail [role="alert"]').text()).toContain(en.activity.auditError)
+    expect(wrapper.get('.trail').text()).not.toContain(en.activity.auditEmpty)
+    expect(wrapper.get('button.toggle').text()).toBe(en.activity.auditTrail)
+
+    await wrapper.get('.trail [role="alert"] button').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('.trail [role="alert"]').exists()).toBe(false)
+    expect(wrapper.findAll('.entry')).toHaveLength(1)
+  })
+
   it('shows before and after as pretty JSON in a left-to-right monospace block', async () => {
     fetchActions.mockResolvedValue([approvedPayment])
     fetchAudit.mockResolvedValue([
@@ -127,6 +197,7 @@ describe('ActivityView', () => {
     const wrapper = await render()
 
     await wrapper.get('button.toggle').trigger('click')
+    await flushPromises()
 
     const blocks = wrapper.findAll('pre.mono')
     expect(blocks.map((block) => block.text())).toEqual([
@@ -140,30 +211,53 @@ describe('ActivityView', () => {
     expect(wrapper.find('.note b').exists()).toBe(false)
   })
 
+  it('lets a keyboard user scroll a long block: it can be focused and is named by its event and side', async () => {
+    fetchActions.mockResolvedValue([approvedPayment])
+    fetchAudit.mockResolvedValue([auditEntry({ event: 'EDITED', before: { amount: 5000 }, after: { amount: 4800 } })])
+    const wrapper = await render()
+
+    await wrapper.get('button.toggle').trigger('click')
+    await flushPromises()
+
+    const [before, after] = wrapper.findAll('pre.mono')
+    expect(before.attributes('tabindex')).toBe('0')
+    expect(before.attributes('role')).toBe('region')
+    expect(before.attributes('aria-label')).toBe(`${en.activity.events.EDITED}: ${en.activity.before}`)
+    expect(after.attributes('tabindex')).toBe('0')
+    expect(after.attributes('role')).toBe('region')
+    expect(after.attributes('aria-label')).toBe(`${en.activity.events.EDITED}: ${en.activity.after}`)
+
+    i18n.global.locale.value = 'ar'
+    await nextTick()
+    expect(before.attributes('aria-label')).toBe(`${ar.activity.events.EDITED}: ${ar.activity.before}`)
+  })
+
   it('leaves out the side of an entry that did not exist', async () => {
     fetchActions.mockResolvedValue([approvedPayment])
     fetchAudit.mockResolvedValue([auditEntry({ before: null, after: { kind: 'RECORD_PAYMENT' } })])
     const wrapper = await render()
 
     await wrapper.get('button.toggle').trigger('click')
+    await flushPromises()
 
     expect(wrapper.findAll('pre.mono')).toHaveLength(1)
     expect(wrapper.get('.state > span').text()).toBe(en.activity.after)
   })
 
-  it('says so when an action has no audit entries', async () => {
+  it('says so when the server has no audit entries for an action', async () => {
     fetchActions.mockResolvedValue([approvedPayment])
     fetchAudit.mockResolvedValue([])
     const wrapper = await render()
 
     await wrapper.get('button.toggle').trigger('click')
+    await flushPromises()
 
     expect(wrapper.get('.trail').text()).toBe(en.activity.auditEmpty)
+    expect(wrapper.get('button.toggle').text()).toBe(`${en.activity.auditTrail} (0)`)
   })
 
   it('shows an empty state when nothing has been proposed yet', async () => {
     fetchActions.mockResolvedValue([])
-    fetchAudit.mockResolvedValue([])
 
     const wrapper = await render()
 
@@ -174,7 +268,6 @@ describe('ActivityView', () => {
 
   it('shows an error state with a retry that loads the activity again', async () => {
     fetchActions.mockRejectedValueOnce(new ApiError(503, 'Unavailable'))
-    fetchAudit.mockResolvedValue([])
     const wrapper = await render()
 
     expect(wrapper.get('[role="alert"]').text()).toContain(en.activity.error)
@@ -188,18 +281,8 @@ describe('ActivityView', () => {
     expect(wrapper.findAll('li.item')).toHaveLength(1)
   })
 
-  it('shows an error when only the audit log cannot be read', async () => {
-    fetchActions.mockResolvedValue([approvedPayment])
-    fetchAudit.mockRejectedValue(new TypeError('Failed to fetch'))
-
-    const wrapper = await render()
-
-    expect(wrapper.get('[role="alert"]').text()).toContain(en.activity.error)
-  })
-
   it('reloads when asked to refresh', async () => {
     fetchActions.mockResolvedValue([])
-    fetchAudit.mockResolvedValue([])
     const wrapper = await render()
     fetchActions.mockResolvedValue([waitingRequest])
 
@@ -208,5 +291,70 @@ describe('ActivityView', () => {
 
     expect(fetchActions).toHaveBeenCalledTimes(2)
     expect(wrapper.findAll('li.item')).toHaveLength(1)
+  })
+
+  describe('refreshing', () => {
+    const decidedLater = { ...approvedPayment, decidedAt: '2026-10-10T15:09:00Z' }
+
+    it('reads an open trail again, so an entry that was added meanwhile appears', async () => {
+      fetchActions.mockResolvedValue([waitingRequest])
+      fetchAudit.mockResolvedValueOnce([auditEntry({ id: 1, actionId: waitingRequest.id, event: 'PROPOSED' })])
+      const wrapper = await render()
+      await wrapper.get('button.toggle').trigger('click')
+      await flushPromises()
+      expect(wrapper.findAll('.entry')).toHaveLength(1)
+      fetchActions.mockResolvedValue([{ ...waitingRequest, status: 'REJECTED' }])
+      fetchAudit.mockResolvedValueOnce([
+        auditEntry({ id: 2, actionId: waitingRequest.id, event: 'REJECTED' }),
+        auditEntry({ id: 1, actionId: waitingRequest.id, event: 'PROPOSED' }),
+      ])
+
+      await wrapper.get('.head button').trigger('click')
+      await flushPromises()
+
+      expect(fetchAudit).toHaveBeenCalledTimes(2)
+      expect(wrapper.findAll('.entry')).toHaveLength(2)
+      expect(wrapper.get('button.toggle').attributes('aria-expanded')).toBe('true')
+    })
+
+    it('reads a closed trail only when it is opened next, and then as it is by then', async () => {
+      fetchActions.mockResolvedValue([approvedPayment])
+      fetchAudit.mockResolvedValue([auditEntry()])
+      const wrapper = await render()
+      await wrapper.get('button.toggle').trigger('click')
+      await flushPromises()
+      await wrapper.get('button.toggle').trigger('click')
+      fetchActions.mockResolvedValue([decidedLater])
+
+      await wrapper.get('.head button').trigger('click')
+      await flushPromises()
+
+      expect(fetchAudit).toHaveBeenCalledTimes(1)
+      expect(wrapper.get('button.toggle').text()).toBe(en.activity.auditTrail)
+
+      await wrapper.get('button.toggle').trigger('click')
+      await flushPromises()
+
+      expect(fetchAudit).toHaveBeenCalledTimes(2)
+    })
+
+    it('does not let a read that was started before the refresh overwrite the one made after it', async () => {
+      fetchActions.mockResolvedValue([approvedPayment])
+      const arrivals: ((entries: unknown[]) => void)[] = []
+      fetchAudit.mockImplementation(() => new Promise((resolve) => arrivals.push(resolve)))
+      const wrapper = await render()
+      await wrapper.get('button.toggle').trigger('click')
+      fetchActions.mockResolvedValue([decidedLater])
+      await wrapper.get('.head button').trigger('click')
+      await flushPromises()
+      expect(arrivals).toHaveLength(2)
+
+      arrivals[1]([auditEntry({ id: 2, event: 'APPROVED' }), auditEntry({ id: 1, event: 'PROPOSED' })])
+      await flushPromises()
+      arrivals[0]([auditEntry({ id: 1, event: 'PROPOSED' })])
+      await flushPromises()
+
+      expect(wrapper.findAll('.entry')).toHaveLength(2)
+    })
   })
 })

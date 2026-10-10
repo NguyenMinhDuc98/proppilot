@@ -241,6 +241,8 @@ export default {
     decidedBy: 'القرار بواسطة {actor}',
     undecided: 'لم يُتخذ قرار بعد',
     auditTrail: 'سجل التدقيق',
+    auditLoading: 'جارٍ تحميل سجل التدقيق…',
+    auditError: 'تعذّر تحميل سجل التدقيق.',
     auditEmpty: 'لا توجد سجلات تدقيق لهذا الإجراء.',
     before: 'قبل',
     after: 'بعد',
