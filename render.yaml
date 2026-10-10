@@ -27,7 +27,8 @@ services:
         sync: false
       - key: ANTHROPIC_API_KEY
         sync: false
-      # Enables GET /api/admin/runs. 24+ characters (openssl rand -hex 24). Leave unset to switch the admin endpoints off.
+      # Enables GET /api/admin/runs and POST /api/admin/reset (the nightly demo reset sends this value from the
+      # ADMIN_TOKEN repository secret). 24+ characters (openssl rand -hex 24). Leave unset to switch the admin endpoints off.
       - key: ADMIN_TOKEN
         sync: false
       - key: CHAT_RATE_LIMIT_PER_MINUTE
@@ -40,3 +41,7 @@ services:
         value: "30"
       - key: ACTION_MAX_APPROVALS_PER_DAY
         value: "100"
+      - key: ACTION_MAX_PROPOSALS_PER_RUN
+        value: "3"
+      - key: ACTION_MAX_PROPOSALS_PER_DAY
+        value: "200"
