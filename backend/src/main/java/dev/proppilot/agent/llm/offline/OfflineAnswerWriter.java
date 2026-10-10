@@ -120,12 +120,13 @@ final class OfflineAnswerWriter {
                 .append(d.path(ar ? "tenantAr" : "tenantEn").asText()).append(" (").append(d.path("unitCode").asText())
                 .append(ar ? ") — أشهر غير مدفوعة: " : ") — unpaid months: ").append(d.path("unpaidMonths").asInt())
                 .append("\n\n").append(ar
-                        ? "| الشهر | الحالة | المبلغ (ريال) |\n|---|---|---|"
-                        : "| Month | Status | Amount (SAR) |\n|---|---|---|");
+                        ? "| الشهر | الحالة | المبلغ (ريال) | المتبقي (ريال) |\n|---|---|---|---|"
+                        : "| Month | Status | Amount (SAR) | Remaining (SAR) |\n|---|---|---|---|");
         for (var p : d.path("payments")) {
             sb.append("\n| ").append(p.path("month").asText())
                     .append(" | ").append(paymentStatus(p.path("status").asText(), ar))
-                    .append(" | ").append(money(p.path("amount"))).append(" |");
+                    .append(" | ").append(money(p.path("amount")))
+                    .append(" | ").append(money(p.path("remainingAmount"))).append(" |");
         }
         return sb.toString();
     }
@@ -147,6 +148,7 @@ final class OfflineAnswerWriter {
     private static String paymentStatus(String status, boolean ar) {
         return switch (status) {
             case "UNPAID" -> ar ? "غير مدفوع" : "Unpaid";
+            case "PARTIAL" -> ar ? "مدفوع جزئيًا" : "Partially paid";
             case "PAID_LATE" -> ar ? "مدفوع متأخرًا" : "Paid late";
             case "PAID_ON_TIME" -> ar ? "مدفوع في الموعد" : "Paid on time";
             default -> status;

@@ -11,7 +11,7 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
 
     @Query("""
             select new dev.proppilot.domain.OverdueRow(
-                t.id, t.nameEn, t.nameAr, u.code, count(p), sum(p.amount), min(p.dueDate))
+                t.id, t.nameEn, t.nameAr, u.code, count(p), sum(p.amount - p.paidAmount), min(p.dueDate))
             from Payment p join p.lease l join l.tenant t join l.unit u
             where p.paidOn is null and p.dueDate < :cutoff and l.active = true
             group by t.id, t.nameEn, t.nameAr, u.code

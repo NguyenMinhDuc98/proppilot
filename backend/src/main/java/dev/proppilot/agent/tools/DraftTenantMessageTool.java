@@ -5,7 +5,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.proppilot.domain.Lease;
 import dev.proppilot.domain.Payment;
 import dev.proppilot.domain.PaymentRepository;
-import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDate;
 import org.springframework.stereotype.Component;
@@ -75,7 +74,7 @@ public class DraftTenantMessageTool implements Tool {
         var context = new MessageTemplates.Context(
                 arabic ? lease.getTenant().getNameAr() : lease.getTenant().getNameEn(),
                 lease.getUnit().getCode(), lease.getUnit().getBuilding().getName(), overdue.size(),
-                overdue.stream().map(Payment::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add),
+                Payment.totalRemaining(overdue),
                 overdue.isEmpty() ? null : overdue.get(0).getDueDate(), lease.getEndDate());
 
         var draft = switch (purpose) {

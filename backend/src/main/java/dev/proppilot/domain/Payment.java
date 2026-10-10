@@ -8,6 +8,7 @@ import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.Collection;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
@@ -31,5 +32,19 @@ public class Payment {
 
     public boolean isPaid() {
         return paidOn != null;
+    }
+
+    /** True once something was paid but the invoice is not settled yet; such a row still has {@code paid_on} null. */
+    public boolean isPartiallyPaid() {
+        return paidAmount.signum() > 0 && paidAmount.compareTo(amount) < 0;
+    }
+
+    /** What is still owed on this invoice. */
+    public BigDecimal remaining() {
+        return amount.subtract(paidAmount);
+    }
+
+    public static BigDecimal totalRemaining(Collection<Payment> payments) {
+        return payments.stream().map(Payment::remaining).reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 }

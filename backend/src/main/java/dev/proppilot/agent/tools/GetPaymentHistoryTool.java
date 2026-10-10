@@ -38,8 +38,9 @@ public class GetPaymentHistoryTool implements Tool {
     @Override
     public String description() {
         return "Monthly rent payment history (newest first) for the current lease of one tenant or unit, with paid / late "
-                + "/ unpaid status. Set all_leases to also get the unit's previous leases, which come back separately "
-                + "under earlierLeases with their own tenant: they are not the current tenant's payments.";
+                + "/ partial / unpaid status and the amount still remaining. Set all_leases to also get the unit's "
+                + "previous leases, which come back separately under earlierLeases with their own tenant: they are not "
+                + "the current tenant's payments.";
     }
 
     @Override
@@ -95,8 +96,9 @@ public class GetPaymentHistoryTool implements Tool {
         return payments.stream().map(p -> toRow(p, today)).toList();
     }
 
+    /** Months with rent still owed: not paid at all, or only partly. */
     private static long unpaidMonths(List<Row> rows) {
-        return rows.stream().filter(r -> r.status().equals("UNPAID")).count();
+        return rows.stream().filter(r -> r.status().equals("UNPAID") || r.status().equals("PARTIAL")).count();
     }
 
     private static Row toRow(Payment p, LocalDate today) {
@@ -107,10 +109,11 @@ public class GetPaymentHistoryTool implements Tool {
             status = late > 5 ? "PAID_LATE" : "PAID_ON_TIME";
             daysLate = Math.max(late, 0);
         } else {
-            status = "UNPAID";
+            status = p.isPartiallyPaid() ? "PARTIAL" : "UNPAID";
             daysLate = Math.max(ChronoUnit.DAYS.between(p.getDueDate(), today), 0);
         }
-        return new Row(p.getPeriod().toString().substring(0, 7), p.getAmount(), p.getPaidAmount(), p.getPaidOn(), status, daysLate);
+        return new Row(p.getPeriod().toString().substring(0, 7), p.getAmount(), p.getPaidAmount(), p.remaining(),
+                p.getPaidOn(), status, daysLate);
     }
 
     /** The tenant, payments and unpaid months at the top level are those of the current lease; earlier leases stay apart. */
@@ -122,6 +125,7 @@ public class GetPaymentHistoryTool implements Tool {
                         List<Row> payments) {
     }
 
-    record Row(String month, BigDecimal amount, BigDecimal paidAmount, LocalDate paidOn, String status, Long daysLate) {
+    record Row(String month, BigDecimal amount, BigDecimal paidAmount, BigDecimal remainingAmount, LocalDate paidOn,
+               String status, Long daysLate) {
     }
 }

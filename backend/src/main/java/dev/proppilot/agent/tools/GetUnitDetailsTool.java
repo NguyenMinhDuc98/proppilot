@@ -3,6 +3,7 @@ package dev.proppilot.agent.tools;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.proppilot.domain.LeaseRepository;
+import dev.proppilot.domain.Payment;
 import dev.proppilot.domain.PaymentRepository;
 import dev.proppilot.units.UnitService;
 import dev.proppilot.units.UnitView;
@@ -54,9 +55,8 @@ public class GetUnitDetailsTool implements Tool {
         var lease = leases.findActiveByUnitCode(unit.get().code());
         var tenant = lease.map(l -> {
             var overdue = payments.findByLeaseIdAndPaidOnIsNullAndDueDateBeforeOrderByPeriod(l.getId(), LocalDate.now(clock));
-            var unpaid = overdue.stream().map(p -> p.getAmount()).reduce(BigDecimal.ZERO, BigDecimal::add);
             return new TenantInfo(l.getTenant().getNameEn(), l.getTenant().getNameAr(),
-                    l.getStartDate(), l.getEndDate(), overdue.size(), unpaid);
+                    l.getStartDate(), l.getEndDate(), overdue.size(), Payment.totalRemaining(overdue));
         }).orElse(null);
         return ToolResult.ok(json, new Result(unit.get(), tenant), "Unit " + unit.get().code() + " (" + unit.get().status() + ")");
     }

@@ -89,4 +89,25 @@ class OfflineLlmClientTest {
         assertThat(response.text()).contains("Ahmed Al-Harbi", "A-203", "98")
                 .doesNotContain("find_overdue_tenants").doesNotContain("Data:");
     }
+
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', textBlock = """
+            Payment history for unit A-203 | Partially paid | Remaining (SAR)
+            سجل الدفعات للوحدة A-203 | مدفوع جزئيًا | المتبقي (ريال)
+            """)
+    void paymentHistoryShowsPartlyPaidMonthsWithTheAmountLeft(String question, String statusLabel, String remainingHeader) {
+        var call = new ContentBlock.ToolUse("t1", "get_payment_history", new ObjectMapper().createObjectNode());
+        var result = new ContentBlock.ToolResult("t1", """
+                {"tenantEn":"Ahmed Al-Harbi","tenantAr":"أحمد الحربي","unitCode":"A-203","unpaidMonths":1,
+                 "payments":[{"month":"2026-10","amount":4800,"paidAmount":1000,"remainingAmount":3800,
+                              "paidOn":null,"status":"PARTIAL","daysLate":9}]}""", false);
+        var messages = List.of(
+                Message.user(question),
+                new Message(Message.Role.ASSISTANT, List.of(call)),
+                new Message(Message.Role.USER, List.of(result)));
+
+        var response = client.complete(new LlmRequest("", messages, List.of(), TIMEOUT), s -> { });
+
+        assertThat(response.text()).contains(remainingHeader).contains("| 2026-10 | " + statusLabel + " | 4800 | 3800 |");
+    }
 }
