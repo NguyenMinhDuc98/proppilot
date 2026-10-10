@@ -87,8 +87,8 @@ class RecordPaymentExecutor implements ActionExecutor<RecordPaymentExecutor.Paym
     }
 
     private static BigDecimal amount(ToolArgs in) {
-        var amount = in.decimal(AMOUNT).orElseThrow(() -> new ToolInputException("amount is required"));
-        if (amount.signum() == 0) {
+        var amount = in.signedDecimal(AMOUNT).orElseThrow(() -> new ToolInputException("amount is required"));
+        if (amount.signum() <= 0) {
             throw new ActionException(ActionError.INVALID_AMOUNT, "amount must be greater than zero.");
         }
         if (amount.compareTo(MAX_AMOUNT) > 0) {

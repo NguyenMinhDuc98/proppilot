@@ -287,6 +287,32 @@ class ActionApiIT extends ActionIntegrationTest {
     }
 
     @Test
+    void anAmountTooBigForANumberIsUnprocessableAndNotAServerError() throws Exception {
+        var proposed = proposePayment("1000");
+
+        mvc.perform(postTo("/api/actions/" + proposed.id() + "/preview", "{\"amount\":1e999}"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.code").value("invalid_argument"));
+        mvc.perform(approve(proposed.id(), "key-1", "{\"amount\":-1e999}"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.code").value("invalid_argument"));
+        mvc.perform(get("/api/actions/" + proposed.id()))
+                .andExpect(jsonPath("$.status").value("PROPOSED"));
+    }
+
+    @Test
+    void aNegativeAmountIsAnInvalidAmountLikeZero() throws Exception {
+        var proposed = proposePayment("1000");
+
+        mvc.perform(approve(proposed.id(), "key-1", "{\"amount\":-5}"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.code").value("invalid_amount"));
+        mvc.perform(approve(proposed.id(), "key-2", "{\"amount\":0}"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.code").value("invalid_amount"));
+    }
+
+    @Test
     void aTooLongRejectionReasonIsUnprocessable() throws Exception {
         var proposed = proposePayment("1000");
 

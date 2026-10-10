@@ -82,14 +82,15 @@ class RecordPaymentExecutorTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"0", "0.00", "0.001", "10.005", "1000.999", "10000000.01"})
-    void rejectsAZeroAmountTooManyDecimalsOrAHugeAmount(String amount) {
+    @ValueSource(strings = {"0", "0.00", "-5", "-0.01", "0.001", "10.005", "1000.999", "10000000.01"})
+    void rejectsANonPositiveAmountTooManyDecimalsOrAHugeAmount(String amount) {
         assertThat(refusedWith(args().put("amount", new BigDecimal(amount)))).isEqualTo(ActionError.INVALID_AMOUNT);
     }
 
     @Test
-    void rejectsNegativeMissingAndNonNumericAmounts() {
-        assertThatThrownBy(() -> executor.validate(args().put("amount", -5))).isInstanceOf(ToolInputException.class);
+    void rejectsMissingNonNumericAndInfiniteAmounts() {
+        assertThatThrownBy(() -> executor.validate(args().put("amount", Double.POSITIVE_INFINITY)))
+                .isInstanceOf(ToolInputException.class).hasMessage("amount must be a finite number");
         assertThatThrownBy(() -> executor.validate(args().put("amount", "lots"))).isInstanceOf(ToolInputException.class)
                 .hasMessage("amount must be a number");
         assertThatThrownBy(() -> executor.validate(args().without("amount"))).isInstanceOf(ToolInputException.class)

@@ -81,6 +81,41 @@ class ToolArgsTest {
                 .hasMessage("all must be a boolean");
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"1e999", "-1e999", "1E400"})
+    void decimalRejectsNumbersTooBigForADouble(String number) {
+        // JSON parsers read these as an infinite double, which has no decimal value
+        assertThatThrownBy(() -> args("{\"amount\":" + number + "}").decimal("amount"))
+                .isInstanceOf(ToolInputException.class)
+                .hasMessage("amount must be a finite number");
+        assertThatThrownBy(() -> args("{\"amount\":" + number + "}").signedDecimal("amount"))
+                .isInstanceOf(ToolInputException.class)
+                .hasMessage("amount must be a finite number");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"\"5\"", "true", "[5]", "{}"})
+    void decimalRejectsEverythingThatIsNotANumber(String value) {
+        assertThatThrownBy(() -> args("{\"amount\":" + value + "}").decimal("amount"))
+                .isInstanceOf(ToolInputException.class)
+                .hasMessage("amount must be a number");
+    }
+
+    @Test
+    void decimalRefusesNegativeNumbersButSignedDecimalKeepsThem() throws Exception {
+        assertThatThrownBy(() -> args("{\"amount\":-0.5}").decimal("amount"))
+                .isInstanceOf(ToolInputException.class)
+                .hasMessage("amount must not be negative");
+        assertThat(args("{\"amount\":-0.5}").signedDecimal("amount")).contains(new java.math.BigDecimal("-0.5"));
+        assertThat(args("{\"amount\":1250.75}").decimal("amount")).contains(new java.math.BigDecimal("1250.75"));
+    }
+
+    @Test
+    void decimalIsEmptyWhenMissingOrNull() throws Exception {
+        assertThat(args("{}").decimal("amount")).isEmpty();
+        assertThat(args("{\"amount\":null}").signedDecimal("amount")).isEmpty();
+    }
+
     @Test
     void dateReadsAnIsoDate() throws Exception {
         assertThat(args("{\"payment_date\":\"2026-10-01\"}").date("payment_date")).contains(java.time.LocalDate.of(2026, 10, 1));

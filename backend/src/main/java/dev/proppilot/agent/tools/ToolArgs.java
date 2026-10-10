@@ -2,6 +2,7 @@ package dev.proppilot.agent.tools;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import com.fasterxml.jackson.databind.node.NumericNode;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
@@ -49,18 +50,28 @@ public final class ToolArgs {
     }
 
     public Optional<BigDecimal> decimal(String name) {
+        return signedDecimal(name).map(value -> {
+            if (value.signum() < 0) {
+                throw new ToolInputException(name + " must not be negative");
+            }
+            return value;
+        });
+    }
+
+    /** For callers that give a negative number a meaning of their own, such as an amount that must be above zero. */
+    public Optional<BigDecimal> signedDecimal(String name) {
         var node = input.get(name);
         if (node == null || node.isNull()) {
             return Optional.empty();
         }
-        if (!node.isNumber()) {
+        if (!(node instanceof NumericNode number)) {
             throw new ToolInputException(name + " must be a number");
         }
-        var value = node.decimalValue();
-        if (value.signum() < 0) {
-            throw new ToolInputException(name + " must not be negative");
+        // JSON such as 1e999 is read as an infinite double, which has no decimal value
+        if (number.isNaN()) {
+            throw new ToolInputException(name + " must be a finite number");
         }
-        return Optional.of(value);
+        return Optional.of(number.decimalValue());
     }
 
     public Optional<LocalDate> date(String name) {
