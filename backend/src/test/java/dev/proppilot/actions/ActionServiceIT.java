@@ -417,6 +417,73 @@ class ActionServiceIT extends ActionIntegrationTest {
     }
 
     @Test
+    void sendingBackTheProposedValuesIsNotAnEdit() {
+        var proposed = proposePayment("1000");
+        var repeated = edits().put("amount", 1000).put("overridePayment", false);
+
+        var approval = actions.approve(proposed.id(), newKey(), repeated, "visitor-test");
+
+        assertThat(approval.action().status()).isEqualTo(ActionStatus.APPROVED);
+        assertThat(auditEvents()).doesNotContain("EDITED");
+        assertThat(paidAmountOfInvoice(OLDEST_UNPAID)).isEqualByComparingTo("1000");
+    }
+
+    @Test
+    void theSameAmountInAnotherNotationIsNotAnEdit() {
+        for (var amount : List.of(bd("100"), bd("100.0"), bd("100.00"), bd("1E+2"))) {
+            var proposed = proposePayment("100");
+
+            actions.approve(proposed.id(), newKey(), edits().put("amount", amount), "visitor-test");
+        }
+        var asDouble = proposePayment("100");
+        actions.approve(asDouble.id(), newKey(), edits().put("amount", 100.0), "visitor-test");
+
+        assertThat(auditEvents()).doesNotContain("EDITED");
+    }
+
+    @Test
+    void aBodyThatChangesOneValueAndRepeatsAnotherIsOneEdit() {
+        var proposed = proposePayment("1000");
+        var edit = edits().put("amount", 1200).put("overridePayment", false);
+
+        actions.approve(proposed.id(), newKey(), edit, "visitor-test");
+
+        var edited = audit().stream().filter(row -> row.get("event").equals("EDITED")).toList();
+        assertThat(edited).singleElement().satisfies(row -> {
+            assertThat(jsonOf(row.get("before")).get("amount").decimalValue()).isEqualByComparingTo("1000");
+            assertThat(jsonOf(row.get("after")).get("amount").decimalValue()).isEqualByComparingTo("1200");
+        });
+    }
+
+    @Test
+    void aProposalThatNoLongerHoldsFailsEvenWhenTheBodyRepeatsItsValues() {
+        var amount = rent.multiply(bd("3"));
+        var stale = proposePayment(amount.toPlainString());
+        actions.approve(proposePayment(amount.toPlainString()).id(), newKey(), edits(), "visitor-test");
+        var repeated = edits().put("amount", amount).put("overridePayment", false);
+        var before = invoicesOfTenant7();
+
+        var error = errorOf(() -> actions.approve(stale.id(), newKey(), repeated, "visitor-test"));
+
+        assertThat(error).isEqualTo(ActionError.AMOUNT_EXCEEDS_OUTSTANDING);
+        assertThat(actions.get(stale.id()).status()).as("it failed for good, it was not sent back for correction")
+                .isEqualTo(ActionStatus.FAILED);
+        assertThat(invoicesOfTenant7()).isEqualTo(before);
+        assertThat(auditEvents()).doesNotContain("EDITED");
+    }
+
+    @Test
+    void anAmountThatIsNotAFiniteNumberIsRefusedAndLeavesTheProposalWaiting() {
+        var proposed = proposePayment("1000");
+        var infinite = edits().put("amount", Double.POSITIVE_INFINITY);
+
+        assertThat(errorOf(() -> actions.approve(proposed.id(), newKey(), infinite, "visitor-test")))
+                .isEqualTo(ActionError.INVALID_ARGUMENT);
+        assertThat(errorOf(() -> actions.preview(proposed.id(), infinite))).isEqualTo(ActionError.INVALID_ARGUMENT);
+        assertThat(actions.get(proposed.id()).status()).isEqualTo(ActionStatus.PROPOSED);
+    }
+
+    @Test
     void aPreviewWithEditsShowsTheNewDiffAndChangesNothing() {
         var proposed = proposePayment("1000");
         var before = invoicesOfTenant7();

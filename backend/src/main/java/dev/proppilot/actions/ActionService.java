@@ -2,12 +2,14 @@ package dev.proppilot.actions;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.NumericNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import dev.proppilot.actions.ActionExecutor.ExecutionContext;
 import dev.proppilot.agent.tools.ToolInputException;
 import dev.proppilot.config.ActionProperties;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -28,6 +30,13 @@ public class ActionService {
 
     static final int MAX_REASON_LENGTH = 200;
     private static final Pattern IDEMPOTENCY_KEY = Pattern.compile("^[A-Za-z0-9_-]{1,64}$");
+    /** Numbers are the same value in any notation: 1000 repeats a stored 1000.00. */
+    private static final Comparator<JsonNode> SAME_VALUE = (stored, sent) -> {
+        if (stored instanceof NumericNode a && sent instanceof NumericNode b && !a.isNaN() && !b.isNaN()) {
+            return a.decimalValue().compareTo(b.decimalValue());
+        }
+        return stored.equals(sent) ? 0 : 1;
+    };
 
     private final Map<ActionKind, ActionExecutor<?>> executors;
     private final PendingActionRepository actions;
@@ -162,8 +171,9 @@ public class ActionService {
 
     private <A> Outcome approveWith(ActionExecutor<A> executor, PendingAction action, String key, ObjectNode edits,
                                     String actor, Instant now) {
-        boolean edited = edits != null && !edits.isEmpty();
         var effective = withEdits(executor, action.getArgs(), edits);
+        // Sending back the values the proposal already has changes nothing, so it is not an edit.
+        boolean edited = !action.getArgs().equals(SAME_VALUE, effective);
         A args;
         try {
             args = validate(executor, effective);

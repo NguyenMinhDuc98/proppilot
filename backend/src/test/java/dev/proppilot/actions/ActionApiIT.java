@@ -313,6 +313,17 @@ class ActionApiIT extends ActionIntegrationTest {
     }
 
     @Test
+    void aBodyThatRepeatsTheProposedValuesIsAnApprovalWithoutAnEdit() throws Exception {
+        var proposed = proposePayment("1000");
+
+        mvc.perform(approve(proposed.id(), "key-1", "{\"amount\":1000,\"overridePayment\":false}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.action.status").value("APPROVED"));
+
+        assertThat(auditEvents()).doesNotContain("EDITED");
+    }
+
+    @Test
     void aTooLongRejectionReasonIsUnprocessable() throws Exception {
         var proposed = proposePayment("1000");
 
