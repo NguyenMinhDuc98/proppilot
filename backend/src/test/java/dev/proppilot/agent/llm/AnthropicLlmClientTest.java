@@ -148,6 +148,16 @@ class AnthropicLlmClientTest {
     }
 
     @Test
+    void sendsNoToolsFieldWhenNoToolsAreOffered() {
+        var client = client(server.getAddress().getPort());
+        var tool = new ToolSpec("lookup", "Looks something up", new ObjectMapper().createObjectNode());
+        var withTool = new LlmRequest("system", List.of(Message.user("hi")), List.of(tool), Duration.ofSeconds(60));
+
+        assertThat(client.buildBody(REQUEST).has("tools")).isFalse();
+        assertThat(client.buildBody(withTool).get("tools")).hasSize(1);
+    }
+
+    @Test
     void retriesOverloadedResponsesAndThenStreamsTheAnswer() {
         replies.add(Reply.status(529));
         replies.add(Reply.status(529));

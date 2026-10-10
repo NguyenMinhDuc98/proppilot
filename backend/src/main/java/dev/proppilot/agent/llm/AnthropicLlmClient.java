@@ -133,12 +133,14 @@ public class AnthropicLlmClient implements LlmClient {
         body.put("max_tokens", props.maxTokens());
         body.put("stream", true);
         body.put("system", request.system());
-        var tools = body.putArray("tools");
-        for (var tool : request.tools()) {
-            tools.addObject()
-                    .put("name", tool.name())
-                    .put("description", tool.description())
-                    .set("input_schema", tool.inputSchema());
+        if (!request.tools().isEmpty()) {
+            var tools = body.putArray("tools");
+            for (var tool : request.tools()) {
+                tools.addObject()
+                        .put("name", tool.name())
+                        .put("description", tool.description())
+                        .set("input_schema", tool.inputSchema());
+            }
         }
         var messages = body.putArray("messages");
         for (var message : request.messages()) {

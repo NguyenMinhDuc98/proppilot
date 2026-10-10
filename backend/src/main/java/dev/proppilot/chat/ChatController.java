@@ -1,6 +1,8 @@
 package dev.proppilot.chat;
 
+import dev.proppilot.actions.ActionException;
 import dev.proppilot.agent.ChatTurn;
+import dev.proppilot.agent.DecisionNotice;
 import dev.proppilot.config.ChatProperties;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
@@ -37,16 +39,20 @@ public class ChatController {
                     "The daily question limit of this demo has been reached. Please come back tomorrow.");
             case ALLOWED -> { }
         }
-        return chat.start(request);
+        try {
+            return chat.start(request);
+        } catch (ActionException refused) {
+            throw new ResponseStatusException(refused.error().status(), refused.getMessage());
+        }
     }
 
     private void validate(ChatRequest request) {
-        if (request == null || request.message() == null || request.message().isBlank()) {
+        if (request == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "message is required");
         }
-        if (request.message().length() > props.maxMessageLength()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "message must be at most " + props.maxMessageLength() + " characters");
+        // With an actionId the server writes the turn and the message is not read.
+        if (request.actionId() == null) {
+            validateMessage(request.message());
         }
         var history = request.historyOrEmpty();
         if (history.size() > props.maxHistoryItems()) {
@@ -54,9 +60,29 @@ public class ChatController {
                     "history must have at most " + props.maxHistoryItems() + " items");
         }
         for (ChatTurn turn : history) {
-            if (turn == null || turn.text() == null || turn.role() == null || turn.text().length() > MAX_HISTORY_TURN_LENGTH) {
+            if (turn == null || turn.text() == null || turn.role() == null || turn.text().length() > MAX_HISTORY_TURN_LENGTH
+                    || (turn.fromUser() && usesReservedMarker(turn.text()))) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid history");
             }
         }
+    }
+
+    private void validateMessage(String message) {
+        if (message == null || message.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "message is required");
+        }
+        if (message.length() > props.maxMessageLength()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "message must be at most " + props.maxMessageLength() + " characters");
+        }
+        if (usesReservedMarker(message)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "message must not contain " + DecisionNotice.MARKER);
+        }
+    }
+
+    /** Only the server writes a decision notice, so a visitor's text cannot pose as one. */
+    private static boolean usesReservedMarker(String text) {
+        return text.contains(DecisionNotice.MARKER);
     }
 }

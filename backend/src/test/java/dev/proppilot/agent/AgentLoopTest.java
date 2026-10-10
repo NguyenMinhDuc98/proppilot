@@ -11,7 +11,9 @@ import dev.proppilot.agent.llm.LlmResponse;
 import dev.proppilot.agent.llm.Message;
 import dev.proppilot.agent.llm.StopReason;
 import dev.proppilot.agent.llm.Usage;
+import dev.proppilot.agent.tools.ProposalTool;
 import dev.proppilot.agent.tools.Tool;
+import dev.proppilot.agent.tools.ToolContext;
 import dev.proppilot.agent.tools.ToolInputException;
 import dev.proppilot.agent.tools.ToolRegistry;
 import dev.proppilot.agent.tools.ToolResult;
@@ -21,6 +23,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 import java.util.function.BooleanSupplier;
 import org.junit.jupiter.api.Test;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -49,8 +52,28 @@ class AgentLoopTest {
         }
     };
 
-    private AgentLoop loop(ScriptedLlmClient llm, int maxIterations) {
-        var registry = new ToolRegistry(List.of(echo), mock(PlatformTransactionManager.class));
+    private static AgentRequest ask(String question, List<ChatTurn> history) {
+        return AgentRequest.question(question, history, UUID.randomUUID());
+    }
+
+    private static final JsonNode CARD = JSON.createObjectNode().put("type", "action").put("secret-card-field", "x");
+    private final List<ToolContext> proposalContexts = new ArrayList<>();
+
+    /** Stands in for a write tool: it stores nothing and hands the web app a card the model must never see. */
+    private final ProposalTool propose = new ProposalTool() {
+        public String name() { return "propose"; }
+        public String description() { return "Proposes a change"; }
+        public JsonNode inputSchema() { return ToolSchema.object().build(); }
+        public ToolResult propose(JsonNode input, ToolContext context) {
+            proposalContexts.add(context);
+            return ToolResult.ok(JSON, java.util.Map.of("status", "PROPOSED"), "proposed").withUi(CARD);
+        }
+    };
+
+    private AgentLoop loop(ScriptedLlmClient llm, int maxIterations, Tool... more) {
+        var tools = new ArrayList<Tool>(List.of(echo));
+        tools.addAll(List.of(more));
+        var registry = new ToolRegistry(tools, mock(PlatformTransactionManager.class));
         return new AgentLoop(llm, registry, new AgentProperties(maxIterations, 10, (int) RUN_TIMEOUT.toSeconds()), clock);
     }
 
@@ -59,7 +82,7 @@ class AgentLoopTest {
         var llm = new ScriptedLlmClient().thenText("Hello");
         var events = new ArrayList<AgentEvent>();
 
-        var result = loop(llm, 6).run("hi", List.of(), events::add, NEVER);
+        var result = loop(llm, 6).run(ask("hi", List.of()), events::add, NEVER);
 
         assertThat(result.status()).isEqualTo(AgentResult.Status.OK);
         assertThat(result.answer()).isEqualTo("Hello");
@@ -75,7 +98,7 @@ class AgentLoopTest {
                 .thenText("Done: ping");
         var events = new ArrayList<AgentEvent>();
 
-        var result = loop(llm, 6).run("say ping", List.of(), events::add, NEVER);
+        var result = loop(llm, 6).run(ask("say ping", List.of()), events::add, NEVER);
 
         assertThat(executedWith).containsExactly("ping");
         assertThat(result.answer()).isEqualTo("Done: ping");
@@ -98,7 +121,7 @@ class AgentLoopTest {
                 .thenToolCall("t1", "echo", "{}")
                 .thenText("Sorry, I need text");
 
-        var result = loop(llm, 6).run("go", List.of(), e -> { }, NEVER);
+        var result = loop(llm, 6).run(ask("go", List.of()), e -> { }, NEVER);
 
         assertThat(result.status()).isEqualTo(AgentResult.Status.OK);
         var secondRequest = llm.requests.get(1).messages();
@@ -113,7 +136,7 @@ class AgentLoopTest {
                 .thenToolCall("t1", "does_not_exist", "{}")
                 .thenText("ok");
 
-        var result = loop(llm, 6).run("go", List.of(), e -> { }, NEVER);
+        var result = loop(llm, 6).run(ask("go", List.of()), e -> { }, NEVER);
 
         assertThat(result.status()).isEqualTo(AgentResult.Status.OK);
         var secondRequest = llm.requests.get(1).messages();
@@ -130,7 +153,7 @@ class AgentLoopTest {
         }
         var events = new ArrayList<AgentEvent>();
 
-        var result = loop(llm, 3).run("loop forever", List.of(), events::add, NEVER);
+        var result = loop(llm, 3).run(ask("loop forever", List.of()), events::add, NEVER);
 
         assertThat(result.status()).isEqualTo(AgentResult.Status.MAX_ITERATIONS);
         assertThat(result.iterations()).isEqualTo(3);
@@ -143,7 +166,7 @@ class AgentLoopTest {
     void llmFailureEndsTheRunWithAnErrorCodeAndNoProviderText() {
         var llm = new ScriptedLlmClient().thenFail(ErrorCode.LLM_OVERLOADED, "Claude API returned 529: upstream-secret");
 
-        var result = loop(llm, 6).run("hi", List.of(), e -> { }, NEVER);
+        var result = loop(llm, 6).run(ask("hi", List.of()), e -> { }, NEVER);
 
         assertThat(result.status()).isEqualTo(AgentResult.Status.ERROR);
         assertThat(result.errorCode()).isEqualTo(ErrorCode.LLM_OVERLOADED);
@@ -157,7 +180,7 @@ class AgentLoopTest {
                 List.of(new ContentBlock.Text("The answer is cut"), toolCall), StopReason.MAX_TOKENS, new Usage(30, 2048)));
         var events = new ArrayList<AgentEvent>();
 
-        var result = loop(llm, 6).run("go", List.of(), events::add, NEVER);
+        var result = loop(llm, 6).run(ask("go", List.of()), events::add, NEVER);
 
         assertThat(result.status()).isEqualTo(AgentResult.Status.TRUNCATED);
         assertThat(result.answer()).isEqualTo("The answer is cut");
@@ -172,7 +195,7 @@ class AgentLoopTest {
     void cancelledBeforeTheFirstCallNothingIsSentToTheModel() {
         var llm = new ScriptedLlmClient().thenText("never asked");
 
-        var result = loop(llm, 6).run("hi", List.of(), e -> { }, () -> true);
+        var result = loop(llm, 6).run(ask("hi", List.of()), e -> { }, () -> true);
 
         assertThat(result.status()).isEqualTo(AgentResult.Status.ABORTED);
         assertThat(result.usage()).isEqualTo(Usage.ZERO);
@@ -187,7 +210,7 @@ class AgentLoopTest {
                 .thenText("never reached");
         var events = new ArrayList<AgentEvent>();
 
-        var result = loop(llm, 6).run("go", List.of(), events::add, () -> !llm.requests.isEmpty());
+        var result = loop(llm, 6).run(ask("go", List.of()), events::add, () -> !llm.requests.isEmpty());
 
         assertThat(result.status()).isEqualTo(AgentResult.Status.ABORTED);
         assertThat(result.usage()).isEqualTo(new Usage(50, 10));
@@ -202,7 +225,7 @@ class AgentLoopTest {
     void cancelledWhileTheFinalReplyWasStreamingEndsTheRunAsAbortedNotOk() {
         var llm = new ScriptedLlmClient().thenText("an answer nobody received");
 
-        var result = loop(llm, 6).run("go", List.of(), e -> { }, () -> !llm.requests.isEmpty());
+        var result = loop(llm, 6).run(ask("go", List.of()), e -> { }, () -> !llm.requests.isEmpty());
 
         assertThat(result.status()).isEqualTo(AgentResult.Status.ABORTED);
         assertThat(result.answer()).isEmpty();
@@ -214,7 +237,7 @@ class AgentLoopTest {
     void cancelledDuringTheLastToolCallEndsTheRunAsAbortedNotGaveUp() {
         var llm = new ScriptedLlmClient().thenToolCall("t1", "echo", "{\"text\":\"ping\"}");
 
-        var result = loop(llm, 1).run("go", List.of(), e -> { }, () -> !executedWith.isEmpty());
+        var result = loop(llm, 1).run(ask("go", List.of()), e -> { }, () -> !executedWith.isEmpty());
 
         assertThat(result.status()).isEqualTo(AgentResult.Status.ABORTED);
         assertThat(result.toolCalls()).isEqualTo(1);
@@ -229,7 +252,7 @@ class AgentLoopTest {
                 .then(new LlmResponse(List.of(first, second), StopReason.TOOL_USE, new Usage(50, 10)))
                 .thenText("never reached");
 
-        var result = loop(llm, 6).run("go", List.of(), e -> { }, () -> !executedWith.isEmpty());
+        var result = loop(llm, 6).run(ask("go", List.of()), e -> { }, () -> !executedWith.isEmpty());
 
         assertThat(result.status()).isEqualTo(AgentResult.Status.ABORTED);
         assertThat(executedWith).containsExactly("one");
@@ -246,7 +269,7 @@ class AgentLoopTest {
                 .thenToolCall("t2", "echo", "{\"text\":\"two\"}")
                 .thenText("never reached");
 
-        var result = loop(llm, 6).run("slow question", List.of(), e -> { }, NEVER);
+        var result = loop(llm, 6).run(ask("slow question", List.of()), e -> { }, NEVER);
 
         assertThat(llm.requests).extracting(LlmRequest::timeout)
                 .containsExactly(Duration.ofSeconds(90), Duration.ofSeconds(30));
@@ -264,7 +287,7 @@ class AgentLoopTest {
                 .beforeEachCall(() -> clock.advance(RUN_TIMEOUT.plusSeconds(1)))
                 .thenFail(ErrorCode.LLM_TIMEOUT, "Claude response stream timed out");
 
-        var result = loop(llm, 6).run("slow question", List.of(), e -> { }, NEVER);
+        var result = loop(llm, 6).run(ask("slow question", List.of()), e -> { }, NEVER);
 
         assertThat(result.status()).isEqualTo(AgentResult.Status.ERROR);
         assertThat(result.errorCode()).isEqualTo(ErrorCode.RUN_TIMEOUT);
@@ -277,7 +300,7 @@ class AgentLoopTest {
                 .beforeEachCall(() -> clock.advance(Duration.ofSeconds(60)))
                 .thenFail(ErrorCode.LLM_TIMEOUT, "Claude response stream timed out");
 
-        var result = loop(llm, 6).run("slow question", List.of(), e -> { }, NEVER);
+        var result = loop(llm, 6).run(ask("slow question", List.of()), e -> { }, NEVER);
 
         assertThat(result.errorCode()).isEqualTo(ErrorCode.LLM_TIMEOUT);
     }
@@ -288,7 +311,7 @@ class AgentLoopTest {
                 .beforeEachCall(() -> clock.advance(RUN_TIMEOUT.plusSeconds(1)))
                 .thenFail(ErrorCode.LLM_OVERLOADED, "Claude API returned 429");
 
-        var result = loop(llm, 6).run("busy", List.of(), e -> { }, NEVER);
+        var result = loop(llm, 6).run(ask("busy", List.of()), e -> { }, NEVER);
 
         assertThat(result.errorCode()).isEqualTo(ErrorCode.LLM_OVERLOADED);
     }
@@ -301,7 +324,7 @@ class AgentLoopTest {
                 .then(new LlmResponse(List.of(first, second), StopReason.TOOL_USE, new Usage(50, 10)));
         echoTakes = RUN_TIMEOUT.plusSeconds(1);
 
-        var result = loop(llm, 6).run("slow tools", List.of(), e -> { }, NEVER);
+        var result = loop(llm, 6).run(ask("slow tools", List.of()), e -> { }, NEVER);
 
         assertThat(result.errorCode()).isEqualTo(ErrorCode.RUN_TIMEOUT);
         assertThat(executedWith).containsExactly("one");
@@ -313,7 +336,7 @@ class AgentLoopTest {
     void aRunThatFinishesInTimeIsNotAffectedByTheDeadline() {
         var llm = new ScriptedLlmClient().beforeEachCall(() -> clock.advance(Duration.ofSeconds(89))).thenText("fast enough");
 
-        var result = loop(llm, 6).run("quick", List.of(), e -> { }, NEVER);
+        var result = loop(llm, 6).run(ask("quick", List.of()), e -> { }, NEVER);
 
         assertThat(result.status()).isEqualTo(AgentResult.Status.OK);
     }
@@ -322,7 +345,7 @@ class AgentLoopTest {
     void sendsSystemPromptWithTodaysDateAndToolSpecs() {
         var llm = new ScriptedLlmClient().thenText("ok");
 
-        loop(llm, 6).run("hi", List.of(), e -> { }, NEVER);
+        loop(llm, 6).run(ask("hi", List.of()), e -> { }, NEVER);
 
         var request = llm.requests.get(0);
         assertThat(request.system()).contains("2026-03-15").contains("Never invent");
@@ -338,11 +361,67 @@ class AgentLoopTest {
                 new ChatTurn("assistant", "first answer"),
                 new ChatTurn("user", "dangling question without answer"));
 
-        loop(llm, 6).run("second question", history, e -> { }, NEVER);
+        loop(llm, 6).run(ask("second question", history), e -> { }, NEVER);
 
         var messages = llm.requests.get(0).messages();
         assertThat(messages).extracting(Message::role).containsExactly(
                 Message.Role.USER, Message.Role.ASSISTANT, Message.Role.USER);
         assertThat(((ContentBlock.Text) messages.get(2).content().get(0)).text()).isEqualTo("second question");
+    }
+
+    @Test
+    void whatAToolHandsTheWebAppReachesTheEventsAndNeverTheModel() {
+        var llm = new ScriptedLlmClient()
+                .thenToolCall("t1", "propose", "{}")
+                .thenText("Waiting for your approval");
+        var events = new ArrayList<AgentEvent>();
+
+        loop(llm, 6, propose).run(ask("record it", List.of()), events::add, NEVER);
+
+        var resultEvent = events.stream().filter(AgentEvent.ToolResultEvent.class::isInstance)
+                .map(AgentEvent.ToolResultEvent.class::cast).findFirst().orElseThrow();
+        assertThat(resultEvent.ui()).isEqualTo(CARD);
+        var secondRequest = llm.requests.get(1).messages();
+        var toolResult = (ContentBlock.ToolResult) secondRequest.get(secondRequest.size() - 1).content().get(0);
+        assertThat(toolResult.content()).contains("PROPOSED").doesNotContain("secret-card-field");
+        assertThat(llm.requests.toString()).doesNotContain("secret-card-field");
+    }
+
+    @Test
+    void aProposalToolKnowsTheRunItBelongsTo() {
+        var runId = UUID.randomUUID();
+        var llm = new ScriptedLlmClient().thenToolCall("t1", "propose", "{}").thenText("ok");
+
+        loop(llm, 6, propose).run(AgentRequest.question("record it", List.of(), runId), e -> { }, NEVER);
+
+        assertThat(proposalContexts).containsExactly(new ToolContext(runId));
+    }
+
+    @Test
+    void aConfirmationOffersNoToolsAndRunsNoneEvenWhenTheModelAsksForOne() {
+        var llm = new ScriptedLlmClient()
+                .thenToolCall("t1", "propose", "{}")
+                .thenText("Done, nothing else");
+
+        var result = loop(llm, 6, propose).run(
+                AgentRequest.confirmation("[PROPOSAL DECISION] approved", List.of(), UUID.randomUUID()), e -> { }, NEVER);
+
+        assertThat(llm.requests.get(0).tools()).isEmpty();
+        assertThat(proposalContexts).isEmpty();
+        assertThat(executedWith).isEmpty();
+        var secondRequest = llm.requests.get(1).messages();
+        var toolResult = (ContentBlock.ToolResult) secondRequest.get(secondRequest.size() - 1).content().get(0);
+        assertThat(toolResult.error()).isTrue();
+        assertThat(toolResult.content()).contains("No tools are available");
+        assertThat(result.status()).isEqualTo(AgentResult.Status.OK);
+    }
+
+    @Test
+    void aQuestionOffersEveryTool() {
+        var llm = new ScriptedLlmClient().thenText("ok");
+
+        loop(llm, 6, propose).run(ask("hi", List.of()), e -> { }, NEVER);
+
+        assertThat(llm.requests.get(0).tools()).extracting(t -> t.name()).containsExactlyInAnyOrder("echo", "propose");
     }
 }

@@ -8,7 +8,8 @@ public sealed interface AgentEvent {
     record ToolCall(String name, JsonNode args) implements AgentEvent {
     }
 
-    record ToolResultEvent(String name, String summary, boolean error) implements AgentEvent {
+    /** @param ui what the web app shows for the result; never part of what the model sees */
+    record ToolResultEvent(String name, String summary, boolean error, JsonNode ui) implements AgentEvent {
     }
 
     record Token(String text) implements AgentEvent {

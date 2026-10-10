@@ -3,9 +3,11 @@ package dev.proppilot.chat;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.proppilot.agent.AgentEvent;
 import dev.proppilot.agent.AgentLoop;
+import dev.proppilot.agent.AgentRequest;
 import dev.proppilot.agent.AgentResult;
 import dev.proppilot.agent.ErrorCode;
 import dev.proppilot.agent.llm.LlmClient;
+import dev.proppilot.agent.tools.ToolResult;
 import dev.proppilot.config.AgentProperties;
 import jakarta.annotation.PreDestroy;
 import java.math.BigDecimal;
@@ -21,7 +23,21 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
-/** Runs the agent for one question and streams its progress to the client as server-sent events. */
+/**
+ * Runs the agent for one turn and streams its progress to the client as server-sent events:
+ *
+ * <ul>
+ *   <li>{@code tool_call}: {@code {name, args}}</li>
+ *   <li>{@code tool_result}: {@code {name, summary, error}}</li>
+ *   <li>{@code action_proposed}: the proposed action ({@code id, kind, status, summaryEn, summaryAr, preview,
+ *       expiresAt, ...}), right after the {@code tool_result} of the tool that proposed it</li>
+ *   <li>{@code token}: {@code {text}}, a piece of the answer</li>
+ *   <li>{@code error}: {@code {message, code}}</li>
+ *   <li>{@code done}: the usage and outcome of the run</li>
+ * </ul>
+ *
+ * <p>A turn is a question, or the confirmation of a decision a person took on a proposal ({@code actionId}).
+ */
 @Service
 public class ChatService {
 
@@ -30,6 +46,7 @@ public class ChatService {
     private static final Duration EMITTER_GRACE = Duration.ofSeconds(15);
 
     private final AgentLoop agent;
+    private final ActionFollowUp followUp;
     private final LlmClient llm;
     private final CostCalculator costs;
     private final ChatRunRepository runs;
@@ -38,9 +55,10 @@ public class ChatService {
     private final long emitterTimeoutMs;
     private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
 
-    public ChatService(AgentLoop agent, LlmClient llm, CostCalculator costs, ChatRunRepository runs,
-                       ObjectMapper json, Clock clock, AgentProperties agentProps) {
+    public ChatService(AgentLoop agent, ActionFollowUp followUp, LlmClient llm, CostCalculator costs,
+                       ChatRunRepository runs, ObjectMapper json, Clock clock, AgentProperties agentProps) {
         this.agent = agent;
+        this.followUp = followUp;
         this.llm = llm;
         this.costs = costs;
         this.runs = runs;
@@ -49,25 +67,38 @@ public class ChatService {
         this.emitterTimeoutMs = agentProps.runTimeout().plus(EMITTER_GRACE).toMillis();
     }
 
+    /**
+     * @throws dev.proppilot.actions.ActionException when the request confirms an action that is unknown, undecided or
+     *                                               already confirmed; nothing is streamed then
+     */
     public SseEmitter start(ChatRequest request) {
+        var turn = turnOf(request, UUID.randomUUID());
         var emitter = new SseEmitter(emitterTimeoutMs);
         var client = new ClientStream(emitter, json);
-        executor.execute(() -> runAndStream(request, client));
+        executor.execute(() -> runAndStream(turn, client));
         return emitter;
     }
 
-    private void runAndStream(ChatRequest request, ClientStream client) {
+    private AgentRequest turnOf(ChatRequest request, UUID runId) {
+        var history = request.historyOrEmpty();
+        if (request.actionId() == null) {
+            return AgentRequest.question(request.message(), history, runId);
+        }
+        return AgentRequest.confirmation(followUp.claim(request.actionId()), history, runId);
+    }
+
+    private void runAndStream(AgentRequest turn, ClientStream client) {
         var started = System.nanoTime();
         var toolNames = new ArrayList<String>();
         try {
-            var result = agent.run(request.message(), request.historyOrEmpty(), event -> {
+            var result = agent.run(turn, event -> {
                 if (event instanceof AgentEvent.ToolCall call) {
                     toolNames.add(call.name());
                 }
                 send(client, event);
             }, client::isGone);
             long latencyMs = Duration.ofNanos(System.nanoTime() - started).toMillis();
-            var run = record(request.message(), result, toolNames, latencyMs);
+            var run = record(turn, result, toolNames, latencyMs);
             if (!client.isGone()) {
                 finish(client, result, run);
             }
@@ -85,9 +116,9 @@ public class ChatService {
         client.complete();
     }
 
-    private ChatRun record(String question, AgentResult result, ArrayList<String> toolNames, long latencyMs) {
+    private ChatRun record(AgentRequest turn, AgentResult result, ArrayList<String> toolNames, long latencyMs) {
         var cost = costs.cost(result.usage(), llm.billable());
-        var run = new ChatRun(UUID.randomUUID(), Instant.now(clock), truncate(question), llm.provider(), llm.model(),
+        var run = new ChatRun(turn.runId(), Instant.now(clock), truncate(turn.message()), llm.provider(), llm.model(),
                 result, toolNames, latencyMs, cost);
         return runs.save(run);
     }
@@ -99,8 +130,12 @@ public class ChatService {
     private static void send(ClientStream client, AgentEvent event) {
         switch (event) {
             case AgentEvent.ToolCall call -> client.send("tool_call", new ToolCallPayload(call.name(), call.args()));
-            case AgentEvent.ToolResultEvent result ->
-                    client.send("tool_result", new ToolResultPayload(result.name(), result.summary(), result.error()));
+            case AgentEvent.ToolResultEvent result -> {
+                client.send("tool_result", new ToolResultPayload(result.name(), result.summary(), result.error()));
+                if (result.ui() != null && ToolResult.ACTION_UI_TYPE.equals(result.ui().path("type").asText())) {
+                    client.send("action_proposed", result.ui().get("action"));
+                }
+            }
             case AgentEvent.Token token -> client.send("token", new TokenPayload(token.text()));
         }
     }

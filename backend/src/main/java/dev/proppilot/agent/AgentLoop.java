@@ -9,7 +9,9 @@ import dev.proppilot.agent.llm.Message;
 import dev.proppilot.agent.llm.StopReason;
 import dev.proppilot.agent.llm.ToolSpec;
 import dev.proppilot.agent.llm.Usage;
+import dev.proppilot.agent.tools.ToolContext;
 import dev.proppilot.agent.tools.ToolRegistry;
+import dev.proppilot.agent.tools.ToolResult;
 import dev.proppilot.config.AgentProperties;
 import java.time.Clock;
 import java.time.Duration;
@@ -48,14 +50,14 @@ public class AgentLoop {
     }
 
     /**
-     * Answers one question. The run ends with error code {@code run_timeout} once the run deadline has passed, and
+     * Answers one turn. The run ends with error code {@code run_timeout} once the run deadline has passed, and
      * each model call is given only the time that is left.
      *
      * @param cancelled polled before every model call and tool execution and after every model reply; once it is
      *                  true the run stops and returns what it has spent so far with status {@code ABORTED}
      */
-    public AgentResult run(String question, List<ChatTurn> history, Consumer<AgentEvent> events, BooleanSupplier cancelled) {
-        return new Run(question, history, events, cancelled).execute();
+    public AgentResult run(AgentRequest request, Consumer<AgentEvent> events, BooleanSupplier cancelled) {
+        return new Run(request, events, cancelled).execute();
     }
 
     /** The state of one question, so the loop reads as a sequence of small steps. */
@@ -65,17 +67,22 @@ public class AgentLoop {
         private final BooleanSupplier cancelled;
         private final List<Message> messages = new ArrayList<>();
         private final String system = SystemPrompt.forDate(LocalDate.now(clock));
-        private final List<ToolSpec> toolSpecs = tools.specs();
+        private final boolean toolsOffered;
+        private final List<ToolSpec> toolSpecs;
+        private final ToolContext context;
         private final Instant deadline = clock.instant().plus(props.runTimeout());
         private Usage usage = Usage.ZERO;
         private int toolCalls;
         private int iterations;
 
-        Run(String question, List<ChatTurn> history, Consumer<AgentEvent> events, BooleanSupplier cancelled) {
+        Run(AgentRequest request, Consumer<AgentEvent> events, BooleanSupplier cancelled) {
             this.events = events;
             this.cancelled = cancelled;
-            messages.addAll(conversationSoFar(history));
-            messages.add(Message.user(question));
+            this.toolsOffered = request.toolsOffered();
+            this.toolSpecs = toolsOffered ? tools.specs() : List.of();
+            this.context = new ToolContext(request.runId());
+            messages.addAll(conversationSoFar(request.history()));
+            messages.add(Message.user(request.message()));
         }
 
         AgentResult execute() {
@@ -131,13 +138,21 @@ public class AgentLoop {
                     return interruption;
                 }
                 events.accept(new AgentEvent.ToolCall(call.name(), call.input()));
-                var result = tools.execute(call.name(), call.input());
-                events.accept(new AgentEvent.ToolResultEvent(call.name(), result.summary(), result.error()));
+                var result = execute(call);
+                events.accept(new AgentEvent.ToolResultEvent(call.name(), result.summary(), result.error(), result.ui()));
                 results.add(new ContentBlock.ToolResult(call.id(), result.content(), result.error()));
                 toolCalls++;
             }
             messages.add(new Message(Message.Role.USER, results));
             return Optional.empty();
+        }
+
+        /** A run that offered no tools runs none, even if the model asks for one. */
+        private ToolResult execute(ContentBlock.ToolUse call) {
+            if (!toolsOffered) {
+                return ToolResult.error("No tools are available for this reply.");
+            }
+            return tools.execute(call.name(), call.input(), context);
         }
 
         /** Checked before every model call and tool execution: the client left, or the run is out of time. */
