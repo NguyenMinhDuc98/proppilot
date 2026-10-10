@@ -1,6 +1,7 @@
 package dev.proppilot.admin;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import dev.proppilot.PostgresIntegrationTest;
@@ -22,6 +23,13 @@ class AdminDisabledIT extends PostgresIntegrationTest {
     void answersNotFoundWithAndWithoutAHeader() throws Exception {
         mvc.perform(get("/api/admin/runs")).andExpect(status().isNotFound());
         mvc.perform(get("/api/admin/runs").header("X-Admin-Token", "any-token-any-token-any-token"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void theDemoResetDoesNotExistEither() throws Exception {
+        mvc.perform(post("/api/admin/reset")).andExpect(status().isNotFound());
+        mvc.perform(post("/api/admin/reset").header("X-Admin-Token", "any-token-any-token-any-token"))
                 .andExpect(status().isNotFound());
     }
 }
