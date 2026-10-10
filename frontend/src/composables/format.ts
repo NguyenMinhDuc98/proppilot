@@ -18,3 +18,41 @@ export function formatModel(model: string): string {
 export function formatCount(n: number): string {
   return n.toLocaleString('en-US')
 }
+
+const money = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+/** 3500 becomes "3,500.00": Latin digits in both languages, as everywhere in the app. */
+export function formatMoney(amount: number): string {
+  return money.format(amount)
+}
+
+/** Dates and times use Latin digits in Arabic too, so they read like the amounts next to them. */
+const intlLocale = (locale: string) => (locale === 'ar' ? 'ar-u-nu-latn' : 'en')
+
+/** "2026-03-01" becomes "Mar 2026". */
+export function formatMonth(isoDate: string, locale: string): string {
+  // The date has no time zone; reading it as UTC keeps the viewer's offset from moving it into the month before.
+  return new Intl.DateTimeFormat(intlLocale(locale), { month: 'short', year: 'numeric', timeZone: 'UTC' }).format(
+    new Date(isoDate),
+  )
+}
+
+/** A point in time in the viewer's time zone, like "10 Oct 2026, 21:30". */
+export function formatDateTime(isoInstant: string, locale: string): string {
+  return new Intl.DateTimeFormat(intlLocale(locale), { dateStyle: 'medium', timeStyle: 'short' }).format(
+    new Date(isoInstant),
+  )
+}
+
+/** A calendar date such as a payment date: "2026-10-10" becomes "10 Oct 2026". */
+export function formatDate(isoDate: string, locale: string): string {
+  return new Intl.DateTimeFormat(intlLocale(locale), { dateStyle: 'medium', timeZone: 'UTC' }).format(
+    new Date(isoDate),
+  )
+}
+
+/** Milliseconds as "14:32". */
+export function formatCountdown(ms: number): string {
+  const seconds = Math.ceil(ms / 1000)
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
+}
