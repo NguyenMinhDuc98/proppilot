@@ -1,5 +1,6 @@
 package dev.proppilot.agent.tools;
 
+import dev.proppilot.agent.MoneyText;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
@@ -23,14 +24,14 @@ final class MessageTemplates {
             return new Draft("تذكير ودّي بسداد إيجار الوحدة " + c.unitCode(),
                     "عزيزي/عزيزتي " + c.tenantName() + "،\n\nنأمل أن تكونوا بخير. نود تذكيركم بوجود إيجار مستحق للوحدة "
                             + c.unitCode() + " (" + c.building() + ") عن " + c.unpaidMonths() + " شهر بإجمالي "
-                            + c.unpaidAmount().stripTrailingZeros().toPlainString() + " ريال سعودي، وأقدم استحقاق بتاريخ "
+                            + MoneyText.of(c.unpaidAmount()) + " ريال سعودي، وأقدم استحقاق بتاريخ "
                             + date(c.oldestDue(), true) + ". إذا تم السداد مسبقًا فنرجو تجاهل هذه الرسالة، وإلا نأمل السداد في أقرب "
                             + "وقت ممكن. لا تترددوا في التواصل معنا لأي استفسار.\n\nمع خالص التحية،\nإدارة العقارات");
         }
         return new Draft("Friendly reminder: rent for unit " + c.unitCode(),
                 "Dear " + c.tenantName() + ",\n\nI hope you are well. This is a friendly reminder that rent for unit "
                         + c.unitCode() + " (" + c.building() + ") is outstanding for " + c.unpaidMonths() + " month(s), totalling SAR "
-                        + c.unpaidAmount().stripTrailingZeros().toPlainString() + ", with the oldest due on "
+                        + MoneyText.of(c.unpaidAmount()) + ", with the oldest due on "
                         + date(c.oldestDue(), false) + ". If you have already paid, please disregard this message; otherwise "
                         + "we would appreciate payment at your earliest convenience. Please reach out if there is anything "
                         + "we can help with.\n\nKind regards,\nProperty Management");

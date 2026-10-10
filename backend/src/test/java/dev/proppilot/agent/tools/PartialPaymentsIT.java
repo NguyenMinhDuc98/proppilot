@@ -100,6 +100,22 @@ class PartialPaymentsIT extends PostgresIntegrationTest {
     }
 
     @Test
+    void reminderKeepsBothCentDigitsOfTheRemainingAmount() throws Exception {
+        jdbc.update("""
+                update payments set paid_amount = 1000.50
+                where id = (select p.id from payments p join leases l on l.id = p.lease_id
+                            where l.tenant_id = 7 and p.paid_on is null order by p.period limit 1)""");
+
+        var english = data("draft_tenant_message", "{\"unit_code\":\"" + unit + "\",\"purpose\":\"RENT_REMINDER\",\"language\":\"EN\"}");
+        var arabic = data("draft_tenant_message", "{\"unit_code\":\"" + unit + "\",\"purpose\":\"RENT_REMINDER\",\"language\":\"AR\"}");
+
+        var remaining = owedBeforePart.subtract(new BigDecimal("1000.50"));
+        assertThat(remaining.remainder(BigDecimal.ONE)).as("the remainder has fifty cents").isEqualByComparingTo("0.50");
+        assertThat(english.get("body").asText()).contains("SAR " + remaining.toPlainString() + ",");
+        assertThat(arabic.get("body").asText()).contains(remaining.toPlainString() + " ريال سعودي");
+    }
+
+    @Test
     void anInvoiceSettledInFullLeavesTheOverdueList() throws Exception {
         jdbc.update("""
                 update payments set paid_amount = amount, paid_on = current_date

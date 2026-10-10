@@ -1,6 +1,7 @@
 package dev.proppilot.agent.llm.offline;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import dev.proppilot.agent.MoneyText;
 
 /** Formats a tool result as a short answer in English or Arabic. Every figure comes straight from the tool JSON. */
 final class OfflineAnswerWriter {
@@ -156,6 +157,6 @@ final class OfflineAnswerWriter {
     }
 
     private static String money(JsonNode amount) {
-        return amount.decimalValue().stripTrailingZeros().toPlainString();
+        return MoneyText.of(amount.decimalValue());
     }
 }

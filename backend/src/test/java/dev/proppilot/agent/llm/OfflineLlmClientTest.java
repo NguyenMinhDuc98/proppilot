@@ -110,4 +110,21 @@ class OfflineLlmClientTest {
 
         assertThat(response.text()).contains(remainingHeader).contains("| 2026-10 | " + statusLabel + " | 4800 | 3800 |");
     }
+
+    @Test
+    void anAmountWithCentsIsShownWithBothCentDigits() {
+        var call = new ContentBlock.ToolUse("t1", "get_payment_history", new ObjectMapper().createObjectNode());
+        var result = new ContentBlock.ToolResult("t1", """
+                {"tenantEn":"Ahmed Al-Harbi","tenantAr":"أحمد الحربي","unitCode":"A-203","unpaidMonths":1,
+                 "payments":[{"month":"2026-10","amount":4800,"paidAmount":1000.5,"remainingAmount":3799.5,
+                              "paidOn":null,"status":"PARTIAL","daysLate":9}]}""", false);
+        var messages = List.of(
+                Message.user("Payment history for unit A-203"),
+                new Message(Message.Role.ASSISTANT, List.of(call)),
+                new Message(Message.Role.USER, List.of(result)));
+
+        var response = client.complete(new LlmRequest("", messages, List.of(), TIMEOUT), s -> { });
+
+        assertThat(response.text()).contains("| 2026-10 | Partially paid | 4800 | 3799.50 |");
+    }
 }
