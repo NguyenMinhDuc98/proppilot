@@ -28,6 +28,7 @@ Flyway creates the schema and seed data on the first backend start; nothing to r
    - `DB_URL`, `DB_USER`, `DB_PASSWORD` from Neon
    - `CORS_ALLOWED_ORIGINS` = your Vercel URL (set a placeholder first, update after step 3)
    - `ANTHROPIC_API_KEY` only if you switch `LLM_PROVIDER` to `anthropic`
+   - `ADMIN_TOKEN` (24 or more characters, `openssl rand -hex 24`): it switches on the admin endpoints, and the nightly demo reset in step 6 needs it
 4. Wait for the deploy; `https://<service>.onrender.com/actuator/health` should return `{"status":"UP"}`.
 
 ## 3. Frontend (Vercel)
@@ -53,6 +54,28 @@ Open the Vercel URL, switch to Arabic with the language button, and ask a questi
 - If a deploy fails with "Timed out ... health check" and the logs stop right after `No active profile set`, the JVM was still starting on the throttled free CPU. Click **Manual Deploy → Deploy latest commit** again; the previous version keeps serving traffic meanwhile.
 - `render.yaml` has a `buildFilter`, so only changes under `backend/` redeploy the API.
 
+## 6. Nightly demo reset
+
+Visitors can approve the changes the assistant proposes, and those changes are shared, so the demo's data is put back to its seed every night. The workflow `.github/workflows/demo-reset.yml` runs at 02:00 UTC (05:00 in Riyadh; GitHub may start a scheduled run a few minutes late) and on demand from **Actions → Demo reset → Run workflow**. It calls `POST /api/admin/reset`, which restores the seeded payments and deletes the maintenance requests, outbox messages, proposals and audit entries.
+
+Add two repository secrets under **Settings → Secrets and variables → Actions → New repository secret**:
+
+| Secret | Value |
+|---|---|
+| `DEMO_API_URL` | The base URL of the API, `https://<service>.onrender.com`, with no path after it |
+| `ADMIN_TOKEN` | **The same value as `ADMIN_TOKEN` in the Render dashboard** |
+
+The tokens must match. The backend compares them in constant time and answers 403 when they differ, and 404 when Render has no `ADMIN_TOKEN` at all (the admin endpoints are then off).
+
+What the workflow does:
+
+- **Skips when it is not set up.** If either secret is missing it ends successfully with a notice, so a fork or a fresh clone does not fail every night.
+- **Waits for a sleeping host.** Each attempt may take up to 300 seconds, and a failed attempt is repeated up to three times with 30 seconds in between, which covers a cold start of a few minutes. A reset ends in the same state however often it runs, so repeating is safe.
+- **Fails when the answer is not 2xx.** The run then shows red in the Actions tab, with a hint for the common causes (token refused, endpoint off or wrong URL, no answer).
+- **Keeps the secrets out of the log.** curl runs silently, and the log shows only the status and the counts the reset returned.
+
+GitHub turns off scheduled workflows in a public repository after 60 days without repository activity. If the nightly run stops appearing, enable the workflow again in the Actions tab.
+
 ## Why the free tier cold start is slow (measured, and what did not help)
 
 Render's free instance has 0.1 CPU, and Spring Boot + Hibernate need about 15 CPU-seconds to start, so a cold start takes roughly 2.5 to 3 minutes. I reproduced this locally with `docker run --cpus=0.1 --memory=512m` and timed start to "Started":
@@ -74,6 +97,7 @@ Render re-applies every value written in `render.yaml` whenever the blueprint sy
 
 ## Admin endpoint and new settings
 
-- `GET /api/admin/runs` lists the latest questions with cost and latency. It is off unless `ADMIN_TOKEN` is set in the Render dashboard (24 or more characters, for example `openssl rand -hex 24`); call it with the header `X-Admin-Token`. Visitors' questions are never exposed by the public API.
+- `GET /api/admin/runs` lists the latest questions with cost and latency, and `POST /api/admin/reset` restores the seeded demo data. Both are off unless `ADMIN_TOKEN` is set in the Render dashboard (24 or more characters, for example `openssl rand -hex 24`); call them with the header `X-Admin-Token`. Visitors' questions are never exposed by the public API.
 - Optional tuning, all with sensible defaults: `LLM_MAX_TOKENS` (2048), `LLM_MAX_RETRIES` (3), `AGENT_RUN_TIMEOUT_SECONDS` (90), `CHAT_MAX_HISTORY_ITEMS` (20). See the table in the README.
-- This release adds the migration `V3__run_status.sql`; Flyway applies it on the first start.
+- Write actions have their own limits, set in `render.yaml`: `ACTION_TTL_MINUTES` (15), `ACTION_DECISIONS_PER_MINUTE` (30), `ACTION_MAX_APPROVALS_PER_DAY` (100), `ACTION_MAX_PROPOSALS_PER_RUN` (3) and `ACTION_MAX_PROPOSALS_PER_DAY` (200). They protect the shared demo data, so keep them low on a public deployment.
+- The migrations so far are `V1__schema.sql`, `V2__seed.sql`, `V3__run_status.sql` and `V4__actions.sql`; Flyway applies the new ones on the first start. `V4` adds the tables for proposed actions, maintenance requests, the outbox and the audit log, and a copy of the seeded payments (`payments_seed`) that the reset restores from. Never edit a migration that has been applied.
