@@ -2,6 +2,7 @@ package dev.proppilot.actions;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import dev.proppilot.agent.tools.ToolArgs;
 import dev.proppilot.agent.tools.ToolInputException;
@@ -174,20 +175,33 @@ class RecordPaymentExecutor implements ActionExecutor<RecordPaymentExecutor.Paym
         requireWithinBalance(args, outstandingBefore);
 
         var allocation = PaymentAllocator.allocate(rows, args.amount());
-        var before = json.createArrayNode();
-        allocation.slices().forEach(slice -> before.add(invoiceState(slice.payment())));
+        var invoicesBefore = invoiceStates(allocation);
         allocation.slices().forEach(slice ->
                 slice.payment().receive(slice.applied(), args.paymentDate(), args.method(), context.actionId()));
-        var after = json.createArrayNode();
-        allocation.slices().forEach(slice -> after.add(invoiceState(slice.payment())));
+        var invoicesAfter = invoiceStates(allocation);
 
         var result = json.createObjectNode();
         describeTarget(result, args);
         result.put("applied", allocation.applied());
         result.put("overpaymentCredit", allocation.excess());
         result.put("outstandingAfter", outstandingBefore.subtract(allocation.applied()));
-        result.set("payments", after);
+        result.set("payments", invoicesAfter);
+
+        // The credit is stored on no invoice, so the audit entry carries it: with nothing outstanding the invoice states
+        // alone would not show that money was received.
+        var before = json.createObjectNode();
+        before.set("payments", invoicesBefore);
+        var after = json.createObjectNode();
+        after.set("payments", invoicesAfter);
+        after.put("applied", allocation.applied());
+        after.put("overpaymentCredit", allocation.excess());
         return new Execution(result, "LEASE_PAYMENTS", String.valueOf(args.lease().getId()), before, after);
+    }
+
+    private ArrayNode invoiceStates(PaymentAllocator.Allocation allocation) {
+        var states = json.createArrayNode();
+        allocation.slices().forEach(slice -> states.add(invoiceState(slice.payment())));
+        return states;
     }
 
     private void describeTarget(ObjectNode node, PaymentArgs args) {

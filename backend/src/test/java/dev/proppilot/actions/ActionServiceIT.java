@@ -174,8 +174,30 @@ class ActionServiceIT extends ActionIntegrationTest {
         }
         var approved = audit().stream().filter(row -> row.get("event").equals("APPROVED")).findFirst().orElseThrow();
         assertThat(approved.get("entity_type")).isEqualTo("LEASE_PAYMENTS");
-        assertThat(jsonOf(approved.get("before"))).hasSize(4);
-        assertThat(jsonOf(approved.get("after")).get(0).get("paidOn").asText()).isEqualTo(today().toString());
+        assertThat(jsonOf(approved.get("before")).get("payments")).hasSize(4);
+        var after = jsonOf(approved.get("after"));
+        assertThat(after.get("payments").get(0).get("paidOn").asText()).isEqualTo(today().toString());
+        assertThat(after.get("applied").decimalValue()).isEqualByComparingTo(rent.multiply(bd("4")));
+        assertThat(after.get("overpaymentCredit").decimalValue()).as("the excess is in the audit log")
+                .isEqualByComparingTo("250.50");
+    }
+
+    @Test
+    void anOverpaymentWithNothingOutstandingIsStillWrittenToTheAuditLog() {
+        actions.approve(proposePayment(rent.multiply(bd("4")).toPlainString()).id(), newKey(), edits(), "visitor-test");
+        var args = paymentArgs("300.25").put("overridePayment", true);
+        var proposed = actions.propose(ActionKind.RECORD_PAYMENT, args, null);
+
+        actions.approve(proposed.id(), newKey(), edits(), "visitor-test");
+
+        var approved = audit().get(audit().size() - 1);
+        assertThat(approved).containsEntry("event", "APPROVED").containsEntry("entity_type", "LEASE_PAYMENTS")
+                .containsEntry("action_id", proposed.id());
+        assertThat(jsonOf(approved.get("before")).get("payments")).isEmpty();
+        var after = jsonOf(approved.get("after"));
+        assertThat(after.get("payments")).isEmpty();
+        assertThat(after.get("applied").decimalValue()).isEqualByComparingTo("0");
+        assertThat(after.get("overpaymentCredit").decimalValue()).isEqualByComparingTo("300.25");
     }
 
     @Test

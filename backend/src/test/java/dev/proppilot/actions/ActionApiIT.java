@@ -305,8 +305,10 @@ class ActionApiIT extends ActionIntegrationTest {
                 .andExpect(jsonPath("$[0].actor").value(matchesPattern("visitor-[0-9a-f]{8}")))
                 .andExpect(jsonPath("$[0].actionId").value(proposed.id().toString()))
                 .andExpect(jsonPath("$[0].entityType").value("LEASE_PAYMENTS"))
-                .andExpect(jsonPath("$[0].before").isArray())
-                .andExpect(jsonPath("$[0].after[0].paidAmount").value(1000.0))
+                .andExpect(jsonPath("$[0].before.payments").isArray())
+                .andExpect(jsonPath("$[0].after.payments[0].paidAmount").value(1000.0))
+                .andExpect(jsonPath("$[0].after.applied").value(1000.0))
+                .andExpect(jsonPath("$[0].after.overpaymentCredit").value(0.0))
                 .andExpect(jsonPath("$[0].at").isNotEmpty())
                 .andExpect(jsonPath("$[1].event").value("PROPOSED"))
                 .andExpect(jsonPath("$[1].actor").value("agent"));
