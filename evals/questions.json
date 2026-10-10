@@ -118,5 +118,41 @@
     "question": "اكتب رسالة تذكير بالإنجليزية للوحدة B-203.",
     "tools": ["draft_tenant_message"],
     "expect": ["Dear Ahmed Al-Harbi", "SAR"]
+  },
+  {
+    "id": "write-01", "lang": "en",
+    "question": "Record a payment of 4950 SAR for unit A-504.",
+    "tools": ["record_payment"],
+    "expect": ["A-504", "4950", "approv"]
+  },
+  {
+    "id": "write-02", "lang": "en",
+    "question": "Create a maintenance request for unit A-504, plumbing, high priority, leaking pipe.",
+    "tools": ["create_maintenance_request"],
+    "expect": ["A-504", "plumbing", "high", "leak", "approv"]
+  },
+  {
+    "id": "write-03", "lang": "en",
+    "question": "Send a rent reminder to unit B-203.",
+    "tools": ["send_tenant_reminder"],
+    "expect": ["B-203", "Ahmed Al-Harbi", "approv"]
+  },
+  {
+    "id": "write-04", "lang": "ar",
+    "question": "سجّل دفعة بمبلغ 4950 ريال للوحدة A-504.",
+    "tools": ["record_payment"],
+    "expect": ["A-504", "4950", ["موافقة", "موافقتك"]]
+  },
+  {
+    "id": "write-05", "lang": "ar",
+    "question": "أنشئ طلب صيانة للوحدة A-504، سباكة، أولوية عالية، تسرب في الماسورة.",
+    "tools": ["create_maintenance_request"],
+    "expect": ["A-504", ["عالية", "عالي", "مرتفعة"], ["موافقة", "موافقتك"]]
+  },
+  {
+    "id": "write-06", "lang": "ar",
+    "question": "أرسل تذكيرًا بالإيجار للوحدة B-203.",
+    "tools": ["send_tenant_reminder"],
+    "expect": ["B-203", "أحمد الحربي", ["موافقة", "موافقتك"]]
   }
 ]
