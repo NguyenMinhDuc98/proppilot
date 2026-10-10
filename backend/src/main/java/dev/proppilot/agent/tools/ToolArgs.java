@@ -3,6 +3,8 @@ package dev.proppilot.agent.tools;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.Arrays;
 import java.util.Optional;
 
@@ -59,6 +61,16 @@ public final class ToolArgs {
             throw new ToolInputException(name + " must not be negative");
         }
         return Optional.of(value);
+    }
+
+    public Optional<LocalDate> date(String name) {
+        return string(name).map(raw -> {
+            try {
+                return LocalDate.parse(raw);
+            } catch (DateTimeParseException e) {
+                throw new ToolInputException(name + " must be a date like 2026-03-15");
+            }
+        });
     }
 
     public Optional<Boolean> bool(String name) {

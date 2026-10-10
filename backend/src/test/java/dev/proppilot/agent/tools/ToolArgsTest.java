@@ -80,4 +80,18 @@ class ToolArgsTest {
                 .isInstanceOf(ToolInputException.class)
                 .hasMessage("all must be a boolean");
     }
+
+    @Test
+    void dateReadsAnIsoDate() throws Exception {
+        assertThat(args("{\"payment_date\":\"2026-10-01\"}").date("payment_date")).contains(java.time.LocalDate.of(2026, 10, 1));
+        assertThat(args("{}").date("payment_date")).isEmpty();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"\"01/10/2026\"", "\"2026-13-01\"", "\"2026-02-30\"", "\"yesterday\"", "20261001", "true"})
+    void dateRejectsAnythingThatIsNotAnIsoDate(String value) {
+        assertThatThrownBy(() -> args("{\"payment_date\":" + value + "}").date("payment_date"))
+                .isInstanceOf(ToolInputException.class)
+                .hasMessageStartingWith("payment_date must be");
+    }
 }

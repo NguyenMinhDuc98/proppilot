@@ -11,7 +11,7 @@ import org.springframework.stereotype.Component;
 
 /** Finds the single active lease a tool call is talking about, by unit code and/or tenant name. */
 @Component
-class TenantResolver {
+public class TenantResolver {
 
     private static final int MAX_CANDIDATES = 5;
     static final Pattern UNIT_CODE = Pattern.compile("^[A-Za-z]-\\d{3}$");
@@ -24,16 +24,18 @@ class TenantResolver {
         this.tenants = tenants;
     }
 
-    /** Either a lease or a human-readable reason (written for the model) why none could be picked. */
-    sealed interface Resolution {
+    public enum Problem { NO_ACTIVE_LEASE, TENANT_MISMATCH, TENANT_NOT_FOUND, AMBIGUOUS_TENANT }
+
+    /** Either a lease or why none could be picked: a stable {@link Problem} and a human-readable reason (for the model). */
+    public sealed interface Resolution {
         record Found(Lease lease) implements Resolution {
         }
 
-        record Failed(String reason) implements Resolution {
+        record Failed(Problem problem, String reason) implements Resolution {
         }
     }
 
-    Resolution resolve(Optional<String> tenantName, Optional<String> unitCode) {
+    public Resolution resolve(Optional<String> tenantName, Optional<String> unitCode) {
         if (tenantName.isEmpty() && unitCode.isEmpty()) {
             throw new ToolInputException("provide unit_code or tenant_name");
         }
@@ -46,11 +48,12 @@ class TenantResolver {
         }
         var lease = leases.findActiveByUnitCode(code);
         if (lease.isEmpty()) {
-            return new Resolution.Failed("Unit " + code + " has no active lease (vacant, in maintenance or unknown).");
+            return new Resolution.Failed(Problem.NO_ACTIVE_LEASE,
+                    "Unit " + code + " has no active lease (vacant, in maintenance or unknown).");
         }
         var tenant = lease.get().getTenant();
         if (expectedName.isPresent() && !matches(tenant, expectedName.get())) {
-            return new Resolution.Failed("Unit " + code + " is leased to " + tenant.getNameEn()
+            return new Resolution.Failed(Problem.TENANT_MISMATCH, "Unit " + code + " is leased to " + tenant.getNameEn()
                     + ", which does not match '" + expectedName.get() + "'.");
         }
         return new Resolution.Found(lease.get());
@@ -59,19 +62,19 @@ class TenantResolver {
     private Resolution byName(String name) {
         var matches = tenants.searchByName(name);
         if (matches.isEmpty()) {
-            return new Resolution.Failed("No tenant matches '" + name + "'.");
+            return new Resolution.Failed(Problem.TENANT_NOT_FOUND, "No tenant matches '" + name + "'.");
         }
         var activeLeases = leases.findActiveByTenantIds(matches.stream().map(Tenant::getId).toList());
         if (activeLeases.size() == 1) {
             return new Resolution.Found(activeLeases.get(0));
         }
-        return new Resolution.Failed(ambiguityMessage(name, activeLeases));
+        if (activeLeases.isEmpty()) {
+            return new Resolution.Failed(Problem.NO_ACTIVE_LEASE, "Tenant '" + name + "' has no active lease.");
+        }
+        return new Resolution.Failed(Problem.AMBIGUOUS_TENANT, ambiguityMessage(name, activeLeases));
     }
 
     private static String ambiguityMessage(String name, List<Lease> candidates) {
-        if (candidates.isEmpty()) {
-            return "Tenant '" + name + "' has no active lease.";
-        }
         var shown = candidates.stream().limit(MAX_CANDIDATES)
                 .map(l -> l.getTenant().getNameEn() + " (unit " + l.getUnit().getCode() + ")")
                 .toList();

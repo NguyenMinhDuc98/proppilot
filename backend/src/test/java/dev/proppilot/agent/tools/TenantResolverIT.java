@@ -9,6 +9,7 @@ import jakarta.persistence.EntityManagerFactory;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 class TenantResolverIT extends PostgresIntegrationTest {
 
@@ -18,6 +19,8 @@ class TenantResolverIT extends PostgresIntegrationTest {
     TenantRepository tenants;
     @Autowired
     EntityManagerFactory entityManagerFactory;
+    @Autowired
+    JdbcTemplate jdbc;
 
     @Test
     void looksUpTheLeasesOfAllMatchingTenantsWithASingleQuery() {
@@ -44,7 +47,23 @@ class TenantResolverIT extends PostgresIntegrationTest {
     void asksForClarificationWhenSeveralTenantsMatch() {
         var resolution = resolver.resolve(Optional.of("Ahmed"), Optional.empty());
 
-        assertThat(resolution).isInstanceOfSatisfying(TenantResolver.Resolution.Failed.class,
-                failed -> assertThat(failed.reason()).contains("tenants match 'Ahmed'").contains("(unit "));
+        assertThat(resolution).isInstanceOfSatisfying(TenantResolver.Resolution.Failed.class, failed -> {
+            assertThat(failed.problem()).isEqualTo(TenantResolver.Problem.AMBIGUOUS_TENANT);
+            assertThat(failed.reason()).contains("tenants match 'Ahmed'").contains("(unit ");
+        });
+    }
+
+    @Test
+    void namesTheProblemWhenNoLeaseCanBePicked() {
+        var vacant = jdbc.queryForObject("select code from units where status = 'VACANT' limit 1", String.class);
+        var occupied = jdbc.queryForObject("select u.code from leases l join units u on u.id = l.unit_id where l.tenant_id = 7", String.class);
+
+        assertThat(problem(Optional.of("Nobody Atall"), Optional.empty())).isEqualTo(TenantResolver.Problem.TENANT_NOT_FOUND);
+        assertThat(problem(Optional.empty(), Optional.of(vacant))).isEqualTo(TenantResolver.Problem.NO_ACTIVE_LEASE);
+        assertThat(problem(Optional.of("Nobody"), Optional.of(occupied))).isEqualTo(TenantResolver.Problem.TENANT_MISMATCH);
+    }
+
+    private TenantResolver.Problem problem(Optional<String> name, Optional<String> unitCode) {
+        return ((TenantResolver.Resolution.Failed) resolver.resolve(name, unitCode)).problem();
     }
 }
