@@ -9,7 +9,8 @@ import java.util.regex.Pattern;
 
 /**
  * Keyword-based stand-in for the model's tool selection (English and Arabic).
- * Maps a question to at most one tool call; returns empty when it does not understand.
+ * Maps a question to at most one tool call; returns empty when it does not understand. A command to change something
+ * is checked first, because its words ("reminder", "payment") also appear in the read questions.
  */
 final class OfflineIntentRouter {
 
@@ -21,24 +22,30 @@ final class OfflineIntentRouter {
         }
     }
 
-    private static final Pattern UNIT_CODE = Pattern.compile("\\b([A-Fa-f])-?(\\d{3})\\b");
+    static final Pattern UNIT_CODE = Pattern.compile("\\b([A-Fa-f])-?(\\d{3})\\b");
     private static final Pattern BUILDING = Pattern.compile("(?:building|tower|مبنى|المبنى|برج)\\s*([A-Fa-f])\\b", Pattern.CASE_INSENSITIVE);
     private static final Pattern DAYS = Pattern.compile("(\\d+)\\s*(?:days?|day|يوم|أيام|ايام)");
     private static final Pattern BEDROOMS = Pattern.compile("(\\d)\\s*(?:-?\\s*bed(?:room)?s?|br\\b|غرف|غرفة)");
     private static final Pattern MONTH = Pattern.compile("\\b(20\\d{2}-(?:0[1-9]|1[0-2]))\\b");
-    private static final Pattern TENANT_NAME = Pattern.compile("tenant\\s+([A-Za-z][A-Za-z-]+)", Pattern.CASE_INSENSITIVE);
-    private static final Pattern TENANT_NAME_AR = Pattern.compile("(?:للمستأجر|المستأجر)\\s+(\\S+)");
+    static final Pattern TENANT_NAME = Pattern.compile("tenant\\s+([A-Za-z][A-Za-z-]+)", Pattern.CASE_INSENSITIVE);
+    static final Pattern TENANT_NAME_AR = Pattern.compile("(?:للمستأجر|المستأجر)\\s+(\\S+)");
 
     private static final Map<String, String> CITIES = Map.of(
             "riyadh", "Riyadh", "الرياض", "Riyadh", "jeddah", "Jeddah", "جدة", "Jeddah", "dammam", "Dammam", "الدمام", "Dammam");
 
     private final ObjectMapper json;
+    private final OfflineWriteIntents writes;
 
     OfflineIntentRouter(ObjectMapper json) {
         this.json = json;
+        this.writes = new OfflineWriteIntents(json);
     }
 
     Optional<Call> route(String question) {
+        var write = writes.route(question);
+        if (write.isPresent()) {
+            return write;
+        }
         var q = question.toLowerCase();
         var unit = UNIT_CODE.matcher(question);
         String unitCode = unit.find() ? unit.group(1).toUpperCase() + "-" + unit.group(2) : null;
@@ -119,7 +126,7 @@ final class OfflineIntentRouter {
         return new Call(tool, json.createObjectNode());
     }
 
-    private static Optional<String> first(Pattern pattern, String text) {
+    static Optional<String> first(Pattern pattern, String text) {
         Matcher m = pattern.matcher(text);
         return m.find() ? Optional.of(m.group(1)) : Optional.empty();
     }

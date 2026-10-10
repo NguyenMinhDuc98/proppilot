@@ -2,6 +2,7 @@ package dev.proppilot.agent.llm.offline;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.proppilot.agent.DecisionNotice;
 import dev.proppilot.agent.llm.ContentBlock;
 import dev.proppilot.agent.llm.LlmClient;
 import dev.proppilot.agent.llm.LlmRequest;
@@ -17,7 +18,8 @@ import org.springframework.stereotype.Component;
 
 /**
  * Zero-cost stand-in for the model so the whole app (agent loop, tools, streaming, UI) works with no API key.
- * Turn 1 routes the question to a tool by keyword; turn 2 turns the tool result into a templated answer.
+ * Turn 1 routes the question to a tool by keyword; turn 2 turns the tool result into a templated answer. A decision
+ * notice from the server gets a short templated confirmation and no tool.
  */
 @Component
 @ConditionalOnProperty(name = "proppilot.llm.provider", havingValue = "offline", matchIfMissing = true)
@@ -40,9 +42,16 @@ public class OfflineLlmClient implements LlmClient {
         var question = latestQuestion(messages);
         boolean arabic = QuestionLanguage.isArabic(question);
 
-        LlmResponse response = last.content().stream().anyMatch(ContentBlock.ToolResult.class::isInstance)
-                ? answerFromToolResults(messages, arabic, onTextDelta)
-                : routeQuestion(question, arabic, onTextDelta);
+        LlmResponse response;
+        var decision = DecisionNotice.parse(question, json);
+        if (decision.isPresent()) {
+            // The notice is in English whatever the user speaks, so the language is that of what they wrote before it.
+            response = textResponse(OfflineAnswerWriter.decision(decision.get(), userWroteArabicBefore(messages)), onTextDelta);
+        } else if (last.content().stream().anyMatch(ContentBlock.ToolResult.class::isInstance)) {
+            response = answerFromToolResults(messages, arabic, onTextDelta);
+        } else {
+            response = routeQuestion(question, arabic, onTextDelta);
+        }
         return withUsage(response, request);
     }
 
@@ -101,6 +110,22 @@ public class OfflineLlmClient implements LlmClient {
             }
         }
         return "";
+    }
+
+    /** Whether the last thing the user wrote before the final message was Arabic. */
+    private static boolean userWroteArabicBefore(List<Message> messages) {
+        for (int i = messages.size() - 2; i >= 0; i--) {
+            var message = messages.get(i);
+            if (message.role() != Message.Role.USER) {
+                continue;
+            }
+            for (var block : message.content()) {
+                if (block instanceof ContentBlock.Text text) {
+                    return QuestionLanguage.isArabic(text.text());
+                }
+            }
+        }
+        return false;
     }
 
     /** Rough token estimate (about 4 characters each) so the usage panel is meaningful even without a real model. */

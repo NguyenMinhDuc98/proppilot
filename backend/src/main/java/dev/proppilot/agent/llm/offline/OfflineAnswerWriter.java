@@ -1,6 +1,7 @@
 package dev.proppilot.agent.llm.offline;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import dev.proppilot.agent.DecisionNotice;
 import dev.proppilot.agent.MoneyText;
 
 /** Formats a tool result as a short answer in English or Arabic. Every figure comes straight from the tool JSON. */
@@ -17,8 +18,46 @@ final class OfflineAnswerWriter {
             case "get_occupancy_summary" -> occupancy(data, arabic);
             case "get_payment_history" -> paymentHistory(data, arabic);
             case "draft_tenant_message" -> draft(data, arabic);
+            case "record_payment", "create_maintenance_request", "send_tenant_reminder" -> proposed(data, arabic);
             default -> data.toString();
         };
+    }
+
+    /** Confirms a decision a person took on a proposal; the server wrote the notice. */
+    static String decision(DecisionNotice notice, boolean arabic) {
+        var summary = arabic ? notice.summaryAr() : notice.summaryEn();
+        return switch (notice.status()) {
+            case APPROVED -> (arabic ? "تمت الموافقة والتنفيذ. " : "Approved and done. ") + summary + approvedDetail(notice, arabic);
+            case REJECTED -> (arabic ? "تم الرفض ولم يتغيّر أي شيء: " : "Rejected, so nothing was changed: ") + summary
+                    + (notice.reason() == null ? "" : (arabic ? " (السبب: " : " (reason: ") + notice.reason() + ")");
+            default -> (arabic ? "تعذّر تنفيذ التغيير ولم يتغيّر أي شيء: " : "The change could not be made and nothing "
+                    + "was changed: ") + (notice.reason() == null ? summary : notice.reason());
+        };
+    }
+
+    private static String approvedDetail(DecisionNotice notice, boolean ar) {
+        var result = notice.result();
+        if (result == null || result.isNull()) {
+            return "";
+        }
+        return switch (notice.kind()) {
+            case RECORD_PAYMENT -> ar
+                    ? " المبلغ المسجّل " + money(result.path("applied")) + " ريال، والمتبقي " + money(result.path("outstandingAfter")) + " ريال."
+                    : " SAR " + money(result.path("applied")) + " was applied; SAR " + money(result.path("outstandingAfter"))
+                      + " is still outstanding.";
+            case CREATE_MAINTENANCE_REQUEST -> ar
+                    ? " رقم الطلب " + result.path("requestId").asText() + "."
+                    : " The request number is " + result.path("requestId").asText() + ".";
+            case SEND_TENANT_REMINDER -> ar ? " الرسالة محفوظة في صندوق الصادر ولم يُرسل شيء." : " It is in the outbox; nothing was sent.";
+        };
+    }
+
+    private static String proposed(JsonNode d, boolean ar) {
+        return ar
+                ? "جهّزتُ هذا التغيير لكنه لم يُنفَّذ بعد. حالته: مقترح (PROPOSED) وهو بانتظار موافقتك:\n\n- "
+                  + d.path("summaryAr").asText() + "\n\nلن يتغيّر أي شيء قبل أن توافق عليه من التطبيق، ويمكنك رفضه أيضًا."
+                : "I prepared this change but have not made it. Status: PROPOSED, waiting for your approval:\n\n- "
+                  + d.path("summaryEn").asText() + "\n\nNothing changes until you approve it in the app, and you can reject it too.";
     }
 
     static String error(String message, boolean arabic) {
@@ -28,9 +67,10 @@ final class OfflineAnswerWriter {
     static String help(boolean arabic) {
         return arabic
                 ? "لم أفهم سؤالك. جرّب مثلاً: «ما الوحدات الشاغرة في الرياض؟» أو «من المستأجرون المتأخرون أكثر من 30 يومًا؟» "
-                  + "أو «ملخص الإشغال للمبنى A» أو «صغ رسالة تذكير للوحدة A-203»."
+                  + "أو «ملخص الإشغال للمبنى A» أو «صغ رسالة تذكير للوحدة A-203» أو «سجّل دفعة بمبلغ 2000 للوحدة A-203»."
                 : "I did not understand that. Try: \"Which units in Riyadh are vacant?\", \"Who is more than 30 days late?\", "
-                  + "\"Occupancy for building A\" or \"Draft a rent reminder for unit A-203\".";
+                  + "\"Occupancy for building A\", \"Draft a rent reminder for unit A-203\" or "
+                  + "\"Record a payment of 2000 for unit A-203\".";
     }
 
     private static String searchUnits(JsonNode d, boolean ar) {
