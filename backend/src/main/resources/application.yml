@@ -49,3 +49,7 @@ proppilot:
     max-history-items: ${CHAT_MAX_HISTORY_ITEMS:20}
     rate-limit-per-minute: ${CHAT_RATE_LIMIT_PER_MINUTE:10}
     daily-limit: ${CHAT_DAILY_LIMIT:500}
+  actions:
+    ttl-minutes: ${ACTION_TTL_MINUTES:15}
+    decisions-per-minute: ${ACTION_DECISIONS_PER_MINUTE:30}
+    max-approvals-per-day: ${ACTION_MAX_APPROVALS_PER_DAY:100}
