@@ -11,6 +11,7 @@ const links = [
   { to: '/', key: 'chat', icon: 'M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z' },
   { to: '/units', key: 'units', icon: 'M5 3h14v18H5zM9 8h.01M15 8h.01M9 12h.01M15 12h.01M10 21v-4h4v4' },
   { to: '/stats', key: 'stats', icon: 'M4 20V10M10 20V4M16 20v-7M22 20H2' },
+  { to: '/activity', key: 'activity', icon: 'M22 12h-4l-3 9L9 3l-3 9H2' },
 ] as const
 </script>
 
@@ -160,7 +161,10 @@ const links = [
     border-top: 1px solid var(--pp-border);
   }
   .tab {
-    flex: 1;
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 0 4px;
+    text-align: center;
     display: flex;
     flex-direction: column;
     align-items: center;

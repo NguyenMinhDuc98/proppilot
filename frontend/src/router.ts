@@ -7,5 +7,6 @@ export const router = createRouter({
     { path: '/', name: 'chat', component: ChatView },
     { path: '/units', name: 'units', component: () => import('./views/UnitsView.vue') },
     { path: '/stats', name: 'stats', component: () => import('./views/StatsView.vue') },
+    { path: '/activity', name: 'activity', component: () => import('./views/ActivityView.vue') },
   ],
 })
