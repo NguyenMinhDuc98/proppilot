@@ -1,0 +1,55 @@
+name: Demo reset
+
+# Puts the shared data of the public demo back to its seed every night, so changes that strangers approved never pile up.
+# It needs two repository secrets: DEMO_API_URL (the base URL of the API) and ADMIN_TOKEN (the same value as on the host).
+# Without them the run is skipped with a notice instead of failing.
+on:
+  schedule:
+    - cron: '0 2 * * *' # 02:00 UTC
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: demo-reset
+  cancel-in-progress: false
+
+jobs:
+  reset:
+    runs-on: ubuntu-latest
+    # Four attempts of at most 300 s each and three pauses of 30 s take at most 21.5 minutes.
+    timeout-minutes: 25
+    steps:
+      - name: Restore the seeded demo data
+        env:
+          DEMO_API_URL: ${{ secrets.DEMO_API_URL }}
+          ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
+        run: |
+          if [ -z "$DEMO_API_URL" ] || [ -z "$ADMIN_TOKEN" ]; then
+            echo "::notice title=Demo reset skipped::Add the repository secrets DEMO_API_URL and ADMIN_TOKEN to turn the nightly reset on."
+            exit 0
+          fi
+
+          # The free-tier host sleeps when idle and may need minutes to wake, so one attempt may wait up to 300 s and a
+          # failed one is repeated. Repeating is safe: a reset always ends in the same seeded state. curl is silent, so
+          # neither the URL nor the token reaches the log.
+          curl_exit=0
+          status=$(curl --silent --request POST \
+            --header "X-Admin-Token: $ADMIN_TOKEN" \
+            --max-time 300 --retry 3 --retry-delay 30 --retry-all-errors \
+            --output "$RUNNER_TEMP/reset.json" --write-out '%{http_code}' \
+            "${DEMO_API_URL%/}/api/admin/reset") || curl_exit=$?
+          status=${status: -3}
+
+          case "$status" in
+            2??)
+              echo "Demo data restored (HTTP $status): $(cat "$RUNNER_TEMP/reset.json")"
+              exit 0
+              ;;
+            000) hint="no answer (curl exit code $curl_exit): is DEMO_API_URL right and the service up?" ;;
+            403) hint="the token was refused: the ADMIN_TOKEN secret must equal ADMIN_TOKEN on the host" ;;
+            404) hint="not found: ADMIN_TOKEN is not set on the host, or DEMO_API_URL is wrong" ;;
+            *) hint="unexpected answer" ;;
+          esac
+          echo "::error title=Demo reset failed::HTTP $status, $hint"
+          exit 1
