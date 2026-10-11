@@ -20,6 +20,8 @@ export default {
       'Who is more than 30 days late on rent?',
       'Summarise occupancy and collected rent for Building A this month.',
       'Draft a polite rent reminder in Arabic for unit B-203.',
+      'What is the late fee for unit A-504?',
+      'Which leases end in the next 60 days?',
     ],
     thinking: 'Thinking…',
     sources: 'Data from: {sources}',
