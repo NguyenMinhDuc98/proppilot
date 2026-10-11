@@ -169,6 +169,15 @@ class CitationRefsTest {
     }
 
     @Test
+    void quotedTextCanBeStrippedOfItsMarkersWithoutLosingTheWords() {
+        assertThat(CitationRefs.withoutMarkers("No pets [LSE-A-504#7]. See [LSE-B-203#9a][LSE-B-203#10] and [x]."))
+                .isEqualTo("No pets (LSE-A-504#7). See (LSE-B-203#9a)(LSE-B-203#10) and [x].");
+        assertThat(CitationRefs.withoutMarkers("A $1 and \\ backslash [LSE-A-1#1]"))
+                .isEqualTo("A $1 and \\ backslash (LSE-A-1#1)");
+        assertThat(CitationRefs.withoutMarkers("no markers")).isEqualTo("no markers");
+    }
+
+    @Test
     void theDocumentCodePatternMatchesTheCodesOfTheDocuments() {
         assertThat("LSE-A-504").matches(CitationRefs.DOCUMENT_CODE);
         assertThat("LSE-F-102").matches(CitationRefs.DOCUMENT_CODE);

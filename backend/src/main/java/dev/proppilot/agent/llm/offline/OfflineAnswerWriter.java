@@ -6,7 +6,6 @@ import dev.proppilot.agent.MoneyText;
 import dev.proppilot.rag.CitationRefs;
 import java.util.ArrayList;
 import java.util.HashSet;
-import java.util.regex.Matcher;
 
 /** Formats a tool result as a short answer in English or Arabic. Every figure comes straight from the tool JSON. */
 final class OfflineAnswerWriter {
@@ -129,10 +128,7 @@ final class OfflineAnswerWriter {
      * quoted text is turned into plain brackets: only the marker the writer adds is one.
      */
     private static String quoted(String text) {
-        var plain = CitationRefs.MARKER.matcher(text).replaceAll(
-                found -> Matcher.quoteReplacement("(" + found.group(1) + "#" + found.group(2)
-                        + (found.group(3) == null ? "" : found.group(3)) + ")"));
-        var lines = plain.strip().split("\\R");
+        var lines = CitationRefs.withoutMarkers(text).strip().split("\\R");
         var quote = new StringBuilder();
         for (int i = 0; i < lines.length; i++) {
             var line = lines[i].strip();

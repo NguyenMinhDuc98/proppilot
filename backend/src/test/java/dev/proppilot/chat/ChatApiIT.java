@@ -94,7 +94,8 @@ class ChatApiIT extends CorpusIntegrationTest {
         var markers = new ArrayList<String>();
         var matcher = CitationRefs.MARKER.matcher(text);
         while (matcher.find()) {
-            markers.add(matcher.group(1) + "#" + matcher.group(2) + (matcher.group(3) == null ? "" : matcher.group(3)));
+            markers.add(CitationRefs.parse(matcher.group().substring(1, matcher.group().length() - 1))
+                    .orElseThrow().token());
         }
         return markers;
     }

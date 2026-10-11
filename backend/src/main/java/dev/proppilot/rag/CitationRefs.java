@@ -1,6 +1,7 @@
 package dev.proppilot.rag;
 
 import java.util.Optional;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
@@ -64,6 +65,15 @@ public final class CitationRefs {
     /** The ref written as a citation marker: in square brackets. */
     public static String marker(String ref) {
         return "[" + ref + "]";
+    }
+
+    /**
+     * The text with each marker in it written as its ref in parentheses. Text that is quoted from a document can then
+     * not carry a citation of its own.
+     */
+    public static String withoutMarkers(String text) {
+        return MARKER.matcher(text).replaceAll(found -> Matcher.quoteReplacement(
+                "(" + found.group().substring(1, found.group().length() - 1) + ")"));
     }
 
     /**
