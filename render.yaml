@@ -38,6 +38,10 @@ services:
       # ADMIN_TOKEN repository secret). 24+ characters (openssl rand -hex 24). Leave unset to switch the admin endpoints off.
       - key: ADMIN_TOKEN
         sync: false
+      # Optional, added in the dashboard when wanted and so not listed here: OTEL_ENABLED=true exports every question as
+      # OpenTelemetry spans (never prompts, answers or tool arguments) to OTEL_EXPORTER_OTLP_ENDPOINT, with
+      # OTEL_EXPORTER_OTLP_HEADERS for its credentials and OTEL_SERVICE_NAME (default proppilot). Give the endpoint
+      # whenever it is on: an empty one stops the backend from starting. Unset means off.
       - key: CHAT_RATE_LIMIT_PER_MINUTE
         value: "10"
       - key: CHAT_DAILY_LIMIT
