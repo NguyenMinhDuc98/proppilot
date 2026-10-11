@@ -493,4 +493,237 @@ class AgentLoopTest {
 
         assertThat(executedWith).containsExactly("metered:a", "metered:b", "x", "y", "metered:c");
     }
+
+    private static final Instant START = Instant.parse("2026-03-15T10:00:00Z");
+
+    @Test
+    void recordsTheModelCallOfADirectAnswerWithItsUsageAndLatency() {
+        var llm = new ScriptedLlmClient().beforeEachCall(() -> clock.advance(Duration.ofMillis(250))).thenText("Hello");
+
+        var result = loop(llm, 6).run(ask("hi", List.of()), e -> { }, NEVER);
+
+        assertThat(result.llmCallRecords()).singleElement().isEqualTo(new LlmCallRecord(1, "test", 100, 20, 0, 0, 250,
+                StopReason.END_TURN, LlmCallRecord.Outcome.OK, null, START));
+        assertThat(result.toolCallRecords()).isEmpty();
+    }
+
+    @Test
+    void recordsTheCacheTokensOfAModelCallApartFromItsInput() {
+        var llm = new ScriptedLlmClient().then(new LlmResponse(List.of(new ContentBlock.Text("ok")), StopReason.END_TURN,
+                new Usage(30, 12, 4000, 250)));
+
+        var result = loop(llm, 6).run(ask("hi", List.of()), e -> { }, NEVER);
+
+        assertThat(result.llmCallRecords()).singleElement().satisfies(call -> {
+            assertThat(call.inputTokens()).isEqualTo(30);
+            assertThat(call.outputTokens()).isEqualTo(12);
+            assertThat(call.cacheReadTokens()).isEqualTo(4000);
+            assertThat(call.cacheWriteTokens()).isEqualTo(250);
+        });
+        assertThat(result.usage()).isEqualTo(new Usage(30, 12, 4000, 250));
+    }
+
+    @Test
+    void recordsEveryModelCallAndEveryToolExecutionInOrder() {
+        var llm = new ScriptedLlmClient()
+                .beforeEachCall(() -> clock.advance(Duration.ofMillis(100)))
+                .thenToolCall("t1", "echo", "{\"text\":\"ping\"}")
+                .thenToolCall("t2", "echo", "{\"text\":\"pong\"}")
+                .thenText("Done");
+        echoTakes = Duration.ofMillis(40);
+
+        var result = loop(llm, 6).run(ask("go", List.of()), e -> { }, NEVER);
+
+        assertThat(result.llmCallRecords()).extracting(LlmCallRecord::sequence).containsExactly(1, 2, 3);
+        assertThat(result.llmCallRecords()).extracting(LlmCallRecord::stopReason)
+                .containsExactly(StopReason.TOOL_USE, StopReason.TOOL_USE, StopReason.END_TURN);
+        assertThat(result.llmCallRecords()).extracting(LlmCallRecord::startedAt)
+                .containsExactly(START, START.plusMillis(140), START.plusMillis(280));
+        assertThat(result.toolCallRecords()).containsExactly(
+                new ToolCallRecord(1, "echo", "{\"text\":\"ping\"}", "echoed", false, 40, START.plusMillis(100)),
+                new ToolCallRecord(2, "echo", "{\"text\":\"pong\"}", "echoed", false, 40, START.plusMillis(240)));
+        assertThat(result.toolCalls()).isEqualTo(2);
+    }
+
+    @Test
+    void aToolThatRefusedItsInputIsRecordedWithTheErrorFlagAndTheMessage() {
+        var llm = new ScriptedLlmClient().thenToolCall("t1", "echo", "{}").thenText("Sorry");
+
+        var result = loop(llm, 6).run(ask("go", List.of()), e -> { }, NEVER);
+
+        assertThat(result.toolCallRecords()).singleElement().satisfies(call -> {
+            assertThat(call.error()).isTrue();
+            assertThat(call.summary()).isEqualTo("Invalid input: text is required");
+            assertThat(call.args()).isEqualTo("{}");
+        });
+    }
+
+    @Test
+    void aCallRefusedByAToolsRunLimitIsRecordedAsAnErrorToo() {
+        var llm = new ScriptedLlmClient()
+                .then(new LlmResponse(List.of(use("t1", "metered", "a"), use("t2", "metered", "b"),
+                        use("t3", "metered", "c")), StopReason.TOOL_USE, new Usage(50, 10)))
+                .thenText("ok");
+
+        var result = loop(llm, 6, metered).run(ask("go", List.of()), e -> { }, NEVER);
+
+        assertThat(result.toolCallRecords()).extracting(ToolCallRecord::error).containsExactly(false, false, true);
+        assertThat(result.toolCallRecords().get(2).summary()).contains("at most 2 times");
+    }
+
+    @Test
+    void cutsWhatTheModelSentAndWhatTheToolSaidDownToTheCaps() {
+        var longName = "x".repeat(400);
+        var llm = new ScriptedLlmClient()
+                .thenToolCall("t1", longName, "{\"text\":\"" + "a".repeat(5000) + "\"}")
+                .thenText("ok");
+
+        var result = loop(llm, 6).run(ask("go", List.of()), e -> { }, NEVER);
+
+        assertThat(result.toolCallRecords()).singleElement().satisfies(call -> {
+            assertThat(call.toolName()).hasSize(ToolCallRecord.MAX_NAME_LENGTH);
+            assertThat(call.args()).hasSize(ToolCallRecord.MAX_ARGS_LENGTH).endsWith("\u2026");
+            assertThat(call.summary()).hasSize(ToolCallRecord.MAX_SUMMARY_LENGTH).startsWith("Unknown tool").endsWith("\u2026");
+        });
+    }
+
+    @Test
+    void aFailedModelCallIsRecordedWithItsCodeAndNoUsage() {
+        var llm = new ScriptedLlmClient()
+                .beforeEachCall(() -> clock.advance(Duration.ofMillis(700)))
+                .thenFail(ErrorCode.LLM_OVERLOADED, "Claude API returned 529: upstream-secret");
+
+        var result = loop(llm, 6).run(ask("hi", List.of()), e -> { }, NEVER);
+
+        assertThat(result.status()).isEqualTo(AgentResult.Status.ERROR);
+        assertThat(result.llmCallRecords()).singleElement().isEqualTo(new LlmCallRecord(1, "test", 0, 0, 0, 0, 700, null,
+                LlmCallRecord.Outcome.ERROR, ErrorCode.LLM_OVERLOADED, START));
+        assertThat(result.llmCallRecords().toString()).doesNotContain("upstream-secret");
+    }
+
+    @Test
+    void whatHappenedBeforeAFailureIsStillRecorded() {
+        var llm = new ScriptedLlmClient()
+                .thenToolCall("t1", "echo", "{\"text\":\"ping\"}")
+                .thenFail(ErrorCode.LLM_ERROR, "boom");
+
+        var result = loop(llm, 6).run(ask("go", List.of()), e -> { }, NEVER);
+
+        assertThat(result.llmCallRecords()).extracting(LlmCallRecord::outcome)
+                .containsExactly(LlmCallRecord.Outcome.OK, LlmCallRecord.Outcome.ERROR);
+        assertThat(result.llmCallRecords()).extracting(LlmCallRecord::errorCode).containsExactly(null, ErrorCode.LLM_ERROR);
+        assertThat(result.toolCallRecords()).extracting(ToolCallRecord::toolName).containsExactly("echo");
+        assertThat(result.usage()).isEqualTo(new Usage(50, 10));
+    }
+
+    @Test
+    void aReplyCutOffByTheTokenLimitIsRecordedWithItsStopReason() {
+        var llm = new ScriptedLlmClient().then(new LlmResponse(List.of(new ContentBlock.Text("The answer is cut")),
+                StopReason.MAX_TOKENS, new Usage(30, 2048)));
+
+        var result = loop(llm, 6).run(ask("go", List.of()), e -> { }, NEVER);
+
+        assertThat(result.status()).isEqualTo(AgentResult.Status.TRUNCATED);
+        assertThat(result.llmCallRecords()).singleElement().satisfies(call -> {
+            assertThat(call.stopReason()).isEqualTo(StopReason.MAX_TOKENS);
+            assertThat(call.outcome()).isEqualTo(LlmCallRecord.Outcome.OK);
+            assertThat(call.outputTokens()).isEqualTo(2048);
+        });
+    }
+
+    @Test
+    void aCancelledRunKeepsTheCallsThatHappenedAndNotTheOnesThatDidNot() throws Exception {
+        var first = new ContentBlock.ToolUse("t1", "echo", JSON.readTree("{\"text\":\"one\"}"));
+        var second = new ContentBlock.ToolUse("t2", "echo", JSON.readTree("{\"text\":\"two\"}"));
+        var llm = new ScriptedLlmClient()
+                .then(new LlmResponse(List.of(first, second), StopReason.TOOL_USE, new Usage(50, 10)))
+                .thenText("never reached");
+
+        var result = loop(llm, 6).run(ask("go", List.of()), e -> { }, () -> !executedWith.isEmpty());
+
+        assertThat(result.status()).isEqualTo(AgentResult.Status.ABORTED);
+        assertThat(result.llmCallRecords()).singleElement().extracting(LlmCallRecord::outcome)
+                .isEqualTo(LlmCallRecord.Outcome.OK);
+        assertThat(result.toolCallRecords()).extracting(ToolCallRecord::args).containsExactly("{\"text\":\"one\"}");
+    }
+
+    @Test
+    void aRunCancelledWhileTheModelWasAnsweringRecordsThatCallWithItsTokens() {
+        var llm = new ScriptedLlmClient().thenToolCall("t1", "echo", "{\"text\":\"ping\"}").thenText("never reached");
+
+        var result = loop(llm, 6).run(ask("go", List.of()), e -> { }, () -> !llm.requests.isEmpty());
+
+        assertThat(result.status()).isEqualTo(AgentResult.Status.ABORTED);
+        assertThat(result.llmCallRecords()).singleElement().satisfies(call -> {
+            assertThat(call.inputTokens()).isEqualTo(50);
+            assertThat(call.outputTokens()).isEqualTo(10);
+        });
+        assertThat(result.toolCallRecords()).isEmpty();
+    }
+
+    @Test
+    void aRunCancelledBeforeAnythingHappenedRecordsNothing() {
+        var llm = new ScriptedLlmClient().thenText("never asked");
+
+        var result = loop(llm, 6).run(ask("hi", List.of()), e -> { }, () -> true);
+
+        assertThat(result.llmCallRecords()).isEmpty();
+        assertThat(result.toolCallRecords()).isEmpty();
+    }
+
+    @Test
+    void aRunThatTimedOutKeepsTheCallsMadeBeforeTheDeadline() {
+        var llm = new ScriptedLlmClient()
+                .beforeEachCall(() -> clock.advance(Duration.ofSeconds(60)))
+                .thenToolCall("t1", "echo", "{\"text\":\"one\"}")
+                .thenToolCall("t2", "echo", "{\"text\":\"two\"}")
+                .thenText("never reached");
+
+        var result = loop(llm, 6).run(ask("slow question", List.of()), e -> { }, NEVER);
+
+        assertThat(result.errorCode()).isEqualTo(ErrorCode.RUN_TIMEOUT);
+        assertThat(result.llmCallRecords()).hasSize(2).allSatisfy(call -> {
+            assertThat(call.outcome()).isEqualTo(LlmCallRecord.Outcome.OK);
+            assertThat(call.latencyMs()).isEqualTo(60_000);
+        });
+        assertThat(result.toolCallRecords()).extracting(ToolCallRecord::args).containsExactly("{\"text\":\"one\"}");
+    }
+
+    @Test
+    void aModelCallCutShortByTheRunDeadlineIsRecordedWithTheRunTimeoutCode() {
+        var llm = new ScriptedLlmClient()
+                .beforeEachCall(() -> clock.advance(RUN_TIMEOUT.plusSeconds(1)))
+                .thenFail(ErrorCode.LLM_TIMEOUT, "Claude response stream timed out");
+
+        var result = loop(llm, 6).run(ask("slow question", List.of()), e -> { }, NEVER);
+
+        assertThat(result.llmCallRecords()).singleElement().satisfies(call -> {
+            assertThat(call.outcome()).isEqualTo(LlmCallRecord.Outcome.ERROR);
+            assertThat(call.errorCode()).isEqualTo(ErrorCode.RUN_TIMEOUT);
+        });
+    }
+
+    @Test
+    void aRunThatHitsTheIterationLimitHasOneCallRecordPerIteration() {
+        var llm = new ScriptedLlmClient();
+        for (int i = 0; i < 3; i++) {
+            llm.thenToolCall("t" + i, "echo", "{\"text\":\"again\"}");
+        }
+
+        var result = loop(llm, 3).run(ask("loop forever", List.of()), e -> { }, NEVER);
+
+        assertThat(result.status()).isEqualTo(AgentResult.Status.MAX_ITERATIONS);
+        assertThat(result.llmCallRecords()).hasSize(3);
+        assertThat(result.toolCallRecords()).hasSize(3);
+    }
+
+    @Test
+    void theRecordsCannotBeChangedAfterTheRun() {
+        var llm = new ScriptedLlmClient().thenText("Hello");
+
+        var result = loop(llm, 6).run(ask("hi", List.of()), e -> { }, NEVER);
+
+        assertThat(result.llmCallRecords()).isUnmodifiable();
+        assertThat(result.toolCallRecords()).isUnmodifiable();
+    }
 }

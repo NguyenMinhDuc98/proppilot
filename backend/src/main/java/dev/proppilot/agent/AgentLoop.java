@@ -74,8 +74,9 @@ public class AgentLoop {
         private final ToolContext context;
         private final Instant deadline = clock.instant().plus(props.runTimeout());
         private final Map<String, Integer> callsByTool = new HashMap<>();
+        private final List<LlmCallRecord> llmCalls = new ArrayList<>();
+        private final List<ToolCallRecord> toolCallRecords = new ArrayList<>();
         private Usage usage = Usage.ZERO;
-        private int toolCalls;
         private int iterations;
 
         Run(AgentRequest request, Consumer<AgentEvent> events, BooleanSupplier cancelled) {
@@ -106,14 +107,19 @@ public class AgentLoop {
                 return interruption;
             }
             iterations++;
+            var startedAt = clock.instant();
             LlmResponse response;
             try {
                 response = llm.complete(new LlmRequest(system, List.copyOf(messages), toolSpecs, timeLeft()),
                         text -> events.accept(new AgentEvent.Token(text)));
             } catch (LlmException e) {
                 log.warn("LLM call failed on iteration {} ({}): {}", iterations, e.code(), e.getMessage());
-                return Optional.of(AgentResult.failed(failureCode(e), usage, toolCalls, iterations));
+                var code = failureCode(e);
+                llmCalls.add(LlmCallRecord.failed(llmCalls.size() + 1, llm.model(), startedAt, millisSince(startedAt), code));
+                return Optional.of(failed(code));
             }
+            llmCalls.add(LlmCallRecord.succeeded(llmCalls.size() + 1, llm.model(), startedAt, millisSince(startedAt),
+                    response));
             usage = usage.plus(response.usage());
             if (cancelled.getAsBoolean()) {
                 // The client left while the reply was streaming, so nobody received it.
@@ -141,10 +147,12 @@ public class AgentLoop {
                     return interruption;
                 }
                 events.accept(new AgentEvent.ToolCall(call.name(), call.input()));
+                var startedAt = clock.instant();
                 var result = execute(call);
+                toolCallRecords.add(new ToolCallRecord(toolCallRecords.size() + 1, call.name(), call.input().toString(),
+                        result.summary(), result.error(), millisSince(startedAt), startedAt));
                 events.accept(new AgentEvent.ToolResultEvent(call.name(), result.summary(), result.error(), result.ui()));
                 results.add(new ContentBlock.ToolResult(call.id(), result.content(), result.error()));
-                toolCalls++;
             }
             messages.add(new Message(Message.Role.USER, results));
             return Optional.empty();
@@ -177,7 +185,7 @@ public class AgentLoop {
             }
             if (!timeLeft().isPositive()) {
                 log.warn("Run stopped after {} model calls: it exceeded {}", iterations, props.runTimeout());
-                return Optional.of(AgentResult.failed(ErrorCode.RUN_TIMEOUT, usage, toolCalls, iterations));
+                return Optional.of(failed(ErrorCode.RUN_TIMEOUT));
             }
             return Optional.empty();
         }
@@ -192,12 +200,21 @@ public class AgentLoop {
             return Duration.between(clock.instant(), deadline);
         }
 
+        private long millisSince(Instant startedAt) {
+            return Duration.between(startedAt, clock.instant()).toMillis();
+        }
+
         private AgentResult aborted() {
             return result(AgentResult.Status.ABORTED, "");
         }
 
         private AgentResult result(AgentResult.Status status, String answer) {
-            return new AgentResult(answer, usage, toolCalls, iterations, status);
+            return new AgentResult(answer, usage, toolCallRecords.size(), iterations, status, null, llmCalls,
+                    toolCallRecords);
+        }
+
+        private AgentResult failed(ErrorCode code) {
+            return AgentResult.failed(code, usage, toolCallRecords.size(), iterations, llmCalls, toolCallRecords);
         }
     }
 
