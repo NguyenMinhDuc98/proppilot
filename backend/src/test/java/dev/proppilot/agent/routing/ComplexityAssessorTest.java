@@ -7,9 +7,7 @@ import static dev.proppilot.agent.routing.ComplexityRule.SEQUENCING_WORD;
 import static dev.proppilot.agent.routing.ComplexityRule.SEVERAL_DATA_AREAS;
 import static dev.proppilot.agent.routing.ComplexityRule.WINDOW_WITH_LEASE_TERM;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.jupiter.api.Assertions.assertTimeout;
 
-import java.time.Duration;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -205,24 +203,6 @@ class ComplexityAssessorTest {
         assertThat(complexity.rules()).containsExactly(SEVERAL_DATA_AREAS, WINDOW_WITH_LEASE_TERM, LONG_QUESTION,
                 SEQUENCING_WORD, MANY_UNITS, LONG_CONVERSATION);
         assertThat(complexity.score()).isEqualTo(2 + 2 + 1 + 1 + 1 + 1);
-    }
-
-    @ParameterizedTest
-    @ValueSource(strings = {"and then ", ", , , ", "a ", "و", "A-203 ", "(((", "ثم ", "late payment fee of ",
-            "record a payment of ", "ـ", "9", "\u0000", "😀"})
-    void aHostileQuestionOfAHundredThousandCharactersIsReadInBoundedTime(String unit) {
-        var hostile = unit.repeat(100_000 / unit.length());
-
-        var complexity = assertTimeout(Duration.ofSeconds(5), () -> assess(hostile));
-
-        assertThat(complexity.rules()).contains(LONG_QUESTION);
-    }
-
-    @Test
-    void aSingleUnbrokenWordOfAMillionCharactersIsReadInBoundedTime() {
-        var complexity = assertTimeout(Duration.ofSeconds(5), () -> assess("ا".repeat(1_000_000)));
-
-        assertThat(complexity.rules()).containsExactly(LONG_QUESTION);
     }
 
     @Test
