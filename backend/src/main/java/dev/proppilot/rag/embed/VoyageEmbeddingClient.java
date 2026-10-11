@@ -54,8 +54,8 @@ public class VoyageEmbeddingClient implements EmbeddingClient {
             throw new IllegalStateException("VOYAGE_API_KEY is required when EMBEDDING_PROVIDER=voyage");
         }
         // The JDK quotes a header value it refuses, so a key like that would be written to the log in full.
-        if (!props.apiKey().chars().allMatch(VoyageEmbeddingClient::isVisibleAscii)) {
-            throw new IllegalStateException("VOYAGE_API_KEY may hold visible ASCII characters only: "
+        if (!props.apiKey().chars().allMatch(VoyageEmbeddingClient::isKeyCharacter)) {
+            throw new IllegalStateException("VOYAGE_API_KEY may hold visible ASCII characters only, and no quote mark: "
                     + "check it for a pasted quote, dash or line break");
         }
         this.props = props;
@@ -210,7 +210,11 @@ public class VoyageEmbeddingClient implements EmbeddingClient {
         return text.length() <= LOGGED_ERROR_BODY_CHARS ? text : text.substring(0, LOGGED_ERROR_BODY_CHARS);
     }
 
-    private static boolean isVisibleAscii(int c) {
-        return c > ' ' && c < 0x7f;
+    /**
+     * A visible ASCII character that is not a quote. A real key has none, and the header would carry a straight quote
+     * without complaint, so a pasted {@code KEY="..."} line would start up and then be answered with 401 each time.
+     */
+    private static boolean isKeyCharacter(int c) {
+        return c > ' ' && c < 0x7f && c != '"' && c != '\'';
     }
 }

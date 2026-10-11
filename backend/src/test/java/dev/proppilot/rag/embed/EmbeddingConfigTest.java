@@ -113,6 +113,20 @@ class EmbeddingConfigTest {
     }
 
     @Test
+    void aKeyPastedWithItsQuotesFailsStartupWithoutQuotingIt() {
+        runner.withPropertyValues("proppilot.embedding.provider=voyage",
+                        "proppilot.embedding.api-key=\"pa-secret\"")
+                .run(context -> {
+                    assertThat(context).hasFailed();
+                    assertThat(context.getStartupFailure()).rootCause()
+                            .isInstanceOf(IllegalStateException.class)
+                            .hasMessageContaining("VOYAGE_API_KEY")
+                            .hasMessageContaining("quote");
+                    assertThat(Throwables.getStackTrace(context.getStartupFailure())).doesNotContain("secret");
+                });
+    }
+
+    @Test
     void anUnknownProviderFailsStartupAndSaysWhatIsAllowed() {
         runner.withPropertyValues("proppilot.embedding.provider=cohere").run(context -> {
             assertThat(context).hasFailed();

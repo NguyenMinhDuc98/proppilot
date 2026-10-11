@@ -500,8 +500,20 @@ class VoyageEmbeddingClientTest {
     }
 
     @Test
-    void everyVisibleAsciiCharacterIsAllowedInAKey() {
-        var key = "pa-AZaz09_.~!#$%&'*+/=?^`{|}-:;<>@[]\\\"";
+    void aKeyWithAStraightQuoteInItIsRefusedAtStartupBecauseTheApiWouldAnswerItWith401() {
+        for (var key : List.of("\"pa-test-key\"", "'pa-test-key'", "pa-test\"-key", "pa-test'-key", "pa-test-key\"")) {
+            assertThatThrownBy(() -> new VoyageEmbeddingClient(props(1, 5, 3, key), JSON)).as(key)
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasNoCause()
+                    .hasMessageContaining("VOYAGE_API_KEY")
+                    .hasMessageContaining("quote")
+                    .satisfies(e -> assertThat(e.toString()).doesNotContain("pa-test"));
+        }
+    }
+
+    @Test
+    void everyVisibleAsciiCharacterButAQuoteIsAllowedInAKey() {
+        var key = "pa-AZaz09_.~!#$%&*+/=?^`{|}-:;<>@[]\\";
 
         client(props(server.getAddress().getPort(), 5, 3, key)).embedQuery("question");
 
