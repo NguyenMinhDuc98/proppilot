@@ -191,10 +191,11 @@ class LeaseDocumentIngestionIT extends CorpusIntegrationTest {
         var ingestor = new LeaseDocumentIngestor(new LeasePdfGenerator(), extractor, chunker, store);
 
         new LeaseDocumentSeeder(new RagProperties(30, false), repository, ingestor, store).seedWhenReady();
-        assertThat(asked.getCount()).isEqualTo(1);
+        // A thread that was started by mistake asks within moments, and waiting is the only way to see it not ask.
+        assertThat(awaited(asked, 500)).as("a disabled seeder does not start").isFalse();
 
         new LeaseDocumentSeeder(new RagProperties(30, true), repository, ingestor, store).seedWhenReady();
-        assertThat(awaited(asked)).isTrue();
+        assertThat(awaited(asked, 30_000)).as("an enabled seeder starts").isTrue();
     }
 
     private static boolean ingestAfter(CyclicBarrier barrier, LeaseDocumentIngestor ingestor, LeaseFacts facts,
@@ -212,9 +213,9 @@ class LeaseDocumentIngestionIT extends CorpusIntegrationTest {
                 new LeaseDocumentIngestor(generator, extractor, chunker, store), store);
     }
 
-    private static boolean awaited(CountDownLatch latch) {
+    private static boolean awaited(CountDownLatch latch, long millis) {
         try {
-            return latch.await(30, TimeUnit.SECONDS);
+            return latch.await(millis, TimeUnit.MILLISECONDS);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return false;
