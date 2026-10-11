@@ -215,6 +215,38 @@ class OfflineLeaseIntentsTest {
         assertThat(english.input().has("unit_code")).isFalse();
     }
 
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', textBlock = """
+            What is the late fee for Ahmed Al-Harbi? | Ahmed Al-Harbi
+            What is the late fee in Sara Al-Qahtani's lease? | Sara Al-Qahtani
+            notice period for the tenant sara al-qahtani | sara al-qahtani
+            what is the late fee for tenant ahmed al-harbi? | ahmed al-harbi
+            are pets allowed for tenant sara? | sara
+            What is the late fee for tenant Ahmed's lease? | Ahmed
+            Is subletting allowed in tenant Ahmed's lease? | Ahmed
+            ما غرامة التأخير للمستأجر أحمد الحربي؟ | أحمد الحربي
+            """)
+    void theTenantAQuestionNamesIsSearchedWhateverTheCaseAndWhetherOrNotTheWordTenantIsThere(String question,
+                                                                                            String name) {
+        var call = route(question);
+
+        assertThat(call.name()).isEqualTo("search_lease_documents");
+        assertThat(call.input().get("tenant_name").asText()).isEqualTo(name);
+        assertThat(call.input().has("unit_code")).isFalse();
+        assertThat(call.input().get("top_k").asInt()).as("one tenant is one lease").isEqualTo(2);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"What notice must the tenant give?", "What is the late fee in Riyadh?",
+            "What is the Late Fee?", "Compare the notice period in Najd Towers"})
+    void aQuestionThatNamesNoTenantIsNotGivenOne(String question) {
+        var call = route(question);
+
+        assertThat(call.name()).isEqualTo("search_lease_documents");
+        assertThat(call.input().has("tenant_name")).isFalse();
+        assertThat(call.input().has("unit_code")).isFalse();
+    }
+
     @Test
     void theUnitWinsOverTheTenantWhenBothAreNamed() {
         var call = route("What is the late fee for tenant Ahmed in unit A-504?");

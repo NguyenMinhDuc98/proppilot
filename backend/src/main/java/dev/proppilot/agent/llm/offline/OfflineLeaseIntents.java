@@ -72,8 +72,6 @@ final class OfflineLeaseIntents {
     private static final Pattern WHOLE_LEASE = Pattern.compile(WORD_START + "(?:clauses?|terms and conditions"
             + "|lease\\s+(?:terms?|conditions?|agreement|document|contract|says?|states?|clauses?))" + WORD_END
             + "|بنود|بند|شروط العقد|شروط الايجار|وثيقه العقد|عقد الايجار|ينص العقد", FLAGS);
-    private static final Pattern TENANT_NAME = Pattern.compile(
-            "(?i:tenant|resident|lessee)\\s+([A-Z][A-Za-z'-]{1,30}(?:\\s+[A-Z][A-Za-z'-]{1,30}){0,2})");
 
     private final ObjectMapper json;
 
@@ -196,21 +194,9 @@ final class OfflineLeaseIntents {
         return new ArrayList<>(codes);
     }
 
-    /** The name after "tenant" in English, or after "المستأجر" in Arabic, without the punctuation that ends it. */
+    /** The name of the tenant the question is about, when it gives one that the tool can take. */
     private static Optional<String> tenantName(String question) {
-        var english = TENANT_NAME.matcher(question);
-        var name = english.find() ? Optional.of(english.group(1))
-                : OfflineIntentRouter.first(OfflineIntentRouter.TENANT_NAME_AR, question);
-        return name.map(OfflineLeaseIntents::withoutTrailingPunctuation)
-                .filter(text -> !text.isEmpty() && text.length() <= MOST_NAME_LENGTH);
-    }
-
-    private static String withoutTrailingPunctuation(String name) {
-        int end = name.length();
-        while (end > 0 && !Character.isLetterOrDigit(name.charAt(end - 1))) {
-            end--;
-        }
-        return name.substring(0, end);
+        return TenantName.in(question).filter(name -> name.length() <= MOST_NAME_LENGTH);
     }
 
     /** At most what the tool takes, never between the two halves of a character. */

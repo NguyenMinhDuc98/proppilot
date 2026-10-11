@@ -104,6 +104,27 @@ class OfflineLeaseAnswersTest {
     }
 
     @Test
+    void saysThatEveryDocumentWasSearchedWhenNoUnitOrTenantWasKnown() {
+        var everything = ARABIC_RESULT.replace("\"allDocuments\":false,\"units\":[\"A-504\"]",
+                "\"allDocuments\":true,\"units\":[]");
+
+        var english = answerAfter("What is the late fee for Ahmed?", "search_lease_documents", everything);
+        var arabic = answerAfter("ما هي غرامة التأخير لأحمد؟", "search_lease_documents", everything);
+
+        assertThat(english.text()).startsWith("I could not tell which unit or tenant you mean, so I searched every "
+                + "lease document.\n\n1 matching clause(s) from 1 lease document(s):");
+        assertThat(arabic.text()).startsWith("لم أتمكن من تحديد الوحدة أو المستأجر المقصود، لذلك بحثتُ في جميع وثائق "
+                + "العقود.\n\nعدد البنود المطابقة: 1 من 1 وثيقة عقد:");
+    }
+
+    @Test
+    void saysNothingAboutTheScopeWhenSpecificLeasesWereSearched() {
+        var response = answerAfter("What is the late fee for unit A-504?", "search_lease_documents", ARABIC_RESULT);
+
+        assertThat(response.text()).doesNotContain("every lease document");
+    }
+
+    @Test
     void saysHonestlyThatNothingWasFound() {
         var none = """
                 {"notice":"quoted data","query":"qzx","retrieval":"keyword",

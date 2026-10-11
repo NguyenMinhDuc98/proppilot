@@ -105,6 +105,10 @@ final class OfflineAnswerWriter {
         } else {
             var documents = new HashSet<String>();
             results.forEach(clause -> documents.add(clause.path("document").asText()));
+            if (d.path("scope").path("allDocuments").asBoolean()) {
+                sb.append(ar ? "لم أتمكن من تحديد الوحدة أو المستأجر المقصود، لذلك بحثتُ في جميع وثائق العقود.\n\n"
+                        : "I could not tell which unit or tenant you mean, so I searched every lease document.\n\n");
+            }
             sb.append(ar
                     ? "عدد البنود المطابقة: " + results.size() + " من " + documents.size() + " وثيقة عقد:"
                     : results.size() + " matching clause(s) from " + documents.size() + " lease document(s):");
