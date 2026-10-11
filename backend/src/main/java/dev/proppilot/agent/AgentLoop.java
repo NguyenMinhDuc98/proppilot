@@ -31,7 +31,8 @@ import org.springframework.stereotype.Service;
 /**
  * The agent loop, written by hand: send messages and tool definitions to the model; if it asks for tools, run them,
  * append the results and ask again; stop on a final answer, a reply cut off by the token limit, the iteration limit or
- * the run deadline.
+ * the run deadline. Every model call and tool execution is measured with the injected clock and returned in the
+ * result, whatever became of the run.
  */
 @Service
 public class AgentLoop {

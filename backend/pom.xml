@@ -60,7 +60,7 @@
             <artifactId>icu4j</artifactId>
             <version>78.3</version>
         </dependency>
-        <!-- Versions come from the Spring Boot BOM. Only the tracing configuration loads these when OTEL_ENABLED is set. -->
+        <!-- OpenTelemetry, at the version of the Spring Boot BOM. Its classes are loaded only when OTEL_ENABLED is true. -->
         <dependency>
             <groupId>io.opentelemetry</groupId>
             <artifactId>opentelemetry-api</artifactId>
