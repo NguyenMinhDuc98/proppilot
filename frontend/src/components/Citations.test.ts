@@ -1,6 +1,6 @@
 import { mount, type VueWrapper } from '@vue/test-utils'
 import { nextTick } from 'vue'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { LeaseSource } from '../api/types'
 import { i18n } from '../i18n'
 import ar from '../i18n/ar'
@@ -462,28 +462,23 @@ describe('the clause drawer in Arabic', () => {
 })
 
 describe('the clause drawer while it animates', () => {
-  const frame = () => new Promise((resolve) => setTimeout(resolve, 30))
+  /** True when no transition is running, so a state asserted next is the settled one and not one on the way. */
+  const settled = () => document.querySelector('[class*="-enter-active"], [class*="-leave-active"]') === null
 
   it('opens again at once when its chip is clicked as it is closing, and gives the focus back after it has closed', async () => {
     const wrapper = render('Fee [LSE-A-504#5].', undefined, { animated: true })
     const chip = inline(wrapper)[0]
     ;(chip.element as HTMLElement).focus()
     await chip.trigger('click')
-    await frame()
-    expect(drawer()).not.toBeNull()
+    await vi.waitFor(() => expect(drawer() !== null && settled()).toBe(true))
 
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }))
     await nextTick()
     await chip.trigger('click')
-    await frame()
-
-    expect(drawer()).not.toBeNull()
+    await vi.waitFor(() => expect(drawer() !== null && settled()).toBe(true))
 
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }))
-    await frame()
-    await frame()
-
-    expect(drawer()).toBeNull()
+    await vi.waitFor(() => expect(drawer() === null && settled()).toBe(true))
     expect(document.activeElement).toBe(chip.element)
   })
 })
