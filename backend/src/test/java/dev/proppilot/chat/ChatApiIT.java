@@ -428,6 +428,27 @@ class ChatApiIT extends CorpusIntegrationTest {
                 .andExpect(status().reason("history must have at most 20 items"));
     }
 
+    /** A two turn history whose answer has {@code length} characters. */
+    private static String historyWithAnswerOf(int length) {
+        return "[{\"role\":\"user\",\"text\":\"question\"},{\"role\":\"assistant\",\"text\":\"" + "x".repeat(length)
+                + "\"}]";
+    }
+
+    @Test
+    void acceptsAHistoryTurnOfTheLongestLengthTheInfoEndpointReports() throws Exception {
+        var sse = chat("{\"message\":\"Which units in Riyadh are vacant?\",\"history\":" + historyWithAnswerOf(4000) + "}");
+
+        assertThat(sse).contains("event:done");
+    }
+
+    @Test
+    void rejectsAHistoryTurnLongerThanTheInfoEndpointReports() throws Exception {
+        mvc.perform(post("/api/chat").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"message\":\"hi\",\"history\":" + historyWithAnswerOf(4001) + "}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(status().reason("invalid history"));
+    }
+
     @Test
     void rejectsMalformedHistory() throws Exception {
         mvc.perform(post("/api/chat").contentType(MediaType.APPLICATION_JSON)

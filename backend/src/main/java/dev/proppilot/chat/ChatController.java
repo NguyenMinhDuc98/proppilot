@@ -18,8 +18,6 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 @RequestMapping("/api/chat")
 public class ChatController {
 
-    private static final int MAX_HISTORY_TURN_LENGTH = 4000;
-
     private final ChatService chat;
     private final ChatRateLimiter limiter;
     private final ChatProperties props;
@@ -63,7 +61,8 @@ public class ChatController {
                     "history must have at most " + props.maxHistoryItems() + " items");
         }
         for (ChatTurn turn : history) {
-            if (turn == null || turn.text() == null || turn.role() == null || turn.text().length() > MAX_HISTORY_TURN_LENGTH
+            if (turn == null || turn.text() == null || turn.role() == null
+                    || turn.text().length() > props.maxHistoryTurnLength()
                     || (turn.fromUser() && usesReservedMarker(turn.text()))) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "invalid history");
             }

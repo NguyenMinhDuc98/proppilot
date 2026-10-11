@@ -18,16 +18,19 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 class InfoControllerTest {
 
-    private MockMvc mvcFor(String provider, String model, int maxHistoryItems, boolean embeddings, int documents) {
+    private MockMvc mvcFor(ChatProperties chat, String provider, String model, boolean embeddings, int documents) {
         var llm = mock(LlmClient.class);
         when(llm.provider()).thenReturn(provider);
         when(llm.model()).thenReturn(model);
-        var chat = new ChatProperties(500, maxHistoryItems, 10, 500);
         var embedding = mock(EmbeddingClient.class);
         when(embedding.enabled()).thenReturn(embeddings);
         var store = mock(LeaseDocumentStore.class);
         when(store.counts()).thenReturn(new CorpusCounts(documents, documents * 14));
         return MockMvcBuilders.standaloneSetup(new InfoController(llm, chat, embedding, store)).build();
+    }
+
+    private MockMvc mvcFor(String provider, String model, int maxHistoryItems, boolean embeddings, int documents) {
+        return mvcFor(new ChatProperties(500, maxHistoryItems, 4000, 10, 500), provider, model, embeddings, documents);
     }
 
     private MockMvc mvcFor(String provider, String model, int maxHistoryItems) {
@@ -40,7 +43,7 @@ class InfoControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(content().json("""
                         {"mode":"offline","provider":"offline","model":"rule-based","maxHistoryItems":20,
-                         "retrieval":"keyword","leaseDocuments":0}""", true));
+                         "maxHistoryTurnLength":4000,"retrieval":"keyword","leaseDocuments":0}""", true));
     }
 
     @Test
@@ -49,7 +52,8 @@ class InfoControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(content().json("""
                         {"mode":"claude","provider":"anthropic","model":"claude-haiku-4-5-20251001",
-                         "maxHistoryItems":20,"retrieval":"keyword","leaseDocuments":0}""", true));
+                         "maxHistoryItems":20,"maxHistoryTurnLength":4000,"retrieval":"keyword","leaseDocuments":0}""",
+                        true));
     }
 
     @Test
@@ -57,6 +61,15 @@ class InfoControllerTest {
         mvcFor("offline", "rule-based", 10).perform(get("/api/info"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.maxHistoryItems").value(10));
+    }
+
+    @Test
+    void reportsTheLongestHistoryTurnTheChatEndpointEnforces() throws Exception {
+        var chat = new ChatProperties(500, 20, 1500, 10, 500);
+
+        mvcFor(chat, "offline", "rule-based", false, 0).perform(get("/api/info"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.maxHistoryTurnLength").value(1500));
     }
 
     @Test

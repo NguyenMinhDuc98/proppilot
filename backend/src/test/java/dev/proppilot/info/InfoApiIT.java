@@ -22,7 +22,8 @@ class InfoApiIT extends CorpusIntegrationTest {
                 .andExpect(jsonPath("$.mode").value("offline"))
                 .andExpect(jsonPath("$.provider").value("offline"))
                 .andExpect(jsonPath("$.model").value("rule-based"))
-                .andExpect(jsonPath("$.maxHistoryItems").value(20));
+                .andExpect(jsonPath("$.maxHistoryItems").value(20))
+                .andExpect(jsonPath("$.maxHistoryTurnLength").value(4000));
     }
 
     @Test

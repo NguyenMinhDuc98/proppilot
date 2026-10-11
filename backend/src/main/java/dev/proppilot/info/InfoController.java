@@ -30,6 +30,7 @@ public class InfoController {
     public InfoView info() {
         var provider = llm.provider();
         return new InfoView(provider.equals("offline") ? "offline" : "claude", provider, llm.model(),
-                chat.maxHistoryItems(), RetrievalMode.of(embeddings.enabled()), documents.counts().documents());
+                chat.maxHistoryItems(), chat.maxHistoryTurnLength(), RetrievalMode.of(embeddings.enabled()),
+                documents.counts().documents());
     }
 }
