@@ -110,10 +110,10 @@ Four settings of the third phase have a place in the dashboard or in `render.yam
 | `PROMPT_CACHING` | `render.yaml` | `"true"` | Edit the file to change it |
 | `GUARDRAIL_MODE` | `render.yaml` | `"warn"` | `off`, `warn` or `retry`; edit the file to change it |
 | `OTEL_ENABLED` | `render.yaml` | `"false"` | Edit the file to turn it on |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | dashboard (`sync: false`) | unset | Unset or blank = no export, even with `OTEL_ENABLED` true |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | dashboard (`sync: false`) | unset | The collector's address with its `http://` or `https://`. Unset or blank = no export, even with `OTEL_ENABLED` true. `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` (the full URL for traces) counts as an endpoint too; if you add it, give it a value |
 | `OTEL_EXPORTER_OTLP_HEADERS`, `OTEL_SERVICE_NAME` | dashboard, only when wanted | unset, `proppilot` | The collector's credentials, and the service name |
 
-A blank value of any of these means what an unset one means; none of them can stop the backend from starting. A value that is not one of the three modes in `GUARDRAIL_MODE` does stop it, with a message that names the variable, so a typo is seen at the first deploy and not in production.
+A blank value (empty, or only spaces) of any of these means what an unset one means, as it does for `LLM_PRICE_INPUT_PER_MTOK` and `LLM_PRICE_OUTPUT_PER_MTOK` (`1.00` and `5.00`); none of them can stop the backend from starting. A value that is not one of the three modes in `GUARDRAIL_MODE` does stop it, with a message that names the variable, and so does a text where a number is expected, so a typo is seen at the first deploy and not in production. OpenTelemetry is the exception to that: a value the SDK refuses (an address without `http://` or `https://`, an empty `OTEL_EXPORTER_OTLP_PROTOCOL`) does not stop the backend, it logs one warning and exports nothing.
 
 ### Turning on routing to a larger model
 
@@ -133,8 +133,8 @@ A blank value of any of these means what an unset one means; none of them can st
 ### OpenTelemetry
 
 1. Have an OTLP/HTTP collector or a hosted backend that accepts OTLP over HTTP, and its address and credentials.
-2. In the dashboard add `OTEL_EXPORTER_OTLP_ENDPOINT` (and, if it wants credentials, `OTEL_EXPORTER_OTLP_HEADERS` as `key=value` pairs separated by commas). Optionally `OTEL_SERVICE_NAME`.
-3. Change `OTEL_ENABLED` to `"true"` in `render.yaml` and push. Without an endpoint the backend starts and logs `OTEL_ENABLED is true but OTEL_EXPORTER_OTLP_ENDPOINT is not set: no spans are exported`.
+2. In the dashboard add `OTEL_EXPORTER_OTLP_ENDPOINT`, the collector's address with its `http://` or `https://` (and, if it wants credentials, `OTEL_EXPORTER_OTLP_HEADERS` as `key=value` pairs separated by commas). Optionally `OTEL_SERVICE_NAME`.
+3. Change `OTEL_ENABLED` to `"true"` in `render.yaml` and push. Without an endpoint the backend starts and logs `OTEL_ENABLED is true but neither OTEL_EXPORTER_OTLP_ENDPOINT nor OTEL_EXPORTER_OTLP_TRACES_ENDPOINT is set: no spans are exported`. With an address the SDK refuses, such as `collector:4318` without the scheme, it starts and logs `OpenTelemetry could not be set up (ConfigurationException): no spans are exported`, and never the address.
 
 Each finished question is then exported as a `proppilot.run` span with a child for every model call and every tool call. Spans hold identifiers, names, counts, timings and outcomes, never a prompt, a question, an answer or a tool's arguments. Export is asynchronous and cannot fail a question. I have tested the exporter against a local stand-in for a collector only, and not on Render's free instance, which has a tenth of a CPU.
 

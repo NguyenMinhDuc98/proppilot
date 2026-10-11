@@ -408,16 +408,17 @@ The admin endpoints answer 404 when `ADMIN_TOKEN` is unset and 403 for a wrong t
 
 **The admin page.** `/admin/traces` is not in the navigation. Open it by its address on the frontend (`http://localhost:3000/admin/traces` under docker compose, your Vercel URL plus `/admin/traces` on the demo) and paste `ADMIN_TOKEN`. It lists the latest runs with filters (status, model, flagged answers only) and "Load older runs", and a row opens the run's detail with its question, every call and the ungrounded values. The token stays in the browser tab (`sessionStorage`, gone when the tab closes), goes only into the `X-Admin-Token` header, and "Forget token" drops it. A server with no `ADMIN_TOKEN` shows "Admin endpoints are disabled on this server".
 
-**OpenTelemetry.** Off by default: with `OTEL_ENABLED` unset, `false` or blank no OpenTelemetry object is created and nothing leaves the process. When it is `true` and `OTEL_EXPORTER_OTLP_ENDPOINT` is set, each finished run is exported over OTLP/HTTP as one root span `proppilot.run`, a child `chat <model>` for each model call (with `gen_ai.*` attributes: model, input, output, cache read and cache write tokens, finish reason) and a child `tool <name>` for each tool execution, placed at the times that were measured. Only traces are exported.
+**OpenTelemetry.** Off by default: with `OTEL_ENABLED` unset, `false` or blank no OpenTelemetry object is created and nothing leaves the process. When it is `true` and an endpoint is set (`OTEL_EXPORTER_OTLP_ENDPOINT`, or `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` for traces only), each finished run is exported over OTLP/HTTP as one root span `proppilot.run`, a child `chat <model>` for each model call (with `gen_ai.*` attributes: model, input, output, cache read and cache write tokens, finish reason) and a child `tool <name>` for each tool execution, placed at the times that were measured. Only traces are exported.
 
 | Variable | Default | Meaning |
 |---|---|---|
 | `OTEL_ENABLED` | `false` | `true` exports the runs. Blank is `false` |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | unset | The collector's OTLP/HTTP address. Required to export: with `OTEL_ENABLED=true` and no address the backend starts, logs one warning and exports nothing |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | unset | The collector's OTLP/HTTP address with its `http://` or `https://`, for example `http://localhost:4318`. An address is required to export: with `OTEL_ENABLED=true` and none the backend starts, logs one warning and exports nothing. Blank is unset |
+| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | unset | The address for traces only, as the full URL (`.../v1/traces`). It counts as an endpoint and wins over the one above. Leave it out rather than empty: the SDK refuses an empty one |
 | `OTEL_EXPORTER_OTLP_HEADERS` | unset | The collector's headers as `key=value` pairs separated by commas (a hosted collector's token goes here) |
 | `OTEL_SERVICE_NAME` | `proppilot` | The service name. Blank is `proppilot` |
 
-The SDK also reads the other standard `OTEL_*` variables when they are set to something. **What is never put in a span:** a prompt, a question, an answer, a tool's arguments or result, a lease clause, a key or a header. A span holds identifiers (the run id), names (model, tool), counts, timings and outcomes. The exporter is tested against a local stand-in for a collector; I have not sent spans to a real collector or a hosted backend, and the app does not sample.
+The SDK also reads the other standard `OTEL_*` variables when they are set to something (under docker compose only the ones that `docker-compose.yml` lists reach the backend; add the others under `backend.environment`). A value it refuses (an address without `http://` or `https://`, an empty `OTEL_EXPORTER_OTLP_PROTOCOL` or `OTEL_TRACES_SAMPLER`) does not stop the backend: it logs one warning that names the kind of error and never the value, and exports nothing. **What is never put in a span:** a prompt, a question, an answer, a tool's arguments or result, a lease clause, a key or a header. A span holds identifiers (the run id), names (model, tool), counts, timings and outcomes. The exporter is tested against a local stand-in for a collector; I have not sent spans to a real collector or a hosted backend, and the app does not sample.
 
 ## Evals v2
 
@@ -465,7 +466,7 @@ A case is a question (or a conversation, for the follow-up cases) with what a go
 
 ### Reading the results
 
-`latest.md` starts with a header (provider, models that answered, runs per case, cases and the ones skipped, date, backend host, whether the judge ran) and a banner that says what kind of run it was. Then the overall table (pass rate with its deviation, flaky cases, questions asked, latency, cost, tokens and cache tokens, answers the guardrail flagged, writes executed by a run, which must be 0), the pass rate by category and by language, and every case that failed or was flaky with its reasons. `latest.json` has every run of every case with its answer, tools, arguments, proposals, citations against the sources returned, usage and the judge's scores. A document written while a run is still going, or after it was stopped, says `complete: false`.
+`latest.md` starts with a header (provider, models that answered, runs per case, cases and the ones skipped, date, backend host, whether the judge ran) and a banner that says what kind of run it was. Then the overall table (pass rate with its deviation, flaky cases, questions asked, latency, cost, tokens and cache tokens, answers the guardrail flagged, the count of each guardrail verdict, writes executed by a run, which must be 0), the pass rate by category and by language, and every case that failed or was flaky with its reasons. `latest.json` has every run of every case with its answer, tools, arguments, proposals, citations against the sources returned, usage and the judge's scores. A document written while a run is still going, or after it was stopped, says `complete: false`.
 
 ### The committed results are offline
 
@@ -482,6 +483,7 @@ A case is a question (or a conversation, for the follow-up cases) with what a go
 | Cost | $0.00 (the token counts, 48,030 in and 25,104 out, are estimates of about four characters each) |
 | Cache read / write tokens | 0 / 0 (the offline assistant has no prompt cache) |
 | Answers the guardrail flagged | 0 |
+| Guardrail verdicts | OK 162 |
 | Writes executed by a run | 0 |
 | LLM judge | not run |
 
@@ -562,7 +564,7 @@ LLM_PROVIDER=anthropic ANTHROPIC_API_KEY=sk-ant-... docker compose up --build
 | `LLM_CACHE_WRITE_MULTIPLIER` / `LLM_CACHE_READ_MULTIPLIER` | `1.25` / `0.10` | What a token written to and one read from the prompt cache cost, as multiples of the input price |
 | `GUARDRAIL_MODE` | `warn` | `off`, `warn` or `retry` ([details](#grounding-guardrail)). A blank value counts as `warn`; any other value stops the backend from starting |
 | `OTEL_ENABLED` | `false` | `true` exports each run as OpenTelemetry spans ([details](#tracing-and-observability)) |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | – | The collector's OTLP/HTTP address. Needed to export: `OTEL_ENABLED=true` without it starts the backend, logs a warning and exports nothing |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` / `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | – | The collector's OTLP/HTTP address with its `http://` or `https://`; the second is for traces only and is left out rather than empty. One is needed to export: `OTEL_ENABLED=true` without either starts the backend, logs a warning and exports nothing |
 | `OTEL_EXPORTER_OTLP_HEADERS` / `OTEL_SERVICE_NAME` | – / `proppilot` | The collector's headers (`key=value`, comma separated) and the service name |
 | `DB_URL` / `DB_USER` / `DB_PASSWORD` | local Postgres | JDBC connection |
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:5173` | Comma-separated frontend origins |
@@ -587,7 +589,7 @@ LLM_PROVIDER=anthropic ANTHROPIC_API_KEY=sk-ant-... docker compose up --build
 | `RAG_DOCUMENT_COUNT` | `30` | How many leases get a document (the first active leases by id). The evals, and the seven leases that end soon, assume 30 |
 | `VITE_API_URL` (frontend build) | empty | Backend base URL when the frontend is hosted separately |
 
-A host may pass a variable on empty. For `ANTHROPIC_MODEL_LARGE`, `GUARDRAIL_MODE`, `PROMPT_CACHING`, the larger model's prices, the cache multipliers, `LLM_COMPLEXITY_THRESHOLD` and the four `OTEL_*` variables above, a blank value means what an absent one means and never stops the backend from starting (`BlankHostValuesTest` reads the real `application.yml` with each of them blank, and `TracingConfigTest` covers the endpoint). The settings of the earlier phases were left as they were: a blank `LLM_MAX_TOKENS`, `LLM_MAX_RETRIES`, `AGENT_RUN_TIMEOUT_SECONDS`, `CHAT_*`, `ACTION_*`, `RAG_*` or `EMBEDDING_DIMENSIONS` still stops the backend from starting, and a blank `LLM_PRICE_INPUT_PER_MTOK` or `LLM_PRICE_OUTPUT_PER_MTOK` is bound as no price.
+A host may pass a variable on empty, or as only spaces. For `LLM_PRICE_INPUT_PER_MTOK`, `LLM_PRICE_OUTPUT_PER_MTOK`, `ANTHROPIC_MODEL_LARGE`, `GUARDRAIL_MODE`, `PROMPT_CACHING`, the larger model's prices, the cache multipliers, `LLM_COMPLEXITY_THRESHOLD`, `OTEL_ENABLED`, `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS` and `OTEL_SERVICE_NAME`, a blank value means what an absent one means and never stops the backend from starting (`BlankHostValuesTest` reads the real `application.yml` with each of them empty and as spaces, `HostWhitespaceIT` starts the whole application with spaces in every number, and `TracingConfigTest` covers the endpoint). A text where a number is expected, such as `LLM_COMPLEXITY_THRESHOLD=three`, still stops it, so that a typo is seen at the first deploy. `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` is the one to leave out rather than empty, because the SDK refuses an empty one; the backend still starts and exports nothing. The settings of the earlier phases were left as they were: a blank `LLM_MAX_TOKENS`, `LLM_MAX_RETRIES`, `AGENT_RUN_TIMEOUT_SECONDS`, `CHAT_*`, `ACTION_*`, `RAG_*` or `EMBEDDING_DIMENSIONS` still stops the backend from starting.
 
 ## Tests
 
