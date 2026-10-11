@@ -221,6 +221,22 @@ class SearchLeaseDocumentsToolIT extends FakeEmbeddingIntegrationTest {
     }
 
     @Test
+    void everyNamedLeaseGetsAClauseEvenWhenThereAreMoreLeasesThanTopK() throws Exception {
+        var leases = new ArrayList<Document>();
+        for (int i = 0; i < 7; i++) {
+            leases.add(document(i % 2 == 0 ? "en" : "ar", i / 2));
+        }
+        var units = leases.stream().map(Document::unit).toArray(String[]::new);
+
+        var d = data(call("{\"query\":\"notice period\",\"unit_codes\":[" + unitCodeList(units) + "]}"));
+
+        var documents = new ArrayList<String>();
+        d.get("results").forEach(clause -> documents.add(clause.get("document").asText()));
+        assertThat(documents).as("default top_k is 4, below the seven leases").hasSize(7)
+                .containsExactlyInAnyOrderElementsOf(leases.stream().map(Document::code).toList());
+    }
+
+    @Test
     void aUnitCodeInTheListAndTheSingleUnitCodeAreOneScopeWhateverTheCaseAndTheRepeats() throws Exception {
         var lease = document("en", 0);
         var lower = lease.unit().toLowerCase();

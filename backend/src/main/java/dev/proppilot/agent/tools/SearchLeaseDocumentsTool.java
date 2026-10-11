@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.proppilot.rag.LeaseDocumentController;
 import dev.proppilot.rag.retrieve.LeaseRetriever;
 import dev.proppilot.rag.retrieve.RetrievalMode;
+import dev.proppilot.rag.retrieve.RetrievalResult;
 import dev.proppilot.rag.retrieve.RetrievedChunk;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -75,7 +76,7 @@ public class SearchLeaseDocumentsTool implements OwnTransactionTool {
                 .stringArray("unit_codes", "Search the leases of these units, such as A-203", MAX_UNIT_CODES)
                 .string("tenant_name", "Search the lease of this tenant, by name in English or Arabic")
                 .integer("top_k", "How many clauses to return, 1 to " + LeaseRetriever.MAX_TOP_K + " (default "
-                        + LeaseRetriever.DEFAULT_TOP_K + ")")
+                        + LeaseRetriever.DEFAULT_TOP_K + "); several units share it, each getting at least one")
                 .required("query")
                 .build();
     }
@@ -93,8 +94,23 @@ public class SearchLeaseDocumentsTool implements OwnTransactionTool {
             return ToolResult.error(refused.reason());
         }
         var scope = ((LeaseScopeResolver.Resolution.Found) resolution).scope();
-        var found = retriever.retrieve(query, scope.everything() ? null : scope.leaseIds(), topK);
+        var found = search(query, scope, topK);
         return result(query, scope, found.retrieval(), found.chunks());
+    }
+
+    /**
+     * Several named leases share top_k between them, and each gets at least one clause: a question about seven
+     * leases must not come back with the clauses of four of them.
+     */
+    private RetrievalResult search(String query, LeaseScopeResolver.Scope scope, int topK) {
+        if (scope.everything()) {
+            return retriever.retrieve(query, null, topK);
+        }
+        var leaseIds = scope.leaseIds();
+        if (leaseIds.size() < 2) {
+            return retriever.retrieve(query, leaseIds, topK);
+        }
+        return retriever.retrievePerLease(query, leaseIds, Math.max(1, topK / leaseIds.size()));
     }
 
     private ToolResult result(String query, LeaseScopeResolver.Scope scope, RetrievalMode retrieval,

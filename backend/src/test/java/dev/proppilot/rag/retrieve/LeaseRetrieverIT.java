@@ -148,6 +148,42 @@ class LeaseRetrieverIT extends FakeEmbeddingIntegrationTest {
     }
 
     @Test
+    void searchingPerLeaseGivesEveryLeaseItsOwnBestChunksAndEmbedsTheQuestionOnce() {
+        var leases = new java.util.LinkedHashSet<Long>();
+        var codes = new java.util.ArrayList<String>();
+        for (int i = 0; i < 5; i++) {
+            var lease = document(i % 2 == 0 ? "en" : "ar", i / 2);
+            leases.add(lease.leaseId());
+            codes.add(lease.code());
+        }
+
+        var result = retriever.retrievePerLease("late fee", leases, 2);
+
+        assertThat(result.chunks()).hasSize(10);
+        assertThat(result.chunks()).extracting(RetrievedChunk::documentCode)
+                .containsExactly(codes.get(0), codes.get(0), codes.get(1), codes.get(1), codes.get(2), codes.get(2),
+                        codes.get(3), codes.get(3), codes.get(4), codes.get(4));
+        assertThat(fake.queryCalls).containsExactly("late fee");
+        assertThat(result.retrieval()).isEqualTo(RetrievalMode.HYBRID);
+    }
+
+    @Test
+    void searchingPerLeaseKeepsEachLeasesShareBetweenOneAndEight() {
+        var lease = document("en", 0);
+
+        assertThat(retriever.retrievePerLease("pets", Set.of(lease.leaseId()), 0).chunks()).hasSize(1);
+        assertThat(retriever.retrievePerLease("pets", Set.of(lease.leaseId()), 100).chunks()).hasSize(8);
+    }
+
+    @Test
+    void searchingPerLeaseInAnEmptySetFindsNothingAndEmbedsNothing() {
+        var result = retriever.retrievePerLease("pets", Set.of(), 2);
+
+        assertThat(result.chunks()).isEmpty();
+        assertThat(fake.queryCalls).isEmpty();
+    }
+
+    @Test
     void anEmptySetOfLeasesFindsNothingAndDoesNotFallBackToAllOfThem() {
         var result = retriever.retrieve("notice period", Set.of());
 

@@ -10,6 +10,7 @@ import java.util.Collection;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -115,6 +116,21 @@ public class LeaseRetriever {
      * @throws IllegalArgumentException when the question is blank
      */
     public RetrievalResult retrieve(String question, Set<Long> leaseIds, int topK) {
+        return search(question, leaseIds, topK, false);
+    }
+
+    /**
+     * The best chunks of each lease on its own, so that a question about several leases is answered for every one of
+     * them and not for the few whose documents happen to match best. The question is embedded once.
+     *
+     * @param perLease how many chunks to return for each lease, kept between 1 and {@value #MAX_TOP_K}
+     * @param leaseIds the leases to search, in the order their chunks are returned
+     */
+    public RetrievalResult retrievePerLease(String question, Set<Long> leaseIds, int perLease) {
+        return search(question, leaseIds, perLease, true);
+    }
+
+    private RetrievalResult search(String question, Set<Long> leaseIds, int topK, boolean eachLease) {
         var text = capped(question);
         if (leaseIds != null && leaseIds.isEmpty()) {
             return new RetrievalResult(RetrievalMode.KEYWORD, List.of());
@@ -122,18 +138,23 @@ public class LeaseRetriever {
         var terms = QueryTerms.of(text);
         // Before the transaction: no database connection is held while a provider is waited for.
         var embedding = queryEmbedder.embed(text);
-        var scope = Scope.of(leaseIds);
+        var scopes = eachLease && leaseIds != null
+                ? leaseIds.stream().map(id -> Scope.of(Set.of(id))).toList()
+                : List.of(Scope.of(leaseIds));
         int limit = Math.clamp(topK, 1, MAX_TOP_K);
-        var chunks = readOnly.execute(status -> {
-            var lists = new EnumMap<CandidateList, List<Candidate>>(CandidateList.class);
-            embedding.ifPresent(vector -> lists.put(CandidateList.VECTOR, byEmbedding(vector, scope)));
-            if (!terms.isEmpty()) {
-                lists.put(CandidateList.FULL_TEXT, byFullText(terms, scope));
-                lists.put(CandidateList.TRIGRAM, byTrigrams(terms, scope));
-            }
-            return chunks(ReciprocalRankFusion.fuse(lists, limit));
-        });
+        var chunks = readOnly.execute(status -> scopes.stream()
+                .flatMap(scope -> searchIn(scope, terms, embedding, limit).stream()).toList());
         return new RetrievalResult(RetrievalMode.of(embedding.isPresent()), chunks);
+    }
+
+    private List<RetrievedChunk> searchIn(Scope scope, QueryTerms terms, Optional<float[]> embedding, int limit) {
+        var lists = new EnumMap<CandidateList, List<Candidate>>(CandidateList.class);
+        embedding.ifPresent(vector -> lists.put(CandidateList.VECTOR, byEmbedding(vector, scope)));
+        if (!terms.isEmpty()) {
+            lists.put(CandidateList.FULL_TEXT, byFullText(terms, scope));
+            lists.put(CandidateList.TRIGRAM, byTrigrams(terms, scope));
+        }
+        return chunks(ReciprocalRankFusion.fuse(lists, limit));
     }
 
     private static String capped(String question) {
