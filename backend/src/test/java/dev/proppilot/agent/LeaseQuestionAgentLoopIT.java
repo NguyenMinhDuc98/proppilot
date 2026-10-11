@@ -80,7 +80,7 @@ class LeaseQuestionAgentLoopIT extends FakeEmbeddingIntegrationTest {
     void aLeaseQuestionIsAnsweredFromTheClausesTheSearchReturnedAndTheWebAppGetsTheirSources() {
         var unit = unitOf("en");
         llm.thenToolCall("t1", "search_lease_documents",
-                        "{\"query\":\"late payment fee\",\"unit_code\":\"" + unit + "\",\"top_k\":2}")
+                        "{\"query\":\"scripted model late fee query\",\"unit_code\":\"" + unit + "\",\"top_k\":2}")
                 .thenText("The late fee is 2% of the rent per month [LSE-" + unit + "#5].");
 
         var result = ask("What is the late fee for unit " + unit + "?");
@@ -106,7 +106,7 @@ class LeaseQuestionAgentLoopIT extends FakeEmbeddingIntegrationTest {
         assertThat(shown.ui().get("sources").get(0).get("pdfPath").asText())
                 .isEqualTo("/api/lease-documents/LSE-" + unit + "/pdf");
         assertThat(llm.requests.toString()).doesNotContain("pdfPath");
-        assertThat(fake.queryCalls).containsExactly("late payment fee");
+        assertThat(fake.queryCalls).containsExactly("scripted model late fee query");
     }
 
     @Test

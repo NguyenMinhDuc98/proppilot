@@ -515,10 +515,11 @@ class SearchLeaseDocumentsToolIT extends FakeEmbeddingIntegrationTest {
             throws Exception {
         var lease = document("en", 0);
 
-        data(call("{\"query\":\"early termination fee\",\"unit_code\":\"" + lease.unit() + "\"}"));
+        data(call("{\"query\":\"transaction probe early termination fee\",\"unit_code\":\"" + lease.unit()
+                + "\"}"));
 
         assertThat(tool).isInstanceOf(OwnTransactionTool.class);
-        assertThat(fake.queryCalls).containsExactly("early termination fee");
+        assertThat(fake.queryCalls).containsExactly("transaction probe early termination fee");
         assertThat(fake.queryTransactions).containsExactly(false);
     }
 
