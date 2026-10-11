@@ -29,7 +29,7 @@ Flyway creates the schema and seed data on the first backend start; nothing to r
    - `CORS_ALLOWED_ORIGINS` = your Vercel URL (set a placeholder first, update after step 3)
    - `ANTHROPIC_API_KEY` only if you switch `LLM_PROVIDER` to `anthropic`
    - `EMBEDDING_PROVIDER` and `VOYAGE_API_KEY`, only to turn on embeddings for the lease search (section 5); leave `EMBEDDING_PROVIDER` unset or `none` otherwise, and never blank
-   - `ADMIN_TOKEN` (24 or more characters, `openssl rand -hex 24`): it switches on the admin endpoints, and the nightly demo reset in step 6 needs it
+   - `ADMIN_TOKEN` (24 or more characters, `openssl rand -hex 24`): it switches on the admin endpoints, and the nightly demo reset in section 7 needs it
 4. Wait for the deploy; `https://<service>.onrender.com/actuator/health` should return `{"status":"UP"}`.
 5. The first start after this version is deployed applies migrations `V5` and `V6`, and then writes the lease documents in a background thread, so the health check does not wait for them. See section 5 for what to expect.
 
@@ -48,7 +48,7 @@ Open the Vercel URL, switch to Arabic with the language button, and ask a questi
 2. Keep `CHAT_DAILY_LIMIT` and `CHAT_RATE_LIMIT_PER_MINUTE` low so a public demo cannot run up your bill. Also set a monthly spend limit in the Anthropic console.
 3. Run the read questions against the live URL and paste the table into the README, with the date and the commit it was measured at:
    `node evals/run.mjs --only en-,ar- --url https://<service>.onrender.com --delay-ms 7000` (the delay respects the per-minute rate limit). The 20 questions use 20 of the day's `CHAT_DAILY_LIMIT`, and they expect the seeded data, which visitors can change by approving payments. Run them soon after the nightly reset, or restore the seed first: `curl -X POST https://<service>.onrender.com/api/admin/reset -H "X-Admin-Token: <ADMIN_TOKEN>"`.
-4. The 16 lease cases (`--only rag-`) only read, so they can run against the live URL at any time. They use 16 of the day's `CHAT_DAILY_LIMIT`, and they expect all 30 documents. The two combined cases (`rag-11`, `rag-12`) expect the leases that `V6` made end 49 and 56 days after it ran on that database, so they stop matching once those dates have passed; that says nothing about the assistant.
+4. The 16 lease cases only read, so they can run against the live URL at any time: `node evals/run.mjs --only rag- --url https://<service>.onrender.com --delay-ms 7000`. Keep the delay: the blueprint allows 10 chat requests a minute, and the runner sends the next question as soon as an answer ends, so without it the later cases get HTTP 429 and fail for a reason that has nothing to do with the assistant. They use 16 of the day's `CHAT_DAILY_LIMIT`, and they expect all 30 documents. The two combined cases (`rag-11`, `rag-12`) expect the leases that `V6` made end 49 and 56 days after it ran on that database, so they stop matching once those dates have passed; that says nothing about the assistant.
 5. Keep the 6 write cases (`--only write-`) out of that run and out of that table. Every run leaves 6 proposals on the Activity page for all visitors to see and uses 6 of the day's proposals and of the daily chat limit, and the two payment cases pass only while unit A-504 has at least SAR 4,950 outstanding, so one approved payment makes them fail for a reason that has nothing to do with the model. Run them against a local stack, or on the live URL straight after a reset, and report their result on its own.
 
 ## 5. Lease search and embeddings

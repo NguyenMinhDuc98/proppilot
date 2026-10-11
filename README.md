@@ -306,7 +306,7 @@ The 16 lease cases (`rag-01` to `rag-16`) ask for the late fee by unit and by te
 
 Two limits of these cases, so that they are not read as more than they are:
 
-- They only read, so they can run against a public deployment at any time, but they expect all 30 documents. The two combined cases (`rag-11`, `rag-12`) expect the leases that `V6` made end 49 and 56 days after it ran on that database, so on a database older than 49 days they fail for a reason that has nothing to do with the assistant.
+- They only read, so they can run against a public deployment at any time, but they expect all 30 documents. A deployment answers 10 chat requests a minute by default and the runner does not wait between questions, so against one add `--delay-ms 7000`; without it the later cases fail with HTTP 429. The two combined cases (`rag-11`, `rag-12`) expect the leases that `V6` made end 49 and 56 days after it ran on that database, so on a database older than 49 days they fail for a reason that has nothing to do with the assistant.
 - The offline assistant does not filter the combined question by "90 days": it lists the leases that end and quotes the notice clause of each. The case checks that the two leases that need 90 days are listed and cited, not that the others are left out, because the offline answer would fail that. I have run these cases against the offline assistant only; there is no Claude result for them yet, and none with embeddings on.
 
 ```bash
@@ -402,7 +402,7 @@ For the lease search: PDF generation and the text read back from it for both lan
 - Chat endpoint: per-client rate limit, global daily cap, max message length, bounded history (item count and size), per-question run deadline.
 - Visitors' question text is never public: `/api/stats` returns aggregates only, and `/api/admin/runs` needs an `ADMIN_TOKEN` header (compared in constant time, never accepted in a URL).
 - The API key lives only in the backend environment; CORS is restricted to configured frontend origins.
-- Tools take typed inputs. Six only read, and `draft_tenant_message` returns a draft and never sends anything. The three write tools only store a proposal; a person's approval, with an idempotency key, is the only thing that changes data, and it is audited. Nothing is ever delivered to a tenant.
+- Tools take typed inputs. Eight only read, and `draft_tenant_message` returns a draft and never sends anything. The three write tools only store a proposal; a person's approval, with an idempotency key, is the only thing that changes data, and it is audited. Nothing is ever delivered to a tenant.
 - Write actions are capped per question, per day and per client per minute, and the public demo's data is restored every night (see [Human-in-the-loop write actions](#human-in-the-loop-write-actions)).
 - Tool failures never leak internals to the model or the user, and raw LLM provider errors are logged server-side only.
 - Lease text is data: the search tool cannot write, its result says so before anything else, and a reply may search the leases at most three times (each search embeds the question with a paid provider). The Voyage key is read only by the backend and redacted from logged replies, and `POST /api/admin/rag/reindex` needs the admin token. The lease PDFs are public because they hold only fake data.
