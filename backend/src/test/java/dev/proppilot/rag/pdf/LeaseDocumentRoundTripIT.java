@@ -75,6 +75,33 @@ class LeaseDocumentRoundTripIT extends CorpusIntegrationTest {
         assertThat(checked).containsExactlyInAnyOrder("en", "ar");
     }
 
+    @Test
+    void inEveryArabicDocumentTheUnitCodeAndTheBuildingNameAreOnTheLinesOfTheirLabels() {
+        int arabic = 0;
+        for (var facts : leases.firstActive(30)) {
+            if (!facts.language().rightToLeft()) {
+                continue;
+            }
+            var firstPage = extractor.pages(jdbc.queryForObject(
+                    "select pdf from lease_documents where code = ?", byte[].class, facts.documentCode())).get(0);
+
+            var unit = lineWith(firstPage, "رقم الوحدة");
+            var building = lineWith(firstPage, "اسم المبنى");
+
+            assertThat(unit).as(facts.documentCode()).contains(facts.unitCode()).doesNotContain(facts.buildingName());
+            assertThat(building).as(facts.documentCode()).contains(facts.buildingName())
+                    .doesNotContain(facts.unitCode());
+            arabic++;
+        }
+        assertThat(arabic).isGreaterThanOrEqualTo(5);
+    }
+
+    private static String lineWith(String page, String label) {
+        var lines = page.lines().filter(line -> line.contains(label)).toList();
+        assertThat(lines).as("lines with " + label).hasSize(1);
+        return lines.get(0);
+    }
+
     private static LeaseText written(LeaseFacts facts, int position) {
         var terms = LeaseTerms.of(facts.leaseId());
         if (position == LeaseDocumentSeeder.PLANTED_INSTRUCTION_POSITION) {

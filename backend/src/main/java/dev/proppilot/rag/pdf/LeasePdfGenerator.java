@@ -18,7 +18,7 @@ public class LeasePdfGenerator {
      * Stored with every document. Raise it whenever a lease would get a different document: a change to a template,
      * to {@link LeaseTerms} or to the layout. Documents of another version are written again at startup.
      */
-    public static final int VERSION = 1;
+    public static final int VERSION = 2;
 
     private final LeaseTemplate english = new EnglishLeaseTemplate();
     private final LeaseTemplate arabic = new ArabicLeaseTemplate();

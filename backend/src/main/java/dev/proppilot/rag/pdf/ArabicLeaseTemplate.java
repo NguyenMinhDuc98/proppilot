@@ -15,6 +15,10 @@ import java.util.List;
 /**
  * The Arabic lease document. It is written as an Arabic contract reads, not translated word for word, and keeps ASCII
  * digits like the rest of the app. Building names and addresses stay in the Latin letters they are stored in.
+ *
+ * <p>A line holds at most one Latin run: unit code, building name and address each have a line of their own. Text
+ * extraction moves Latin runs about in a right-to-left line, and two of them in one line could come back in each
+ * other's place; one on a line can only move to the other end of it.
  */
 final class ArabicLeaseTemplate implements LeaseTemplate {
 
@@ -58,11 +62,12 @@ final class ArabicLeaseTemplate implements LeaseTemplate {
                         format("المؤجر: %s، وتمثلها إدارة العقار (ويشار إليها فيما يلي باسم \"المؤجر\").", LANDLORD),
                         format("المستأجر: %s (ويشار إليه فيما يلي باسم \"المستأجر\").", f.tenantName()))),
                 new LeaseText.Section("العقار المؤجر", List.of(
-                        format("الوحدة %s في الدور %d، وهي شقة مكونة من %s بمساحة %d متر مربع، في مبنى %s بمدينة %s "
+                        format("رقم الوحدة: %s", f.unitCode()),
+                        format("اسم المبنى: %s", f.buildingName()),
+                        format("العنوان: %s", f.address()),
+                        format("الوصف: شقة في الدور %d مكونة من %s بمساحة %d متر مربع في مدينة %s "
                                 + "(ويشار إليها فيما يلي باسم \"العقار\").",
-                                f.unitCode(), f.floor(), bedrooms(f.bedrooms()), f.areaSqm(),
-                                        f.buildingName(), f.city()),
-                        format("العنوان: %s.", f.address()))),
+                                f.floor(), bedrooms(f.bedrooms()), f.areaSqm(), f.city()))),
                 new LeaseText.Section("مدة العقد والإيجار", List.of(
                         format("تبدأ مدة العقد في %s وتنتهي في %s (ويشار إليها فيما يلي باسم \"المدة\").",
                                 date(f.startDate()), date(f.endDate())),

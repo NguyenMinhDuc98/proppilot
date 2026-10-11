@@ -7,6 +7,8 @@ import dev.proppilot.rag.LeaseFacts;
 import dev.proppilot.rag.LeaseFixtures;
 import dev.proppilot.rag.LeaseTerms;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.stream.Collectors;
@@ -118,6 +120,34 @@ class LeasePdfGeneratorTest {
     }
 
     @Test
+    void anArabicLineHasAtMostOneLatinRunSoExtractionCannotSwapTwoOfThem() {
+        var facts = LeaseFixtures.arabic();
+        var terms = withAnnex(LeaseTerms.of(facts.leaseId()), true).withPlantedInstruction();
+
+        var written = new ArabicLeaseTemplate().write(facts, terms);
+
+        var lines = new ArrayList<String>(List.of(written.title(), written.reference()));
+        written.preamble().forEach(section -> lines.addAll(section.lines()));
+        written.clauses().forEach(clause -> lines.addAll(clause.paragraphs()));
+        lines.addAll(written.signatureLines());
+        assertThat(lines).isNotEmpty().allSatisfy(line -> assertThat(latinRuns(line)).as(line).isLessThanOrEqualTo(1));
+        assertThat(lines.stream().filter(line -> latinRuns(line) == 1)).as("lines with a unit code or a name")
+                .hasSizeGreaterThanOrEqualTo(4);
+    }
+
+    @Test
+    void anArabicDocumentKeepsTheUnitCodeAndTheBuildingNameOnTheLinesOfTheirOwnLabels() {
+        var facts = LeaseFixtures.arabic();
+
+        var firstPage = extractor.pages(generator.generate(facts, LeaseTerms.of(facts.leaseId()))).get(0);
+
+        var unit = lineWith(firstPage, "رقم الوحدة");
+        var building = lineWith(firstPage, "اسم المبنى");
+        assertThat(unit).contains(facts.unitCode()).doesNotContain(facts.buildingName());
+        assertThat(building).contains(facts.buildingName()).doesNotContain(facts.unitCode());
+    }
+
+    @Test
     void theLongAnnexIsInTheDocumentsOfLeasesThatCarryItAndOnlyThose() {
         var facts = LeaseFixtures.english();
         var with = withAnnex(LeaseTerms.of(facts.leaseId()), true);
@@ -155,6 +185,21 @@ class LeasePdfGeneratorTest {
     private String textOf(LeaseFacts facts, LeaseTerms terms) {
         return extractor.pages(generator.generate(facts, terms)).stream().collect(Collectors.joining(" "))
                 .replace('\n', ' ');
+    }
+
+    /** How many separate stretches of Latin letters the line holds, with the Arabic words between them. */
+    private static long latinRuns(String line) {
+        return Arrays.stream(line.split("\\p{IsArabic}+")).filter(LeasePdfGeneratorTest::hasLatinLetter).count();
+    }
+
+    private static boolean hasLatinLetter(String text) {
+        return text.chars().anyMatch(c -> (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'));
+    }
+
+    private static String lineWith(String page, String label) {
+        var lines = page.lines().filter(line -> line.contains(label)).toList();
+        assertThat(lines).as("lines with " + label).hasSize(1);
+        return lines.get(0);
     }
 
     private static LeaseTemplate template(LeaseFacts facts) {
