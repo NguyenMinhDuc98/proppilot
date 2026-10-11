@@ -6,6 +6,8 @@
 // A question passes when every `expect` entry appears in the streamed answer, no `absent` entry does, and every tool
 // in `tools` was called. An entry is a string, or an array of alternative wordings of which any one counts. Matching
 // is case-insensitive and ignores number formatting (4,800 = 4800 = ٤٨٠٠), because models format numbers freely.
+// An answer the server revised (GUARDRAIL_MODE=retry) is graded as the one that was delivered; each result keeps the
+// guardrail status of its run, and the values that it could not match to the data.
 // Two optional fields are for the lease search: `mustCite` (a document code such as LSE-A-203, or an array of them)
 // needs a citation marker of that document in the answer, and `absentTools` lists tools that must not be called.
 // Grading is in grade.mjs. Start the backend with CHAT_RATE_LIMIT_PER_MINUTE=1000 to run without throttling.
@@ -19,7 +21,8 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { grade } from './grade.mjs'
-import { summarize, summarizeByModel } from './summary.mjs'
+import { apply, newRun } from './stream.mjs'
+import { summarize, summarizeByModel, summarizeGuardrail } from './summary.mjs'
 
 const args = new Map()
 for (let i = 2; i < process.argv.length; i++) {
@@ -57,13 +60,8 @@ async function ask(question) {
     body: JSON.stringify({ message: question, history: [] }),
   })
   if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
-  const run = { answer: '', tools: [], done: null, error: null }
-  for await (const { event, data } of sse(response)) {
-    if (event === 'token') run.answer += data.text
-    else if (event === 'tool_call') run.tools.push(data.name)
-    else if (event === 'done') run.done = data
-    else if (event === 'error') run.error = data.message
-  }
+  const run = newRun()
+  for await (const { event, data } of sse(response)) apply(run, event, data)
   return run
 }
 
@@ -84,6 +82,7 @@ for (const item of questions) {
       latencyMs: run.done?.latencyMs ?? Date.now() - started,
       costUsd: run.done?.costUsd ?? 0,
       provider: run.done?.provider, model: run.done?.model,
+      guardrailStatus: run.done?.guardrailStatus, unverified: run.unverified,
       answer: run.answer, tools: run.tools,
     })
   } catch (error) {
@@ -102,16 +101,20 @@ for (const item of questions) {
 const overall = summarize(results)
 const provider = results.find((r) => r.provider)?.provider
 const models = summarizeByModel(results)
+const guardrail = summarizeGuardrail(results)
 const rows = [['All', overall], ['English', summarize(results.filter((r) => r.lang === 'en'))], ['Arabic', summarize(results.filter((r) => r.lang === 'ar'))]]
 // With more than one model answering, each one's averages are shown: the rows above mix them.
 if (Object.keys(models).length > 1) rows.push(...Object.entries(models))
 
 console.log(`\nProvider: ${provider ?? '?'} (${Object.keys(models).join(', ') || '?'})`)
+if (Object.keys(guardrail).length) {
+  console.log(`Guardrail: ${Object.entries(guardrail).map(([status, count]) => `${status} ${count}`).join(', ')}`)
+}
 console.log('| Set | Passed | Pass rate | Avg cost / question | Avg latency |')
 console.log('|---|---|---|---|---|')
 for (const [name, s] of rows) {
   console.log(`| ${name} | ${s.passed}/${s.total} | ${(s.passRate * 100).toFixed(0)}% | $${s.avgCostUsd.toFixed(5)} | ${Math.round(s.avgLatencyMs)} ms |`)
 }
 
-await writeFile(join(dir, 'results.json'), JSON.stringify({ ranAt: new Date().toISOString(), provider, models, overall, results }, null, 2))
+await writeFile(join(dir, 'results.json'), JSON.stringify({ ranAt: new Date().toISOString(), provider, models, guardrail, overall, results }, null, 2))
 process.exit(overall.passed === overall.total ? 0 : 1)

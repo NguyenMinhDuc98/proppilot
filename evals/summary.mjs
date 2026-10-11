@@ -27,3 +27,16 @@ export function summarizeByModel(results) {
   }
   return Object.fromEntries([...byModel].map(([model, rows]) => [model, summarize(rows)]))
 }
+
+/**
+ * How many answers each guardrail status describes: OK, FLAGGED (values the data does not support), RETRIED_OK and
+ * RETRIED_FLAGGED (the model was asked again). A result without a status, from a request that failed or a server whose
+ * guardrail is off, counts for none.
+ */
+export function summarizeGuardrail(results) {
+  const counts = {}
+  for (const { guardrailStatus } of results) {
+    if (guardrailStatus) counts[guardrailStatus] = (counts[guardrailStatus] ?? 0) + 1
+  }
+  return counts
+}

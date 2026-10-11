@@ -1,7 +1,7 @@
 // node --test evals/summary.test.mjs
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { summarize, summarizeByModel } from './summary.mjs'
+import { summarize, summarizeByModel, summarizeGuardrail } from './summary.mjs'
 
 const result = (model, pass, costUsd, latencyMs) => ({ model, pass, costUsd, latencyMs })
 
@@ -33,4 +33,21 @@ test('a run that failed before a model answered belongs to no model', () => {
   const byModel = summarizeByModel([result(undefined, false, 0, 0), result('rule-based', true, 0, 12)])
 
   assert.deepEqual(Object.keys(byModel), ['rule-based'])
+})
+
+test('the answers are counted by what the guardrail found, and a result without a status counts for none', () => {
+  const counts = summarizeGuardrail([
+    { guardrailStatus: 'OK' },
+    { guardrailStatus: 'FLAGGED' },
+    { guardrailStatus: 'OK' },
+    { guardrailStatus: 'RETRIED_OK' },
+    { guardrailStatus: null },
+    {},
+  ])
+
+  assert.deepEqual(counts, { OK: 2, FLAGGED: 1, RETRIED_OK: 1 })
+})
+
+test('a run of a server whose guardrail is off has no counts', () => {
+  assert.deepEqual(summarizeGuardrail([{ pass: true }, { pass: false }]), {})
 })
