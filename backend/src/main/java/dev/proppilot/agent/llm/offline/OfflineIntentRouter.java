@@ -28,6 +28,9 @@ final class OfflineIntentRouter {
 
     static final Pattern UNIT_CODE = Pattern.compile("\\b([A-Fa-f])-?(\\d{3})\\b");
     private static final Pattern BUILDING = Pattern.compile("(?:building|tower|مبنى|المبنى|برج)\\s*([A-Fa-f])\\b", Pattern.CASE_INSENSITIVE);
+    /** The largest min_days_overdue the find_overdue_tenants tool accepts. */
+    private static final int MAX_OVERDUE_DAYS = 3650;
+    private static final Pattern ANY_NUMBER = Pattern.compile("(\\d+)");
     private static final Pattern DAYS = Pattern.compile("(\\d+)\\s*(?:days?|day|يوم|أيام|ايام)");
     private static final Pattern BEDROOMS = Pattern.compile("(\\d)\\s*(?:-?\\s*bed(?:room)?s?|br\\b|غرف|غرفة)");
     private static final Pattern MONTH = Pattern.compile("\\b(20\\d{2}-(?:0[1-9]|1[0-2]))\\b");
@@ -74,8 +77,8 @@ final class OfflineIntentRouter {
         }
         if (hasAny(q, "late", "overdue", "arrears", "behind on", "متأخر", "تأخر", "متأخرين")) {
             var call = call("find_overdue_tenants");
-            first(DAYS, q).ifPresentOrElse(d -> call.args().put("min_days_overdue", Integer.parseInt(d)),
-                    () -> first(Pattern.compile("(\\d+)"), q).ifPresent(d -> call.args().put("min_days_overdue", Integer.parseInt(d))));
+            first(DAYS, q).ifPresentOrElse(d -> call.args().put("min_days_overdue", boundedDays(d)),
+                    () -> first(ANY_NUMBER, q).ifPresent(d -> call.args().put("min_days_overdue", boundedDays(d))));
             return Optional.of(call);
         }
         if (hasAny(q, "occupancy", "collected", "collection", "occupied rate", "إشغال", "الإشغال", "تحصيل", "المحصل", "محصل")) {
@@ -134,6 +137,20 @@ final class OfflineIntentRouter {
             call.args().put("language", "EN");
         }
         return Optional.of(call);
+    }
+
+    /**
+     * Digits as a number of days, kept at what the tool accepts. A long run of digits is no int, but it still means
+     * "very many", so it becomes the largest threshold and not an exception that would fail the whole question.
+     */
+    private static int boundedDays(String digits) {
+        int start = 0;
+        while (start < digits.length() - 1 && digits.charAt(start) == '0') {
+            start++;
+        }
+        var significant = digits.substring(start);
+        return significant.length() > String.valueOf(MAX_OVERDUE_DAYS).length()
+                ? MAX_OVERDUE_DAYS : Math.min(Integer.parseInt(significant), MAX_OVERDUE_DAYS);
     }
 
     private Call searchUnits(String question, String q) {

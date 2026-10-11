@@ -54,6 +54,26 @@ class OfflineLlmClientTest {
     }
 
     @Test
+    void aDayThresholdTooBigForAnIntegerIsKeptWithinWhatTheToolAccepts() {
+        for (var days : new String[] {"3650", "3651", "99999", "2147483648", "99999999999999999999",
+                "9".repeat(480)}) {
+            var call = route("tenants more than " + days + " days overdue");
+
+            assertThat(call.name()).isEqualTo("find_overdue_tenants");
+            assertThat(call.input().get("min_days_overdue").asInt()).as(days.length() + " digits")
+                    .isEqualTo(Math.min(3650, days.length() > 5 ? 3650 : Integer.parseInt(days)));
+        }
+    }
+
+    @Test
+    void aBareNumberTooBigForAnIntegerIsKeptWithinWhatTheToolAccepts() {
+        var call = route("who is overdue by 99999999999999999999");
+
+        assertThat(call.name()).isEqualTo("find_overdue_tenants");
+        assertThat(call.input().get("min_days_overdue").asInt()).isEqualTo(3650);
+    }
+
+    @Test
     void draftInArabicRequestUsesArabicLanguageAndUnitCode() {
         var call = route("Draft a polite rent reminder in Arabic for tenant Ahmed in unit A-203");
 

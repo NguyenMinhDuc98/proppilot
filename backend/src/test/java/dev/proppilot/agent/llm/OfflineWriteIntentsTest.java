@@ -228,13 +228,34 @@ class OfflineWriteIntentsTest {
         assertThat(route(question).input().get("amount").decimalValue()).isEqualByComparingTo(amount);
     }
 
+    @Test
+    void theLargestAmountReadIsNineDigitsAndTwoDecimals() {
+        assertThat(route("Record a payment of 999,999,999.99 for unit A-203").input().get("amount").decimalValue())
+                .isEqualByComparingTo("999999999.99");
+        assertThat(route("Record a payment of 999999999 for unit A-203").input().get("amount").decimalValue())
+                .isEqualByComparingTo("999999999");
+    }
+
+    @Test
+    void aNumberOfFiveHundredDigitsIsNotAnAmountAndIsAnsweredQuickly() {
+        var question = "Record a payment of " + "9".repeat(470) + " for unit A-203";
+
+        var call = Assertions.assertTimeoutPreemptively(Duration.ofSeconds(2), () -> route(question));
+
+        assertThat(call.name()).isEqualTo("record_payment");
+        assertThat(call.input().has("amount")).isFalse();
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {"Record a payment of 2.5k for unit A-203", "Record a payment of 2.500,50 for unit A-203",
             "Record a payment of 1.000 for unit A-203", "Record a payment for unit A-203 on March 10",
             "Record a payment for unit A-203 on 10/03/2026", "Record a payment of 3 months for unit A-203",
             "Record a payment of 5 million for unit A-203", "Record a payment for unit A-203 on the 10th",
             "Record a payment of 100 000 for unit A-203", "Record a payment of 1e3 for unit A-203",
-            "Record a payment of 12,34 for unit A-203"})
+            "Record a payment of 12,34 for unit A-203", "Record a payment of 1000000000 for unit A-203",
+            "Record a payment of 1,000,000,000.00 for unit A-203",
+            "Record a payment of 99999999999999999999999 SAR for unit A-203",
+            "Record a payment of 0000000000001 for unit A-203"})
     void anAmountThatCannotBeTrustedIsLeftOutSoTheToolAsksForIt(String question) {
         var call = route(question);
 

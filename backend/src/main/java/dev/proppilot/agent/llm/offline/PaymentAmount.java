@@ -52,6 +52,13 @@ final class PaymentAmount {
     private static final Pattern GROUPED_WITH_A_SPACE = Pattern.compile("\\s\\d{3}(?!\\d)", FLAGS);
     private static final Pattern GLUED_TO_A_WORD = Pattern.compile("\\p{L}", FLAGS);
 
+    /**
+     * 999999999.99 is the largest amount read: nine digits before the point (the decimals are already limited to two).
+     * A bigger number is not a payment and is left out like any other amount that cannot be trusted, so the tool asks
+     * for it.
+     */
+    private static final int MAX_INTEGER_DIGITS = 9;
+
     private record Candidate(BigDecimal value, boolean introduced) {
     }
 
@@ -85,7 +92,12 @@ final class PaymentAmount {
         if (!WRITTEN_AS_MONEY.matcher(digits).matches() || isOnlyPartOfAnotherNumber(after)) {
             return null;
         }
-        var value = new BigDecimal(digits.replace(",", ""));
+        var plain = digits.replace(",", "");
+        int point = plain.indexOf('.');
+        if ((point < 0 ? plain.length() : point) > MAX_INTEGER_DIGITS) {
+            return null;
+        }
+        var value = new BigDecimal(plain);
         return "-".equals(sign) ? value.negate() : value;
     }
 
