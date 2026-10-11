@@ -12,7 +12,7 @@ describe('fetchInfo', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     expect(await fetchInfo()).toEqual(info)
-    expect(fetchMock).toHaveBeenCalledWith('/api/info')
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/info')
   })
 
   it('rejects when the server answers with an error', async () => {

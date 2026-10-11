@@ -56,3 +56,9 @@ export function formatCountdown(ms: number): string {
   const seconds = Math.ceil(ms / 1000)
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
 }
+
+/** The first `max` characters of `text`, with an ellipsis when something was left out; never half a character. */
+export function truncate(text: string, max: number): string {
+  const characters = Array.from(text)
+  return characters.length <= max ? text : `${characters.slice(0, max).join('').trimEnd()}…`
+}

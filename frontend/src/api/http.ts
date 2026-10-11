@@ -29,13 +29,17 @@ export async function failure(response: Response): Promise<ApiError> {
   return new ApiError(response.status, detail, code)
 }
 
-export async function getJson<T>(path: string, params?: Record<string, string | number | undefined>): Promise<T> {
+export async function getJson<T>(
+  path: string,
+  params?: Record<string, string | number | undefined>,
+  headers?: Record<string, string>,
+): Promise<T> {
   const query = new URLSearchParams()
   Object.entries(params ?? {}).forEach(([key, value]) => {
     if (value !== undefined && value !== '') query.set(key, String(value))
   })
   const suffix = query.size ? `?${query}` : ''
-  const response = await fetch(apiUrl(path) + suffix)
+  const response = await fetch(apiUrl(path) + suffix, { headers })
   if (!response.ok) throw await failure(response)
   return response.json() as Promise<T>
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatCountdown, formatDate, formatDateTime, formatMoney, formatMonth } from './format'
+import { formatCountdown, formatDate, formatDateTime, formatMoney, formatMonth, truncate } from './format'
 
 describe('formatMoney', () => {
   it('always shows two decimals with Latin digits', () => {
@@ -29,5 +29,27 @@ describe('formatCountdown', () => {
     expect(formatCountdown(61_000)).toBe('1:01')
     expect(formatCountdown(59_001)).toBe('1:00')
     expect(formatCountdown(0)).toBe('0:00')
+  })
+})
+
+describe('truncate', () => {
+  it('leaves a text that fits as it is', () => {
+    expect(truncate('Who is late?', 12)).toBe('Who is late?')
+  })
+
+  it('cuts a longer text and marks the cut, without a space left before the mark', () => {
+    expect(truncate('Who is more than 30 days late', 12)).toBe('Who is more…')
+    expect(truncate('Who is late on rent', 7)).toBe('Who is…')
+  })
+
+  it('counts characters, so a letter that takes two code units is never cut in half', () => {
+    const text = '😀'.repeat(5)
+
+    expect(truncate(text, 3)).toBe('😀😀😀…')
+    expect(truncate(text, 5)).toBe(text)
+  })
+
+  it('cuts Arabic text by its letters', () => {
+    expect(truncate('ما الوحدات الشاغرة', 8)).toBe('ما الوحد…')
   })
 })

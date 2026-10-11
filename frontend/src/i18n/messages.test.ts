@@ -42,4 +42,40 @@ describe('message catalogues', () => {
     for (const [path, message] of lease(ar)) expect(message.trim(), path).not.toBe('')
     expect(new Map(lease(ar)).get('lease.openPdf')).not.toBe(new Map(lease(en)).get('lease.openPdf'))
   })
+
+  it.each(['chat.rechecking', 'trace.', 'guardrail.', 'admin.', 'stats.'])(
+    'translate the messages of %s into Arabic instead of repeating the English',
+    (prefix) => {
+      const arabic = new Map(messages(ar))
+      const checked = messages(en).filter(([path]) => path.startsWith(prefix))
+      expect(checked.length).toBeGreaterThan(0)
+      for (const [path, english] of checked) {
+        const translated = arabic.get(path) ?? ''
+        expect(translated.trim(), path).not.toBe('')
+        expect(translated, path).not.toBe(english)
+        expect(translated, path).toMatch(/[\u0600-\u06FF]/)
+      }
+    },
+  )
+
+  it('states the three reasons for a routed model, the verdicts of the guardrail and the filters in both languages', () => {
+    const wanted = [
+      'trace.routed.COMPLEX', 'trace.routed.GUARDRAIL_RETRY', 'trace.routed.FALLBACK',
+      'trace.checks.OK', 'trace.checks.FLAGGED', 'trace.checks.RETRIED_OK', 'trace.checks.RETRIED_FLAGGED',
+      'guardrail.flagged', 'guardrail.rechecked',
+      'admin.disabled', 'admin.rejected', 'admin.loadOlder',
+      'admin.filters.status', 'admin.filters.model', 'admin.filters.flaggedOnly',
+    ]
+    const english = new Map(messages(en))
+    const arabic = new Map(messages(ar))
+
+    for (const path of wanted) {
+      expect(english.get(path), path).toBeTruthy()
+      expect(arabic.get(path), path).toBeTruthy()
+    }
+    expect(english.get('guardrail.flagged')).toBe('Some figures could not be checked against the data')
+    expect(english.get('trace.routed.COMPLEX')).toBe('Larger model: complex question')
+    expect(english.get('trace.routed.GUARDRAIL_RETRY')).toBe('Re-checked after a figure could not be verified')
+    expect(english.get('trace.routed.FALLBACK')).toBe('Fallback model: the first one was busy')
+  })
 })
