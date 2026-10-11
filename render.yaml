@@ -38,10 +38,28 @@ services:
       # ADMIN_TOKEN repository secret). 24+ characters (openssl rand -hex 24). Leave unset to switch the admin endpoints off.
       - key: ADMIN_TOKEN
         sync: false
-      # Optional, added in the dashboard when wanted and so not listed here: OTEL_ENABLED=true exports every question as
-      # OpenTelemetry spans (never prompts, answers or tool arguments) to OTEL_EXPORTER_OTLP_ENDPOINT, with
-      # OTEL_EXPORTER_OTLP_HEADERS for its credentials and OTEL_SERVICE_NAME (default proppilot). Give the endpoint
-      # whenever it is on: an empty one stops the backend from starting. Unset means off.
+      # A larger model for the questions that are multi-step or complex, for a guardrail retry and as the fallback when
+      # ANTHROPIC_MODEL is overloaded (for example claude-sonnet-4-5). Set in the dashboard, like LLM_PROVIDER, and for
+      # the same reason. Unset or blank means there is no larger model: routing and the fallback to a second model are
+      # off and every question goes to ANTHROPIC_MODEL. Its prices default to Sonnet's; for another model also add
+      # LLM_LARGE_PRICE_INPUT_PER_MTOK and LLM_LARGE_PRICE_OUTPUT_PER_MTOK (USD per million tokens) in the dashboard.
+      - key: ANTHROPIC_MODEL_LARGE
+        sync: false
+      # Where OpenTelemetry sends its spans, an OTLP/HTTP address such as https://otlp.example.com. Set in the
+      # dashboard, for the same reason. Unset or blank means no export, even with OTEL_ENABLED set to true: the backend
+      # starts and logs a warning. OTEL_EXPORTER_OTLP_HEADERS (the collector's credentials, key=value pairs separated by
+      # commas) and OTEL_SERVICE_NAME (default proppilot) are optional and are added in the dashboard when wanted.
+      - key: OTEL_EXPORTER_OTLP_ENDPOINT
+        sync: false
+      # Given a value here, so a change to these three is a change to this file: the next blueprint sync restores what
+      # is written below over anything set in the dashboard. OTEL_ENABLED exports every question as spans (never a
+      # prompt, an answer or a tool's arguments) once OTEL_EXPORTER_OTLP_ENDPOINT is set; "false" exports nothing.
+      - key: PROMPT_CACHING
+        value: "true"
+      - key: GUARDRAIL_MODE
+        value: "warn"
+      - key: OTEL_ENABLED
+        value: "false"
       - key: CHAT_RATE_LIMIT_PER_MINUTE
         value: "10"
       - key: CHAT_DAILY_LIMIT
