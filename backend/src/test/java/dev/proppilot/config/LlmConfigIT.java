@@ -28,6 +28,7 @@ class LlmConfigIT extends PostgresIntegrationTest {
         assertThat(llmProps.maxTokens()).isEqualTo(2048);
         assertThat(llmProps.maxRetries()).isEqualTo(3);
         assertThat(llmProps.retryBaseDelayMs()).isEqualTo(1000);
+        assertThat(llmProps.promptCaching()).isTrue();
         assertThat(agentProps.runTimeoutSeconds()).isEqualTo(90);
     }
 }

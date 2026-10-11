@@ -3,8 +3,7 @@ package dev.proppilot.chat;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import dev.proppilot.agent.llm.Usage;
-import dev.proppilot.config.LlmProperties;
-import java.math.BigDecimal;
+import dev.proppilot.config.TestLlmProperties;
 import org.junit.jupiter.api.Test;
 
 class CostCalculatorTest {
@@ -12,8 +11,8 @@ class CostCalculatorTest {
     private final CostCalculator calculator = calculator("1.00", "5.00", "1.25", "0.10");
 
     private static CostCalculator calculator(String input, String output, String cacheWrite, String cacheRead) {
-        return new CostCalculator(new LlmProperties("anthropic", "k", "m", "u", 1024, 60, 3, 1000,
-                new BigDecimal(input), new BigDecimal(output), new BigDecimal(cacheWrite), new BigDecimal(cacheRead)));
+        return new CostCalculator(TestLlmProperties.defaults().prices(input, output)
+                .cacheMultipliers(cacheWrite, cacheRead).build());
     }
 
     @Test

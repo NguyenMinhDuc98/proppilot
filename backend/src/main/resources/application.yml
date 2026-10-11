@@ -41,6 +41,9 @@ proppilot:
     # What a prompt-cache write and read cost, as multiples of the input price (5-minute cache)
     cache-write-multiplier: ${LLM_CACHE_WRITE_MULTIPLIER:1.25}
     cache-read-multiplier: ${LLM_CACHE_READ_MULTIPLIER:0.10}
+    # Mark the tools, the system prompt and the conversation so far for the API to cache. The API caches only what is
+    # longer than a per-model minimum, so a hit is never assumed: the tokens it reports are recorded and priced
+    prompt-caching: ${PROMPT_CACHING:true}
   embedding:
     provider: ${EMBEDDING_PROVIDER:none}
     api-key: ${VOYAGE_API_KEY:}

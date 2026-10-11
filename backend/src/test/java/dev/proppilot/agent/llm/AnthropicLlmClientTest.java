@@ -3,12 +3,14 @@ package dev.proppilot.agent.llm;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.sun.net.httpserver.HttpServer;
 import dev.proppilot.agent.ErrorCode;
 import dev.proppilot.config.LlmProperties;
+import dev.proppilot.config.TestLlmProperties;
 import java.io.IOException;
-import java.math.BigDecimal;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
@@ -19,6 +21,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -30,8 +33,19 @@ import org.junit.jupiter.api.Test;
 class AnthropicLlmClientTest {
 
     private static final String API_KEY = "test-api-key-123";
+    private static final ObjectMapper JSON = new ObjectMapper();
     private static final LlmRequest REQUEST =
             new LlmRequest("system", List.of(Message.user("hi")), List.of(), Duration.ofSeconds(60));
+
+    /** A question, a tool call the model made and what the tool answered: the last block is a tool result. */
+    private static final LlmRequest CONVERSATION = new LlmRequest("system",
+            List.of(Message.user("how many units?"),
+                    new Message(Message.Role.ASSISTANT, List.of(new ContentBlock.ToolUse("t1", "lookup",
+                            JSON.createObjectNode().put("city", "Riyadh")))),
+                    new Message(Message.Role.USER, List.of(new ContentBlock.ToolResult("t1", "6 units found", false)))),
+            List.of(new ToolSpec("lookup", "Looks something up", JSON.createObjectNode().put("type", "object")),
+                    new ToolSpec("count", "Counts something", JSON.createObjectNode().put("type", "object"))),
+            Duration.ofSeconds(60));
 
     private static final String ANSWER_STREAM = """
             event: message_start
@@ -88,6 +102,7 @@ class AnthropicLlmClientTest {
 
     private final Queue<Reply> replies = new ConcurrentLinkedQueue<>();
     private final AtomicInteger requests = new AtomicInteger();
+    private final List<String> bodies = new CopyOnWriteArrayList<>();
     private final List<Duration> sleeps = new ArrayList<>();
     private final List<String> deltas = new ArrayList<>();
     private final ExecutorService handlers = Executors.newVirtualThreadPerTaskExecutor();
@@ -99,7 +114,7 @@ class AnthropicLlmClientTest {
         server.setExecutor(handlers);
         server.createContext("/v1/messages", exchange -> {
             requests.incrementAndGet();
-            exchange.getRequestBody().readAllBytes();
+            bodies.add(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
             var reply = replies.poll();
             if (reply == null) {
                 reply = Reply.status(418);
@@ -144,9 +159,14 @@ class AnthropicLlmClientTest {
     }
 
     private static LlmProperties props(int port, int timeoutSeconds, int maxRetries, int retryBaseDelayMs) {
-        return new LlmProperties("anthropic", API_KEY, "test-model", "http://127.0.0.1:" + port + "/v1/messages",
-                1024, timeoutSeconds, maxRetries, retryBaseDelayMs, BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ONE,
-                BigDecimal.ONE);
+        return TestLlmProperties.defaults().model("test-model").apiUrl("http://127.0.0.1:" + port + "/v1/messages")
+                .timeoutSeconds(timeoutSeconds).retries(maxRetries, retryBaseDelayMs).build();
+    }
+
+    /** A client for the body it builds, which needs no server. */
+    private static AnthropicLlmClient clientWithCaching(boolean promptCaching) {
+        var props = TestLlmProperties.defaults().model("test-model").promptCaching(promptCaching).build();
+        return new AnthropicLlmClient(props, JSON);
     }
 
     private LlmResponse complete() {
@@ -161,6 +181,69 @@ class AnthropicLlmClientTest {
 
         assertThat(client.buildBody(REQUEST).has("tools")).isFalse();
         assertThat(client.buildBody(withTool).get("tools")).hasSize(1);
+    }
+
+    @Test
+    void marksTheLastToolTheSystemPromptAndTheLastMessageBlockForCachingByDefault() throws Exception {
+        replies.add(Reply.stream(ANSWER_STREAM));
+
+        client(server.getAddress().getPort()).complete(CONVERSATION, deltas::add);
+
+        var body = JSON.readTree(bodies.get(0));
+        var ephemeral = JSON.readTree("{\"type\":\"ephemeral\"}");
+        assertThat(body.get("system")).isEqualTo(JSON.readTree(
+                "[{\"type\":\"text\",\"text\":\"system\",\"cache_control\":{\"type\":\"ephemeral\"}}]"));
+        assertThat(body.get("tools").get(0).has("cache_control")).isFalse();
+        assertThat(body.get("tools").get(1).get("cache_control")).isEqualTo(ephemeral);
+        var messages = body.get("messages");
+        assertThat(messages.get(0).get("content").get(0).has("cache_control")).isFalse();
+        assertThat(messages.get(1).get("content").get(0).has("cache_control")).isFalse();
+        assertThat(messages.get(2).get("content").get(0).get("cache_control")).isEqualTo(ephemeral);
+        assertThat(body.findValues("cache_control")).hasSize(3);
+    }
+
+    @Test
+    void sendsTheRequestWithNoCacheMarksWhenPromptCachingIsOff() {
+        var body = clientWithCaching(false).buildBody(CONVERSATION);
+
+        assertThat(body.toString()).isEqualTo("{\"model\":\"test-model\",\"max_tokens\":1024,\"stream\":true,"
+                + "\"system\":\"system\",\"tools\":["
+                + "{\"name\":\"lookup\",\"description\":\"Looks something up\",\"input_schema\":{\"type\":\"object\"}},"
+                + "{\"name\":\"count\",\"description\":\"Counts something\",\"input_schema\":{\"type\":\"object\"}}],"
+                + "\"messages\":["
+                + "{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"how many units?\"}]},"
+                + "{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"id\":\"t1\",\"name\":\"lookup\","
+                + "\"input\":{\"city\":\"Riyadh\"}}]},"
+                + "{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t1\","
+                + "\"content\":\"6 units found\",\"is_error\":false}]}]}");
+    }
+
+    @Test
+    void promptCachingChangesNothingInTheRequestButTheMarks() {
+        var off = clientWithCaching(false).buildBody(CONVERSATION);
+        var on = clientWithCaching(true).buildBody(CONVERSATION);
+
+        assertThat(on).isNotEqualTo(off);
+        assertThat(withoutCacheMarks(on)).isEqualTo(off);
+        assertThat(on.fieldNames()).toIterable().containsExactlyElementsOf(() -> off.fieldNames());
+    }
+
+    @Test
+    void marksOnlyTheSystemPromptAndTheConversationWhenNoToolsAreOffered() {
+        var body = clientWithCaching(true).buildBody(REQUEST);
+
+        assertThat(body.has("tools")).isFalse();
+        assertThat(body.get("system").get(0).has("cache_control")).isTrue();
+        assertThat(body.get("messages").get(0).get("content").get(0).has("cache_control")).isTrue();
+        assertThat(body.findValues("cache_control")).hasSize(2);
+    }
+
+    /** The request as it would have been without caching: the system prompt a plain string and no marks. */
+    private static JsonNode withoutCacheMarks(ObjectNode body) {
+        var copy = body.deepCopy();
+        copy.put("system", copy.get("system").get(0).get("text").asText());
+        copy.findParents("cache_control").forEach(parent -> ((ObjectNode) parent).remove("cache_control"));
+        return copy;
     }
 
     @Test

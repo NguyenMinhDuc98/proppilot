@@ -10,6 +10,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @param priceInputPerMtok USD per million input tokens that were neither read from nor written to the prompt cache
  * @param cacheWriteMultiplier the price of a token written to the prompt cache, as a multiple of the input price
  * @param cacheReadMultiplier the price of a token read from the prompt cache, as a multiple of the input price
+ * @param promptCaching whether requests mark the prompt prefix for the API to cache
  */
 @ConfigurationProperties(prefix = "proppilot.llm")
 public record LlmProperties(
@@ -24,5 +25,6 @@ public record LlmProperties(
         BigDecimal priceInputPerMtok,
         BigDecimal priceOutputPerMtok,
         BigDecimal cacheWriteMultiplier,
-        BigDecimal cacheReadMultiplier) {
+        BigDecimal cacheReadMultiplier,
+        boolean promptCaching) {
 }

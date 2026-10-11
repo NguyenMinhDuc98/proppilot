@@ -147,7 +147,38 @@ public class AnthropicLlmClient implements LlmClient {
             var node = messages.addObject().put("role", message.role().name().toLowerCase());
             addBlocks(node.putArray("content"), message);
         }
+        if (props.promptCaching()) {
+            markCacheBreakpoints(body);
+        }
         return body;
+    }
+
+    /**
+     * Marks where the prompt may be cached up to: the end of the tools, of the system prompt and of the conversation so
+     * far. A later call of the same run then reads what an earlier one wrote, and so does the next question, because
+     * the tools and the system prompt are the same from one to the next. That is three of the four breakpoints a
+     * request may have.
+     *
+     * <p>The API caches a prefix only when it is longer than a minimum that depends on the model (512 to 4096 tokens
+     * at the time of writing) and otherwise silently does not: the request is accepted and nothing is written. A marked
+     * request may therefore still be billed in full, which is why the cache tokens the API reports are recorded and
+     * priced, and why nothing here may assume a hit.
+     */
+    private void markCacheBreakpoints(ObjectNode body) {
+        var system = body.get("system").asText();
+        body.putArray("system").addObject().put("type", "text").put("text", system)
+                .set("cache_control", cacheControl());
+        var tools = body.path("tools");
+        if (tools.isArray()) {
+            ((ObjectNode) tools.get(tools.size() - 1)).set("cache_control", cacheControl());
+        }
+        var messages = body.get("messages");
+        var lastContent = (ArrayNode) messages.get(messages.size() - 1).get("content");
+        ((ObjectNode) lastContent.get(lastContent.size() - 1)).set("cache_control", cacheControl());
+    }
+
+    private ObjectNode cacheControl() {
+        return json.createObjectNode().put("type", "ephemeral");
     }
 
     private void addBlocks(ArrayNode content, Message message) {
