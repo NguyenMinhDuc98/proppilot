@@ -10,5 +10,3 @@ dist/
 .idea/
 .vscode/
 *.iml
-# eval output
-evals/results.json
