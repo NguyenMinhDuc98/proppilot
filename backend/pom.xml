@@ -60,7 +60,8 @@
             <artifactId>icu4j</artifactId>
             <version>78.3</version>
         </dependency>
-        <!-- OpenTelemetry, at the version of the Spring Boot BOM. Its classes are loaded only when OTEL_ENABLED is true. -->
+        <!-- OpenTelemetry, at the version of the Spring Boot BOM. Only the tracer uses it, and it is built only when OTEL_ENABLED
+             is true; Spring Boot's own OpenTelemetry auto-configuration is excluded in ProppilotApplication. -->
         <dependency>
             <groupId>io.opentelemetry</groupId>
             <artifactId>opentelemetry-api</artifactId>
