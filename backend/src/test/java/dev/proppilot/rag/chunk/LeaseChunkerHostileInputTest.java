@@ -1,10 +1,13 @@
 package dev.proppilot.rag.chunk;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.jupiter.api.Assertions.assertTimeout;
 
 import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.Test;
@@ -12,13 +15,14 @@ import org.junit.jupiter.api.Test;
 /**
  * Document text is not capped like a question is, and java.util.regex recurses once for each round of a repeated group,
  * so a long enough line in the wrong pattern overflows a small thread stack. Nothing in the chunker may depend on the
- * size or shape of the text: these run it on hostile text, and CI proves the margin by running them with a 256 KB
- * thread stack ({@code -DargLine=-Xss256k}).
+ * size or shape of the text: these run it on hostile text, on a thread with a 256 KB stack, a quarter of what the test
+ * thread has. A recursion that needs more than that fails here whatever the size of the text.
  */
 class LeaseChunkerHostileInputTest {
 
     private static final int HOSTILE = 200_000;
     private static final Duration LIMIT = Duration.ofSeconds(30);
+    private static final long SMALL_STACK_BYTES = 256 * 1024;
 
     private final LeaseChunker chunker = new LeaseChunker();
 
@@ -84,11 +88,29 @@ class LeaseChunkerHostileInputTest {
     void veryManyShortLinesAndVeryManyPages() {
         assertWellFormed(chunk("x\n".repeat(HOSTILE)));
         var pages = IntStream.range(0, 5_000).mapToObj(page -> page + " x\nPage " + page + " of 5000\n").toList();
-        assertWellFormed(assertTimeout(LIMIT, () -> chunker.chunk("LSE-A-504", pages)));
+        assertWellFormed(chunk(pages));
     }
 
     private List<LeaseChunk> chunk(String page) {
-        return assertTimeout(LIMIT, () -> chunker.chunk("LSE-A-504", List.of(page)));
+        return chunk(List.of(page));
+    }
+
+    /** Chunks the pages on a thread with a small stack, and fails when that overflows or takes too long. */
+    private List<LeaseChunk> chunk(List<String> pages) {
+        var executor = Executors.newSingleThreadExecutor(
+                work -> new Thread(null, work, "hostile-input", SMALL_STACK_BYTES));
+        try {
+            return executor.submit(() -> chunker.chunk("LSE-A-504", pages)).get(LIMIT.toSeconds(), TimeUnit.SECONDS);
+        } catch (ExecutionException e) {
+            throw new AssertionError("Chunking failed on a " + SMALL_STACK_BYTES / 1024 + " KB stack", e.getCause());
+        } catch (TimeoutException e) {
+            throw new AssertionError("Chunking took more than " + LIMIT, e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new AssertionError("Interrupted while chunking", e);
+        } finally {
+            executor.shutdownNow();
+        }
     }
 
     private static void assertWellFormed(List<LeaseChunk> chunks) {
