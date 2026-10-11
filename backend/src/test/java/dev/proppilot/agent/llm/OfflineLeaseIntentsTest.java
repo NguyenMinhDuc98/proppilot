@@ -393,6 +393,22 @@ class OfflineLeaseIntentsTest {
     }
 
     @Test
+    void longRunsOfWhiteSpaceAroundTheNumberOfAnArabicWindowAreReadInTimeProportionalToTheirLength() {
+        var spaces = " ".repeat(4_000);
+        var unreadable = "عقود تنتهي في" + spaces + "1" + spaces + "x";
+        var dual = "عقود تنتهي في" + spaces + "ال" + spaces + "x";
+        var padded = "عقود تنتهي خلال" + spaces + "ال" + spaces + "90" + spaces + "ال" + spaces + "يوم";
+
+        var responses = Assertions.assertTimeoutPreemptively(Duration.ofSeconds(2), () -> List.of(
+                route(unreadable), route(dual), route(padded)));
+
+        assertThat(responses).extracting(ContentBlock.ToolUse::name).containsOnly("find_expiring_leases");
+        assertThat(responses.get(0).input().has("within_days")).isFalse();
+        assertThat(responses.get(1).input().has("within_days")).isFalse();
+        assertThat(responses.get(2).input().get("within_days").asInt()).isEqualTo(90);
+    }
+
+    @Test
     void aVeryLongQuestionIsCutToWhatTheToolTakes() {
         var question = "What does the lease agreement say? " + "x".repeat(20_000);
 
