@@ -37,16 +37,98 @@ jobs:
       - run: npm test
       - run: npm run build
 
-  # The eval runner needs a live backend, so CI checks only that it loads and that its grading and cases are sound.
+  # Starts the backend with the offline assistant (zero cost, no key) on a pgvector PostgreSQL and runs the evals that
+  # it is expected to pass. That checks the data, the tools, the streaming and the grading on every push; it says
+  # nothing about how well real Claude answers (see evals-full.yml, which a person starts by hand).
   evals:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      db:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: proppilot
+          POSTGRES_USER: proppilot
+          POSTGRES_PASSWORD: proppilot
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U proppilot"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: node --check evals/run.mjs
-      - run: node --test evals/*.test.mjs
+      - name: Check and test the eval modules
+        run: |
+          for file in evals/*.mjs; do node --check "$file"; done
+          node --test evals/*.test.mjs
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: maven
+      - name: Build the backend
+        working-directory: backend
+        run: ./mvnw -B -q -DskipTests package
+      - name: Start the backend
+        env:
+          DB_URL: jdbc:postgresql://localhost:5432/proppilot
+          DB_USER: proppilot
+          DB_PASSWORD: proppilot
+          LLM_PROVIDER: offline
+          # High limits: the runner sends its questions one after another without a pause.
+          CHAT_RATE_LIMIT_PER_MINUTE: '1000'
+          CHAT_DAILY_LIMIT: '100000'
+          ACTION_MAX_PROPOSALS_PER_DAY: '10000'
+        run: |
+          jar=$(ls backend/target/proppilot-*.jar | grep -v '\.original$' | head -n 1)
+          nohup java -jar "$jar" > backend.log 2>&1 &
+          echo $! > backend.pid
+      - name: Wait for the backend and its lease documents
+        run: |
+          # At most 2 minutes for the health check, then 2 minutes for the 30 lease documents, which are written in
+          # the background after the application has started.
+          ready=false
+          for attempt in $(seq 1 60); do
+            if curl -sf http://localhost:8080/actuator/health > /dev/null; then ready=true; break; fi
+            sleep 2
+          done
+          if [ "$ready" != true ]; then
+            echo "::error title=Backend did not start::No healthy answer within 2 minutes"
+            tail -n 50 backend.log
+            exit 1
+          fi
+          ready=false
+          for attempt in $(seq 1 60); do
+            if curl -sf http://localhost:8080/api/info | grep -q '"leaseDocuments":30'; then ready=true; break; fi
+            sleep 2
+          done
+          if [ "$ready" != true ]; then
+            echo "::error title=Lease documents missing::The 30 lease documents were not written within 2 minutes"
+            curl -s http://localhost:8080/api/info
+            tail -n 50 backend.log
+            exit 1
+          fi
+      - name: Run the offline evals
+        run: node evals/run.mjs --offline-only --runs 1 --out evals-out/latest.json --summary evals-out/latest.md
+      - name: Show the summary
+        if: always()
+        run: |
+          if [ -f evals-out/latest.md ]; then cat evals-out/latest.md >> "$GITHUB_STEP_SUMMARY"; fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: evals-offline
+          path: evals-out/
+          if-no-files-found: ignore
+      - name: Stop the backend
+        if: always()
+        run: |
+          if [ -f backend.pid ]; then kill "$(cat backend.pid)" || true; fi
 
   docker:
     runs-on: ubuntu-latest
