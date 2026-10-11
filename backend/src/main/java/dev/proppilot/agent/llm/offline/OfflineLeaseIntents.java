@@ -18,8 +18,9 @@ import java.util.regex.Pattern;
  * <p>A question that asks about leases that end and also names a lease term is a combined question: the first call
  * lists the leases, and {@link #followUp} turns the units it returned into the search of their documents.
  *
- * <p>Matching runs on a folded copy of the question (see {@link Folding}). The patterns are alternations of words with
- * no repeated group, so a long question costs time in proportion to its length.
+ * <p>Matching runs on a folded copy of the question (see {@link Folding}). The patterns are alternations of words, and
+ * what they repeat is a single character or a bounded gap, with a run of white space taken in one way only, so a long
+ * question costs time in proportion to its length.
  */
 final class OfflineLeaseIntents {
 
@@ -38,17 +39,35 @@ final class OfflineLeaseIntents {
     private static final Pattern LEASES = Pattern.compile(WORD_START + "(?:leases|contracts|tenancies|rentals"
             + "|(?:which|any|every|what)\\s+(?:lease|contract|tenancy))" + WORD_END + "|عقود|ايجارات|(?:اي|كل)\\s+عقد",
             FLAGS);
+    /** The units or tenants of a list: "which units have a lease that ends", not "the lease of unit A-203". */
+    private static final Pattern LISTED = Pattern.compile(WORD_START + "(?:which|what|any|every|all|list|show)"
+            + "\\s+(?:of\\s+)?(?:the\\s+)?(?:units?|tenants?|residents?|apartments?|properties|buildings?)(?:'s)?"
+            + WORD_END + "|(?<![\\p{L}\\p{N}])(?:ال)?(?:وحدات|مستاجرين|مستاجرون|شقق|عقارات|مباني)", FLAGS);
+    private static final Pattern A_LEASE = Pattern.compile(WORD_START + "(?:lease|contract|tenancy)" + WORD_END
+            + "|عقد", FLAGS);
+    /** "Up for renewal" and "needs renewal" say a lease ends, not that the question is about the renewal clause. */
+    private static final String RENEWAL_DUE_WORDS = "(?:up|due|coming up|ready|eligible)\\s+for\\s+renewal"
+            + "|renewals?\\s+(?:due|coming)"
+            + "|(?:needs?|requires?)\\s+(?:to\\s+be\\s+renewed"
+            + "|renewal(?!\\s+(?:notice|terms?|clauses?|fees?|conditions?)))";
+    private static final Pattern RENEWAL_DUE = Pattern.compile(WORD_START + "(?:" + RENEWAL_DUE_WORDS + ")" + WORD_END,
+            FLAGS);
     /** Words that say a lease runs out; "end" alone needs a window as well, because a lease also has an end clause. */
     private static final Pattern EXPIRY = Pattern.compile(WORD_START + "(?:expir\\p{L}*|run(?:s|ning)?\\s+out"
-            + "|(?:up|due|coming up)\\s+for\\s+renewal|renewals?\\s+(?:due|coming))" + WORD_END
-            + "|انتهاء|نته[يا]|نقض[يا]", FLAGS);
+            + "|" + RENEWAL_DUE_WORDS + ")" + WORD_END + "|انتهاء|نته[يا]|نقض[يا]", FLAGS);
     private static final Pattern END = Pattern.compile(WORD_START + "(?:end|ends|ending)" + WORD_END, FLAGS);
+    /** Words that look ahead. A number of days is not one: a lease also has a notice period and a length in months. */
     private static final Pattern WINDOW = Pattern.compile(WORD_START + "(?:soon|next|within|coming|upcoming"
-            + "|this\\s+(?:month|week|quarter|year)|\\d{1,3}\\s*(?:days?|weeks?|months?))" + WORD_END, FLAGS);
-    /** "up for renewal" says a lease ends, not that the question is about the renewal clause. */
-    private static final Pattern RENEWAL_DUE = Pattern.compile(WORD_START
-            + "(?:(?:up|due|coming up|ready|eligible)\\s+for\\s+renewal|renewals?\\s+(?:due|coming))" + WORD_END,
-            FLAGS);
+            + "|this\\s+(?:month|week|quarter|year))" + WORD_END, FLAGS);
+    private static final String COUNT = "(?:\\d{1,3}|a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven"
+            + "|twelve)";
+    /** How long a notice is: "90 days notice", "notice of 3 months", "notice within 30 days"; a term, not a window. */
+    private static final Pattern NOTICE_LENGTH = Pattern.compile(WORD_START + "(?:" + COUNT
+            + "[- ]*(?:days?|weeks?|months?)(?:'s?)?\\s+(?:written\\s+)?(?:notice|warning)"
+            + "|notice(?:\\s+period)?\\s+(?:of|is|within|in)\\s+(?:at\\s+least\\s+)?" + COUNT
+            + "[- ]*(?:days?|weeks?|months?))" + WORD_END
+            + "|(?:اشعار|اخطار)\\p{L}*\\s+(?:\\p{L}+\\s+)?\\d{1,3}\\s*(?:يوما|يوم|ايام|اسبوعا|اسبوع|اسابيع|شهرا|شهر|اشهر)"
+            + "|\\d{1,3}\\s*(?:يوما|يوم|ايام|اسبوعا|اسبوع|اسابيع|شهرا|شهر|اشهر)\\s+(?:اشعار|اخطار)", FLAGS);
     /** A question about the lease as a whole, with no clause named. */
     private static final Pattern WHOLE_LEASE = Pattern.compile(WORD_START + "(?:clauses?|terms and conditions"
             + "|lease\\s+(?:terms?|conditions?|agreement|document|contract|says?|states?|clauses?))" + WORD_END
@@ -68,10 +87,9 @@ final class OfflineLeaseIntents {
      */
     Optional<OfflineIntentRouter.Call> route(String question) {
         var folded = folded(question);
-        if (isAboutLeasesThatEnd(folded)) {
-            var call = call("find_expiring_leases");
-            ExpiryWindow.days(folded).ifPresent(days -> call.args().put("within_days", days));
-            return Optional.of(call);
+        var ending = leasesThatEnd(folded);
+        if (ending.isPresent()) {
+            return ending;
         }
         var topics = topicsIn(folded);
         if (topics.isEmpty() && !WHOLE_LEASE.matcher(folded).find()) {
@@ -107,11 +125,35 @@ final class OfflineLeaseIntents {
         return Folding.fold(Folding.withoutDiacritics(question));
     }
 
-    private static boolean isAboutLeasesThatEnd(String folded) {
-        if (!LEASES.matcher(folded).find()) {
-            return false;
+    /** The list of leases that end, when the question asks for one; the window is the one it names, if any. */
+    private Optional<OfflineIntentRouter.Call> leasesThatEnd(String folded) {
+        if (!isAboutSeveralLeases(folded)) {
+            return Optional.empty();
         }
-        return EXPIRY.matcher(folded).find() || (END.matcher(folded).find() && WINDOW.matcher(folded).find());
+        // A number of days that is the length of a notice is a lease term, so it is no window and no sign of an end.
+        var withoutNotice = NOTICE_LENGTH.matcher(folded).replaceAll(" ");
+        var days = ExpiryWindow.days(withoutNotice);
+        boolean looksAhead = days.isPresent() || WINDOW.matcher(withoutNotice).find();
+        boolean noticeLengthGiven = !withoutNotice.equals(folded);
+        boolean ends = EXPIRY.matcher(folded).find() ? looksAhead || !noticeLengthGiven
+                : END.matcher(folded).find() && looksAhead;
+        if (!ends) {
+            return Optional.empty();
+        }
+        var call = call("find_expiring_leases");
+        days.ifPresent(window -> call.args().put("within_days", window));
+        return Optional.of(call);
+    }
+
+    /**
+     * "Which leases", or "which units have a lease": a list. A question about the lease of a unit it names is not one.
+     */
+    private static boolean isAboutSeveralLeases(String folded) {
+        if (LEASES.matcher(folded).find()) {
+            return true;
+        }
+        return LISTED.matcher(folded).find() && A_LEASE.matcher(folded).find()
+                && !OfflineIntentRouter.UNIT_CODE.matcher(folded).find();
     }
 
     private static List<LeaseTopic> topicsIn(String folded) {

@@ -269,6 +269,10 @@ class OfflineLeaseIntentsTest {
             List leases ending next month | 30
             Which leases end this quarter? | 90
             Which contracts are up for renewal in the next 45 days? | 45
+            Which leases need renewal in the next 60 days? | 60
+            Which leases expire in 3 months? | 90
+            Which units have a lease ending in the next 30 days? | 30
+            Show the tenants whose lease ends in the next 30 days | 30
             Leases ending in the next 1000 days | 365
             Leases ending in the next 999999999 days | 365
             """)
@@ -289,6 +293,7 @@ class OfflineLeaseIntentsTest {
             ما العقود التي تنتهي خلال أسبوعين؟ | 14
             ما العقود التي تنتهي الشهر القادم؟ | 30
             أي عقود تنتهي هذا الشهر؟ | 30
+            ما الوحدات التي ينتهي عقدها خلال 30 يوما؟ | 30
             """)
     void routesAnArabicQuestionAboutLeasesThatEnd(String question, int days) {
         var call = route(question);
@@ -298,7 +303,9 @@ class OfflineLeaseIntentsTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"Which leases are expiring soon?", "Which leases expire?", "ما العقود التي تنتهي قريبًا؟"})
+    @ValueSource(strings = {"Which leases are expiring soon?", "Which leases expire?", "ما العقود التي تنتهي قريبًا؟",
+            "Which units have an expiring lease?", "Which tenants have a lease expiring soon?",
+            "ما المستأجرون الذين ينتهي عقدهم قريبًا؟"})
     void withoutAWindowTheToolChoosesItsDefault(String question) {
         var call = route(question);
 
@@ -310,12 +317,55 @@ class OfflineLeaseIntentsTest {
     @ValueSource(strings = {
             "What happens when the lease expires?",
             "How much notice must be given before the lease ends?",
-            "When does the lease of unit A-203 end?"})
+            "When does the lease of unit A-203 end?",
+            "Which unit has a lease ending soon, like A-203?",
+            "ما الوحدات المرتبطة بعقد الوحدة A-203؟"})
     void aQuestionAboutOneLeaseThatMentionsItsEndIsNotAListOfLeases(String question) {
         var response = ask(List.of(Message.user(question)));
 
         assertThat(response.toolUses()).extracting(ContentBlock.ToolUse::name)
                 .doesNotContain("find_expiring_leases");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "Which leases require 90 days notice before they end?",
+            "Which leases need 30 days written notice to end the contract?",
+            "Which leases require a month's notice before they expire?",
+            "Which leases require notice within 30 days of ending?",
+            "Which leases require a notice period of 2 months?",
+            "ما العقود التي تتطلب إشعارا قبل 90 يوما من انتهائها؟"})
+    void aNoticePeriodIsALeaseTermNotTheWindowOfLeasesThatEnd(String question) {
+        var call = route(question);
+
+        assertThat(call.name()).isEqualTo("search_lease_documents");
+        assertThat(call.input().get("query").asText()).containsAnyOf("notice period", "مدة الإشعار");
+        assertThat(call.input().has("unit_code")).isFalse();
+    }
+
+    @Test
+    void theLengthOfALeaseIsNotWhenItEnds() {
+        var response = ask(List.of(Message.user("Which leases end after 12 months?")));
+
+        assertThat(response.toolUses()).extracting(ContentBlock.ToolUse::name).doesNotContain("find_expiring_leases");
+    }
+
+    @Test
+    void aLeaseThatNeedsRenewalEndsSoonButRenewalNoticeIsTheRenewalClause() {
+        var renewal = route("Which leases need renewal in the next 60 days?");
+        var notice = route("Which leases need renewal notice?");
+
+        assertThat(renewal.name()).isEqualTo("find_expiring_leases");
+        assertThat(notice.name()).isEqualTo("search_lease_documents");
+        assertThat(notice.input().get("query").asText()).contains("notice period", "term renewal");
+    }
+
+    @Test
+    void aListOfLeasesThatNeedRenewalIsNotSearchedForTheRenewalClauseAfterwards() {
+        var response = afterListing("Which leases need renewal in the next 60 days?", listing(2, 2));
+
+        assertThat(response.stopReason()).isEqualTo(StopReason.END_TURN);
+        assertThat(response.text()).contains("2 lease(s) end within the next 60 days");
     }
 
     @Test
@@ -457,7 +507,9 @@ class OfflineLeaseIntentsTest {
     @ParameterizedTest
     @ValueSource(strings = {"notice ", "renew ", "leases ", "leases ending in the next ", "penalty, ", "عقود ",
             "غرامة ", "tenant A", "pets pets pets ", "lease ", "ـ", "responsible ", "who pays for ", "maintenance ",
-            "obligations of maintenance ", "مسؤول ", "من يدفع ", "الصيانة ", "التزامات الصيانة ", "وللحيوانات "})
+            "obligations of maintenance ", "مسؤول ", "من يدفع ", "الصيانة ", "التزامات الصيانة ", "وللحيوانات ",
+            "which units have a lease ", "needs renewal ", "90 days notice ", "notice of 3 ", "a month's ",
+            "اشعارا قبل ", "90 يوما اشعار ", "اشعار ", "الوحدات التي ينتهي عقدها "})
     void aLongHostileQuestionIsRoutedQuickly(String unit) {
         var hostile = unit.repeat(20_000 / unit.length());
 
