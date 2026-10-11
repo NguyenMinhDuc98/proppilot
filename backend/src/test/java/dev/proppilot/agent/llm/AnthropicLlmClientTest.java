@@ -145,7 +145,8 @@ class AnthropicLlmClientTest {
 
     private static LlmProperties props(int port, int timeoutSeconds, int maxRetries, int retryBaseDelayMs) {
         return new LlmProperties("anthropic", API_KEY, "test-model", "http://127.0.0.1:" + port + "/v1/messages",
-                1024, timeoutSeconds, maxRetries, retryBaseDelayMs, BigDecimal.ONE, BigDecimal.ONE);
+                1024, timeoutSeconds, maxRetries, retryBaseDelayMs, BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ONE,
+                BigDecimal.ONE);
     }
 
     private LlmResponse complete() {

@@ -6,7 +6,10 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import org.springframework.stereotype.Component;
 
-/** Estimated USD cost of a run from token usage and the configured per-million-token prices. */
+/**
+ * Estimated USD cost of a run from token usage and the configured per-million-token prices. Tokens written to and read
+ * from the prompt cache are billed apart from the uncached input, at their own multiples of the input price.
+ */
 @Component
 public class CostCalculator {
 
@@ -22,8 +25,15 @@ public class CostCalculator {
         if (!billable) {
             return BigDecimal.ZERO.setScale(6);
         }
-        var input = props.priceInputPerMtok().multiply(BigDecimal.valueOf(usage.inputTokens()));
-        var output = props.priceOutputPerMtok().multiply(BigDecimal.valueOf(usage.outputTokens()));
-        return input.add(output).divide(MILLION, 6, RoundingMode.HALF_UP);
+        var inputPrice = props.priceInputPerMtok();
+        var input = inputPrice.multiply(tokens(usage.inputTokens()));
+        var cacheWrites = inputPrice.multiply(props.cacheWriteMultiplier()).multiply(tokens(usage.cacheWriteTokens()));
+        var cacheReads = inputPrice.multiply(props.cacheReadMultiplier()).multiply(tokens(usage.cacheReadTokens()));
+        var output = props.priceOutputPerMtok().multiply(tokens(usage.outputTokens()));
+        return input.add(cacheWrites).add(cacheReads).add(output).divide(MILLION, 6, RoundingMode.HALF_UP);
+    }
+
+    private static BigDecimal tokens(int count) {
+        return BigDecimal.valueOf(count);
     }
 }

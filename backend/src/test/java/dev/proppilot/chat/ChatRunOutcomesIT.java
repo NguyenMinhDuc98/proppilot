@@ -256,6 +256,18 @@ class ChatRunOutcomesIT extends PostgresIntegrationTest {
     }
 
     @Test
+    void chargesTheCacheTokensOfARunAtTheirOwnPrices() throws Exception {
+        llm.then(new LlmResponse(List.of(new ContentBlock.Text("cached")), StopReason.END_TURN, new Usage(30, 12, 4000, 250)));
+
+        var sse = chat("trace: cache cost");
+
+        // 30 x 1.00 + 250 x 1.25 + 4,000 x 0.10 + 12 x 5.00 = 802.5 per million, at the default prices
+        assertThat(recordedRun("trace: cache cost").getCostUsd()).isEqualByComparingTo("0.000803");
+        assertThat(sse).contains("\"costUsd\":0.000803");
+        traceOf("trace: cache cost").andExpect(jsonPath("$.totals.costUsd").value(0.000803));
+    }
+
+    @Test
     void storesTheFailedCallOfAFailedRun() throws Exception {
         llm.thenFail(ErrorCode.LLM_OVERLOADED, "Claude API returned 529: upstream-secret");
 
