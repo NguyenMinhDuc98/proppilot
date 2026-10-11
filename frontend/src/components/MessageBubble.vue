@@ -1,10 +1,14 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import type { LeaseSource } from '../api/types'
+import { buildAnswer } from '../composables/answer'
 import { formatCost, formatLatency } from '../composables/format'
-import { renderMarkdown } from '../composables/markdown'
 import type { ChatMessage } from '../stores/chat'
+import { AnswerNodes } from './AnswerNodes'
 import ApprovalCard from './ApprovalCard.vue'
+import CitationSources from './CitationSources.vue'
+import ClauseDrawer from './ClauseDrawer.vue'
 import ToolChip from './ToolChip.vue'
 import TraceDrawer from './TraceDrawer.vue'
 
@@ -12,7 +16,7 @@ const props = defineProps<{ message: ChatMessage }>()
 const { t, te, locale } = useI18n()
 
 const isUser = computed(() => props.message.role === 'user')
-const html = computed(() => (isUser.value ? '' : renderMarkdown(props.message.text)))
+const answer = computed(() => buildAnswer(isUser.value ? '' : props.message.text, props.message.sources))
 const usage = computed(() => props.message.usage)
 const showTrace = computed(() => !isUser.value && !props.message.streaming && props.message.tools.length > 0)
 const costLabel = computed(() =>
@@ -31,13 +35,33 @@ const usageParts = computed(() => {
   ]
 })
 // Only tools that returned data count as sources, each once, however many times the model called it.
-const sources = computed(() => {
+const dataSources = computed(() => {
   if (props.message.streaming || !props.message.text) return ''
   const used = new Set(props.message.tools.filter((tool) => tool.status === 'done').map((tool) => tool.name))
   if (!used.size) return ''
   const labels = [...used].map((name) => (te(`tools.${name}.source`) ? t(`tools.${name}.source`) : name))
   return t('chat.sources', { sources: new Intl.ListFormat(locale.value, { type: 'conjunction' }).format(labels) })
 })
+
+// The clause being read in the drawer. It is kept after the drawer closes so the drawer does not empty while it leaves.
+const clause = ref<LeaseSource | null>(null)
+const clauseOpen = ref(false)
+let opener: HTMLElement | null = null
+
+function openClause(source: LeaseSource, trigger: HTMLElement) {
+  clause.value = source
+  opener = trigger
+  clauseOpen.value = true
+}
+
+// The drawer is modal, so the reader comes back to the chip that opened it, once the drawer has let go of the focus.
+watch(clauseOpen, async (isOpen) => {
+  if (isOpen) return
+  await nextTick()
+  if (opener?.isConnected) opener.focus()
+  opener = null
+})
+
 // Server errors are shown from their code, so provider or server text never reaches the user.
 const errorText = computed(() => {
   const { error, errorCode } = props.message
@@ -59,11 +83,16 @@ const errorText = computed(() => {
         <div v-if="message.tools.length" class="tools">
           <ToolChip v-for="(chip, i) in message.tools" :key="i" :chip="chip" />
         </div>
-        <!-- eslint-disable-next-line vue/no-v-html -- sanitised by DOMPurify in renderMarkdown -->
-        <div v-if="message.text" class="markdown" dir="auto" v-html="html" />
+        <div v-if="message.text" class="markdown" dir="auto">
+          <AnswerNodes :nodes="answer.nodes" @open="openClause" />
+        </div>
         <div v-else-if="message.streaming && !message.tools.length" class="thinking">{{ t('chat.thinking') }}</div>
+        <template v-if="answer.cited.length">
+          <CitationSources :sources="answer.cited" @open="openClause" />
+          <ClauseDrawer v-model="clauseOpen" :source="clause" />
+        </template>
         <ApprovalCard v-for="action in message.actions" :key="action.id" :action="action" />
-        <div v-if="sources" class="sources">{{ sources }}</div>
+        <div v-if="dataSources" class="sources">{{ dataSources }}</div>
         <div v-if="usage?.truncated" class="notice" role="note">{{ t('chat.truncated') }}</div>
         <div v-if="message.error" class="error" role="alert">{{ errorText }}</div>
         <div v-if="usage" class="meta">

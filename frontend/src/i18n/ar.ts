@@ -37,6 +37,16 @@ export default {
     charCount: '{count} / {max}',
     usage: { free: 'مجاني (المساعد المحلي)', toolCalls: 'بدون استدعاء أدوات | استدعاء أداة واحد | {n} استدعاءات أدوات', tokens: '{n} رمز' },
   },
+  lease: {
+    cite: { clause: 'العقد {unit}، البند {clause}', preamble: 'العقد {unit}، مقدمة العقد' },
+    sources: 'المصدر | المصادر',
+    preamble: 'المقدمة',
+    unit: 'الوحدة',
+    tenant: 'المستأجر',
+    clause: 'البند',
+    page: 'الصفحة',
+    openPdf: 'فتح ملف PDF للعقد',
+  },
   trace: {
     toggle: 'كيف توصلت للإجابة',
     note: 'ملاحظة من النموذج',

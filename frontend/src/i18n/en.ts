@@ -37,6 +37,16 @@ export default {
     charCount: '{count} / {max}',
     usage: { free: 'Free (offline assistant)', toolCalls: 'no tool calls | {n} tool call | {n} tool calls', tokens: '{n} tokens' },
   },
+  lease: {
+    cite: { clause: 'Lease {unit}, clause {clause}', preamble: 'Lease {unit}, preamble' },
+    sources: 'Source | Sources',
+    preamble: 'Preamble',
+    unit: 'Unit',
+    tenant: 'Tenant',
+    clause: 'Clause',
+    page: 'Page',
+    openPdf: 'Open lease PDF',
+  },
   trace: {
     toggle: 'How I answered',
     note: 'Model note',
