@@ -16,14 +16,21 @@ import org.springframework.web.bind.annotation.RestController;
 
 /** The lease documents: public, because all of them are generated from fake demo data. */
 @RestController
-@RequestMapping("/api/lease-documents")
+@RequestMapping(LeaseDocumentController.PATH)
 @Validated
 public class LeaseDocumentController {
+
+    public static final String PATH = "/api/lease-documents";
 
     private final LeaseDocumentCatalog catalog;
 
     public LeaseDocumentController(LeaseDocumentCatalog catalog) {
         this.catalog = catalog;
+    }
+
+    /** Where the PDF of the document with this code is served from. */
+    public static String pdfPath(String documentCode) {
+        return PATH + "/" + documentCode + "/pdf";
     }
 
     @GetMapping

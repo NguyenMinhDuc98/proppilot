@@ -1,5 +1,7 @@
 package dev.proppilot.chat;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.proppilot.agent.AgentEvent;
 import dev.proppilot.agent.AgentLoop;
@@ -29,7 +31,10 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
  *
  * <ul>
  *   <li>{@code tool_call}: {@code {name, args}}</li>
- *   <li>{@code tool_result}: {@code {name, summary, error}}</li>
+ *   <li>{@code tool_result}: {@code {name, summary, error}}. The result of a lease search also carries
+ *       {@code sources}: the clauses it found, each with {@code ref, documentCode, documentTitle, unitCode,
+ *       tenantNameEn, tenantNameAr, language, sectionNo, sectionTitle, page, text, pdfPath}, for the web app to show
+ *       next to the answer. The field is there for that tool only, and the model never sees it</li>
  *   <li>{@code action_proposed}: the proposed action ({@code id, kind, status, summaryEn, summaryAr, preview,
  *       expiresAt, ...}), right after the {@code tool_result} of the tool that proposed it</li>
  *   <li>{@code token}: {@code {text}}, a piece of the answer</li>
@@ -161,13 +166,23 @@ public class ChatService {
         switch (event) {
             case AgentEvent.ToolCall call -> client.send("tool_call", new ToolCallPayload(call.name(), call.args()));
             case AgentEvent.ToolResultEvent result -> {
-                client.send("tool_result", new ToolResultPayload(result.name(), result.summary(), result.error()));
-                if (result.ui() != null && ToolResult.ACTION_UI_TYPE.equals(result.ui().path("type").asText())) {
+                client.send("tool_result", new ToolResultPayload(result.name(), result.summary(), result.error(),
+                        sourcesOf(result.ui())));
+                if (isUiOfType(result.ui(), ToolResult.ACTION_UI_TYPE)) {
                     client.send("action_proposed", result.ui().get("action"));
                 }
             }
             case AgentEvent.Token token -> client.send("token", new TokenPayload(token.text()));
         }
+    }
+
+    /** The clauses a lease search found, or null for every other result, which then has no such field. */
+    private static JsonNode sourcesOf(JsonNode ui) {
+        return isUiOfType(ui, ToolResult.SOURCES_UI_TYPE) ? ui.get("sources") : null;
+    }
+
+    private static boolean isUiOfType(JsonNode ui, String type) {
+        return ui != null && type.equals(ui.path("type").asText());
     }
 
     @PreDestroy
@@ -178,7 +193,8 @@ public class ChatService {
     record ToolCallPayload(String name, Object args) {
     }
 
-    record ToolResultPayload(String name, String summary, boolean error) {
+    record ToolResultPayload(String name, String summary, boolean error,
+                             @JsonInclude(JsonInclude.Include.NON_NULL) JsonNode sources) {
     }
 
     record TokenPayload(String text) {

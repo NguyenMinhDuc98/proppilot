@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.IntConsumer;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
  * A deterministic embedding client for tests: a bag of the folded words of the text, hashed into
@@ -22,6 +23,8 @@ public class FakeEmbeddingClient implements EmbeddingClient {
     public final List<List<String>> documentCalls = new CopyOnWriteArrayList<>();
     /** The text of every call to {@link #embedQuery}, in order. */
     public final List<String> queryCalls = new CopyOnWriteArrayList<>();
+    /** For every call to {@link #embedQuery}, whether it ran inside a transaction, so a held connection shows. */
+    public final List<Boolean> queryTransactions = new CopyOnWriteArrayList<>();
 
     private final Map<String, String> equivalents;
     private volatile String model = "fake-embedding-1";
@@ -63,6 +66,7 @@ public class FakeEmbeddingClient implements EmbeddingClient {
     public void reset() {
         documentCalls.clear();
         queryCalls.clear();
+        queryTransactions.clear();
         model = "fake-embedding-1";
         enabled = true;
         beforeDocumentCall = number -> { };
@@ -79,6 +83,7 @@ public class FakeEmbeddingClient implements EmbeddingClient {
     @Override
     public float[] embedQuery(String text) {
         queryCalls.add(text);
+        queryTransactions.add(TransactionSynchronizationManager.isActualTransactionActive());
         if (queryFailure != null) {
             throw queryFailure;
         }

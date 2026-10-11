@@ -49,9 +49,11 @@ public class ToolRegistry {
             return ToolResult.error("Unknown tool '" + name + "'. Available tools: " + String.join(", ", tools.keySet()));
         }
         try {
-            return tool instanceof ProposalTool proposing
-                    ? proposing.propose(input, context)
-                    : readOnlyTx.execute(status -> tool.execute(input));
+            return switch (tool) {
+                case ProposalTool proposing -> proposing.propose(input, context);
+                case OwnTransactionTool own -> own.execute(input);
+                default -> readOnlyTx.execute(status -> tool.execute(input));
+            };
         } catch (ToolInputException e) {
             return ToolResult.error("Invalid input: " + e.getMessage());
         } catch (RuntimeException e) {

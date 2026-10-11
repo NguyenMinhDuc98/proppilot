@@ -1,7 +1,10 @@
 package dev.proppilot.rag;
 
+import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -26,6 +29,17 @@ public class LeaseDocumentCatalog {
                 order by d.lease_id""",
                 (rs, row) -> new LeaseDocumentView(rs.getString(1), rs.getString(2), rs.getString(3),
                         rs.getString(4), rs.getString(5), rs.getString(6), rs.getInt(7), rs.getInt(8)));
+    }
+
+    /** Which of these leases have a document on file. */
+    public Set<Long> leasesWithDocument(Collection<Long> leaseIds) {
+        if (leaseIds.isEmpty()) {
+            return Set.of();
+        }
+        var placeholders = String.join(",", leaseIds.stream().map(id -> "?").toList());
+        return new HashSet<>(jdbc.queryForList(
+                "select lease_id from lease_documents where lease_id in (" + placeholders + ")", Long.class,
+                leaseIds.toArray()));
     }
 
     public Optional<byte[]> pdf(String code) {

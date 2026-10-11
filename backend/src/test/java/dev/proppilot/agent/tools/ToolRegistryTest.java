@@ -101,4 +101,41 @@ class ToolRegistryTest {
         verify(transactions).getTransaction(definition.capture());
         assertThat(definition.getValue().isReadOnly()).isTrue();
     }
+
+    @Test
+    void aToolThatManagesItsOwnTransactionsDoesNotHoldTheRegistrysWhileItWaits() {
+        var transactions = mock(PlatformTransactionManager.class);
+        var calls = new ArrayList<JsonNode>();
+        var waiting = new OwnTransactionTool() {
+            public String name() { return "waiting"; }
+            public String description() { return "d"; }
+            public JsonNode inputSchema() { return ToolSchema.object().build(); }
+            public ToolResult execute(JsonNode input) {
+                calls.add(input);
+                return ToolResult.error("done");
+            }
+        };
+        var registry = new ToolRegistry(List.of(waiting), transactions);
+
+        var result = registry.execute("waiting", EMPTY);
+
+        assertThat(calls).containsExactly(EMPTY);
+        assertThat(result.content()).isEqualTo("done");
+        verifyNoInteractions(transactions);
+    }
+
+    @Test
+    void aToolThatManagesItsOwnTransactionsStillGetsItsInputErrorsAsResults() {
+        var failing = new OwnTransactionTool() {
+            public String name() { return "failing"; }
+            public String description() { return "d"; }
+            public JsonNode inputSchema() { return ToolSchema.object().build(); }
+            public ToolResult execute(JsonNode input) { throw new ToolInputException("query is required"); }
+        };
+
+        var result = registry(failing).execute("failing", EMPTY);
+
+        assertThat(result.error()).isTrue();
+        assertThat(result.content()).isEqualTo("Invalid input: query is required");
+    }
 }
