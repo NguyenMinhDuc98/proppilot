@@ -105,6 +105,96 @@ class OfflineLeaseIntentsTest {
         assertThat(tatweel.input().get("query").asText()).contains("الصيانة والإصلاحات");
     }
 
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', textBlock = """
+            Who pays rent for unit A-203? | get_unit_details
+            Which tenant is responsible for the overdue rent in B-203? | find_overdue_tenants
+            Show me the cancelled payments for unit A-203 | get_unit_details
+            Are there any payment disputes in unit A-203? | get_unit_details
+            Is unit A-203 under maintenance? | get_unit_details
+            Is parking included in unit A-203? | get_unit_details
+            Which units are vacant in Red Sea Court? | search_units
+            من يدفع الإيجار للوحدة A-203؟ | get_unit_details
+            من المستأجر المسؤول عن الإيجار المتأخر في B-203؟ | find_overdue_tenants
+            ما تكاليف الصيانة للوحدة A-203 | get_unit_details
+            ما التكاليف الشهرية للوحدة A-203؟ | get_unit_details
+            ما إجمالي تكاليف الوحدة B-101؟ | get_unit_details
+            هل توجد تكاليف إضافية على الوحدة A-203؟ | get_unit_details
+            كم عدد الوحدات الشاغرة في الرياض بتكاليف أقل من 5000؟ | search_units
+            """)
+    void aWordThatAlsoTurnsUpInQuestionsAboutRentAndUnitsKeepsItsToolWhenNoLeaseIsMentioned(String question,
+                                                                                            String tool) {
+        assertThat(route(question).name()).isEqualTo(tool);
+    }
+
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', textBlock = """
+            Who is responsible for the plumbing under the lease of unit A-203? | maintenance repairs
+            What does the contract say about who pays for the air conditioning in A-203? | maintenance repairs
+            What does the lease say about cancelling the contract in unit A-203? | early termination
+            What does the lease of unit A-203 say about noise? | quiet hours
+            Does the lease for A-203 include parking? | special conditions
+            Which court has jurisdiction under the lease of unit A-203? | governing law
+            ماذا يقول عقد الوحدة A-203 عن الضوضاء؟ | قواعد السكن
+            هل يشمل عقد الوحدة A-203 موقف سيارات؟ | شروط خاصة
+            """)
+    void aWordThatAlsoMeansSomethingElseNamesItsTopicWhenTheQuestionIsAboutALease(String question, String query) {
+        var call = route(question);
+
+        assertThat(call.name()).isEqualTo("search_lease_documents");
+        assertThat(call.input().get("query").asText()).contains(query);
+    }
+
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', textBlock = """
+            What are the maintenance obligations of the tenant in A-203? | maintenance repairs
+            What are the maintenance terms for unit A-203? | maintenance repairs
+            What does the lease of unit A-203 say about maintenance? | maintenance repairs
+            Who is responsible for maintenance in unit A-203? | maintenance repairs
+            Maintenance responsibility for unit A-203 | maintenance repairs
+            ما التزامات الصيانة في عقد الوحدة A-203؟ | الصيانة والإصلاحات
+            ماذا يقول عقد الوحدة A-203 عن الصيانة؟ | الصيانة والإصلاحات
+            من يتحمل تكلفة الصيانة في الوحدة A-203؟ | الصيانة والإصلاحات
+            """)
+    void maintenanceIsATopicWhenItComesWithAResponsibilityOrALeaseWord(String question, String query) {
+        var call = route(question);
+
+        assertThat(call.name()).isEqualTo("search_lease_documents");
+        assertThat(call.input().get("query").asText()).contains(query);
+    }
+
+    @Test
+    void maintenanceAloneIsStillAboutUnitsInMaintenance() {
+        assertThat(route("Which units are in maintenance?").name()).isEqualTo("search_units");
+        assertThat(route("ما الوحدات التي تحت الصيانة في الرياض؟").name()).isEqualTo("search_units");
+    }
+
+    @Test
+    void theArabicWordForPetsHasToStartAWordSoCostsAreNotPets() {
+        var costs = route("ما تكاليف الإنهاء المبكر للوحدة A-203؟");
+        var withPrefix = route("هل يسمح للحيوانات الأليفة بالسكن في الوحدة A-203؟");
+
+        assertThat(costs.input().get("query").asText()).contains("الإنهاء المبكر").doesNotContain("الحيوانات");
+        assertThat(costs.input().get("top_k").asInt()).as("one topic in one lease").isEqualTo(2);
+        assertThat(withPrefix.input().get("query").asText()).contains("الحيوانات الأليفة");
+    }
+
+    @Test
+    void aPenaltyIsTheLateFeeOnlyWhenNoOtherTermClaimsIt() {
+        var other = route("What is the penalty for early termination in unit A-203?");
+        var breaking = route("What is the penalty for breaking the lease in unit A-203?");
+        var late = route("What is the penalty if rent is paid late in unit A-203?");
+        var both = route("What are the late fee and the penalty for early termination in unit A-203?");
+        var arabic = route("ما غرامة الإنهاء المبكر للوحدة A-203؟");
+
+        assertThat(other.input().get("query").asText()).contains("early termination").doesNotContain("late payment");
+        assertThat(breaking.input().get("query").asText()).contains("early termination")
+                .doesNotContain("late payment");
+        assertThat(late.input().get("query").asText()).contains("late payment fee penalty");
+        assertThat(both.input().get("query").asText()).contains("late payment", "early termination");
+        assertThat(arabic.input().get("query").asText()).contains("الإنهاء المبكر").doesNotContain("غرامة التأخير");
+    }
+
     @Test
     void aLeaseQuestionWithoutAUnitOrATenantSearchesEveryDocument() {
         var call = route("What is the notice period?");
@@ -366,7 +456,8 @@ class OfflineLeaseIntentsTest {
 
     @ParameterizedTest
     @ValueSource(strings = {"notice ", "renew ", "leases ", "leases ending in the next ", "penalty, ", "عقود ",
-            "غرامة ", "tenant A", "pets pets pets ", "lease ", "ـ"})
+            "غرامة ", "tenant A", "pets pets pets ", "lease ", "ـ", "responsible ", "who pays for ", "maintenance ",
+            "obligations of maintenance ", "مسؤول ", "من يدفع ", "الصيانة ", "التزامات الصيانة ", "وللحيوانات "})
     void aLongHostileQuestionIsRoutedQuickly(String unit) {
         var hostile = unit.repeat(20_000 / unit.length());
 
