@@ -155,6 +155,17 @@ export default {
     totalCost: 'Total cost',
     toolUsage: 'Tool calls by tool',
     none: 'No questions yet. Ask the assistant something first.',
+    models: 'Models',
+    modelsHead: { model: 'Model', questions: 'Questions', cost: 'Cost' },
+    modelsNone: 'No model has answered yet.',
+    cache: 'Prompt cache',
+    cacheRead: 'Tokens read from the cache',
+    cacheWrite: 'Tokens written to the cache',
+    cacheShare: 'Share of input from the cache',
+    cacheNone: 'No tokens have been read from or written to the prompt cache yet. The API caches a prompt only above a minimum length, so this can stay at zero.',
+    flagged: 'Flagged answers',
+    flaggedNone: 'No answer has had figures that could not be checked against the data.',
+    flaggedSome: 'Answers with figures that could not be checked against the data.',
   },
 
   actions: {
