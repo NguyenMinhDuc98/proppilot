@@ -24,7 +24,7 @@ class LeaseChunkerHostileInputTest {
 
     @Test
     void oneEndlessLineWithoutASpace() {
-        assertWellFormed(chunk("7. Endless\n" + "ا".repeat(HOSTILE) + "\n"));
+        assertWellFormed(chunk("1. Endless\n" + "ا".repeat(HOSTILE) + "\n"));
         assertWellFormed(chunk("Preamble\n" + "a".repeat(HOSTILE) + "\n"));
     }
 
@@ -38,8 +38,8 @@ class LeaseChunkerHostileInputTest {
 
     @Test
     void aHeadingFollowedByTwoHundredThousandCharacters() {
-        assertWellFormed(chunk("7. " + "x".repeat(HOSTILE) + "\n"));
-        assertWellFormed(chunk("البند 7: " + "ب".repeat(HOSTILE) + "\n"));
+        assertWellFormed(chunk("1. " + "x".repeat(HOSTILE) + "\n"));
+        assertWellFormed(chunk("البند 1: " + "ب".repeat(HOSTILE) + "\n"));
         assertWellFormed(chunk("البند 1: ".repeat(HOSTILE / 9) + "\n"));
     }
 
@@ -66,6 +66,12 @@ class LeaseChunkerHostileInputTest {
         assertWellFormed(chunks);
         assertThat(chunks).hasSizeGreaterThanOrEqualTo(99);
         assertThat(chunks.stream().map(LeaseChunk::sectionNo).distinct().count()).isEqualTo(99);
+    }
+
+    @Test
+    void aLongRunOfHeadingsThatSkipAheadIsReadInOnePass() {
+        assertWellFormed(chunk("1. Rent\n" + "3. Skipped\ntext\n".repeat(HOSTILE / 17)));
+        assertWellFormed(chunk("1. Rent\n" + "3. Skipped\n".repeat(HOSTILE / 12) + "4. Next\n"));
     }
 
     @Test

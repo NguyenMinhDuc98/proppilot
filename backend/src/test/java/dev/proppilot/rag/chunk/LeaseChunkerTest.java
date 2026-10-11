@@ -75,12 +75,12 @@ class LeaseChunkerTest {
     void anArabicDocumentIsCutAtClausesWithArabicIndicDigits() {
         var chunks = chunker.chunk(CODE, List.of(
                 "عقد إيجار سكني\nالأطراف\nالمؤجر: شركة\nالبند ١: الإيجار وطريقة السداد\nيدفع المستأجر ٤٩٥٠ ريال.\n"
-                        + "البند ٧: غرامة التأخير\nتستحق غرامة بعد ٥ أيام.\n"));
+                        + "البند ٢: غرامة التأخير\nتستحق غرامة بعد ٥ أيام.\n"));
 
-        assertThat(chunks).extracting(LeaseChunk::ref).containsExactly("LSE-A-504#0", "LSE-A-504#1", "LSE-A-504#7");
-        assertThat(chunks.get(2).sectionNo()).isEqualTo(7);
+        assertThat(chunks).extracting(LeaseChunk::ref).containsExactly("LSE-A-504#0", "LSE-A-504#1", "LSE-A-504#2");
+        assertThat(chunks.get(2).sectionNo()).isEqualTo(2);
         assertThat(chunks.get(2).sectionTitle()).isEqualTo("غرامة التأخير");
-        assertThat(chunks.get(2).content()).isEqualTo("البند ٧: غرامة التأخير\nتستحق غرامة بعد ٥ أيام.");
+        assertThat(chunks.get(2).content()).isEqualTo("البند ٢: غرامة التأخير\nتستحق غرامة بعد ٥ أيام.");
     }
 
     @Test
@@ -95,13 +95,48 @@ class LeaseChunkerTest {
     }
 
     @Test
-    void aClauseNumberMustBeHigherThanTheOneBeforeSoParagraphsDoNotMakeClauses() {
+    void aNumberedParagraphThatIsNotTheNextClauseNumberDoesNotMakeAClause() {
         var chunks = chunker.chunk(CODE, List.of(
                 "1. Rent\nPay on the first.\n2. Notice\nThe notice period is below.\n"
                         + "1. Thirty days for the Tenant\n2. Sixty days for the Landlord\n3. Pets\nNo pets.\n"));
 
         assertThat(chunks).extracting(LeaseChunk::sectionNo).containsExactly(1, 2, 3);
         assertThat(chunks.get(1).content()).contains("1. Thirty days for the Tenant", "2. Sixty days for the Landlord");
+    }
+
+    @Test
+    void aNumberedLineThatJumpsAheadDoesNotTakeTheRealClausesAfterItDown() {
+        for (var stray : List.of("5. The Landlord may inspect the Property at reasonable hours with notice and",
+                "45. Tenant shall ensure that")) {
+            var chunks = chunker.chunk(CODE, List.of(
+                    "1. Rent\nThe rent is due as agreed on floor\n" + stray + "\n2. Security deposit\n"
+                            + "On signing the Tenant pays a deposit.\n3. Term\nThe lease runs for one year.\n"));
+
+            assertThat(chunks).extracting(LeaseChunk::ref).containsExactly("LSE-A-504#1", "LSE-A-504#2", "LSE-A-504#3");
+            assertThat(chunks).extracting(LeaseChunk::sectionTitle)
+                    .containsExactly("Rent", "Security deposit", "Term");
+            assertThat(chunks.get(0).content()).contains(stray);
+        }
+    }
+
+    @Test
+    void aHeadingThatSkipsClauseNumbersIsAClauseWhenTheHeadingAfterItIsNumberedRight() {
+        var chunks = chunker.chunk(CODE, List.of(
+                "1. Rent\nPay.\n2. Notice\nThirty days.\n3. A title that ends like a sentence.\nSome text.\n"
+                        + "4. Pets\nNo pets.\n5. Subletting\nNot allowed.\n"));
+
+        assertThat(chunks).extracting(LeaseChunk::sectionNo).containsExactly(1, 2, 4, 5);
+        assertThat(chunks.get(1).content()).contains("3. A title that ends like a sentence.");
+    }
+
+    @Test
+    void aHeadingThatSkipsClauseNumbersIsNotAClauseWhenNothingNumberedRightFollowsIt() {
+        var jumpsBackAfterIt = chunker.chunk(CODE, List.of("1. Rent\nPay.\n3. Stray line\n2. Notice\nThirty days.\n"));
+        var lastLine = chunker.chunk(CODE, List.of("1. Rent\nPay.\n3. Stray line\n"));
+
+        assertThat(jumpsBackAfterIt).extracting(LeaseChunk::sectionNo).containsExactly(1, 2);
+        assertThat(lastLine).extracting(LeaseChunk::sectionNo).containsExactly(1);
+        assertThat(lastLine.get(0).content()).contains("3. Stray line");
     }
 
     @Test
@@ -151,14 +186,14 @@ class LeaseChunkerTest {
     @Test
     void aLongClauseIsSplitOnSentencesIntoLetteredPartsThatEachStartWithTheHeading() {
         var sentences = numberedSentences(60);
-        var chunks = chunker.chunk(CODE, List.of("1. Rent\nPay.\n7. House rules\n" + String.join(" ", sentences) + "\n"));
+        var chunks = chunker.chunk(CODE, List.of("1. Rent\nPay.\n2. House rules\n" + String.join(" ", sentences) + "\n"));
 
-        var parts = chunks.stream().filter(chunk -> chunk.sectionNo() != null && chunk.sectionNo() == 7).toList();
+        var parts = chunks.stream().filter(chunk -> chunk.sectionNo() != null && chunk.sectionNo() == 2).toList();
 
         assertThat(parts).hasSizeGreaterThanOrEqualTo(2);
-        assertThat(parts).extracting(LeaseChunk::ref).startsWith("LSE-A-504#7a", "LSE-A-504#7b");
+        assertThat(parts).extracting(LeaseChunk::ref).startsWith("LSE-A-504#2a", "LSE-A-504#2b");
         assertThat(parts).allSatisfy(part -> {
-            assertThat(part.content()).startsWith("7. House rules\n");
+            assertThat(part.content()).startsWith("2. House rules\n");
             assertThat(part.tokenEstimate()).isLessThanOrEqualTo(LeaseChunker.MAX_CHUNK_TOKENS);
             assertThat(part.sectionTitle()).isEqualTo("House rules");
         });
@@ -169,7 +204,7 @@ class LeaseChunkerTest {
     @Test
     void eachPartStartsWithTheEndOfThePartBeforeItAndNoSentenceIsLost() {
         var sentences = numberedSentences(120);
-        var chunks = chunker.chunk(CODE, List.of("7. House rules\n" + String.join(" ", sentences) + "\n"));
+        var chunks = chunker.chunk(CODE, List.of("1. House rules\n" + String.join(" ", sentences) + "\n"));
         var bodies = chunks.stream().map(chunk -> sentencesOf(chunk.content())).toList();
 
         assertThat(bodies).hasSizeGreaterThanOrEqualTo(3);
@@ -189,7 +224,7 @@ class LeaseChunkerTest {
 
     @Test
     void partRefsAreStableForTheSameText() {
-        var pages = List.of("7. House rules\n" + String.join(" ", numberedSentences(80)) + "\n");
+        var pages = List.of("1. House rules\n" + String.join(" ", numberedSentences(80)) + "\n");
 
         assertThat(chunker.chunk(CODE, pages)).isEqualTo(chunker.chunk(CODE, pages));
     }

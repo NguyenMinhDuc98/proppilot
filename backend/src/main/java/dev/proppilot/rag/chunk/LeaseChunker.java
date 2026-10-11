@@ -12,8 +12,10 @@ import org.springframework.stereotype.Component;
  * part before it, about {@link #OVERLAP_TOKENS} tokens of them, so an answer that straddles a cut is whole in one part.
  *
  * <p>Every chunk begins with its clause heading, so a part reads on its own. The page footers and the signature block
- * are not part of any chunk, and a clause number is accepted only when it is higher than the one before it, so a
- * paragraph that starts with a number cannot make a clause of its own.
+ * are not part of any chunk. Clauses are numbered in sequence: a heading starts a clause only when its number is the
+ * one after the last clause's, so a paragraph that happens to start with a number cannot make a clause of its own or
+ * throw the real clauses after it out of step. A heading may skip one or two numbers when the heading after it is
+ * numbered right after it, so a clause whose heading extraction mangled does not take the clauses after it with it.
  *
  * <p>The text may be of any size and shape. Nothing here recurses or runs a regular expression over more than a
  * heading's length of text; the work is linear in the size of the text.
@@ -25,6 +27,8 @@ public class LeaseChunker {
     public static final int OVERLAP_TOKENS = 50;
 
     private static final int PREAMBLE = 0;
+    /** How many clause numbers a heading may skip when the heading after it is numbered right. */
+    private static final int MAX_SKIPPED_CLAUSES = 2;
     private static final char TATWEEL = 'ـ';
     private static final long SPACE_WEIGHT = TokenEstimate.weight(" ");
 
@@ -48,6 +52,10 @@ public class LeaseChunker {
         return chunks;
     }
 
+    /** A line of content, and the heading it reads as; null when it is not a heading. */
+    private record Line(String text, int page, ClauseHeading.Heading heading) {
+    }
+
     /** The preamble has no heading line and no title, and is number 0. */
     private record Section(int number, String title, String headingLine, int page, List<String> lines) {
     }
@@ -56,33 +64,63 @@ public class LeaseChunker {
     }
 
     private static List<Section> sections(List<String> pages) {
+        var lines = lines(pages);
         var sections = new ArrayList<Section>();
         Section current = null;
         int lastNumber = PREAMBLE;
-        for (int index = 0; index < pages.size(); index++) {
-            for (var rawLine : pages.get(index).split("\n")) {
-                var line = cleaned(rawLine);
-                if (line.isEmpty() || PageFurniture.isPageFooter(line)) {
-                    continue;
-                }
-                if (PageFurniture.isSignaturesHeading(line)) {
-                    return sections;
-                }
-                var heading = ClauseHeading.parse(line);
-                if (heading.isPresent() && heading.get().number() > lastNumber) {
-                    lastNumber = heading.get().number();
-                    current = new Section(lastNumber, heading.get().title(), line, index + 1, new ArrayList<>());
+        for (int index = 0; index < lines.size(); index++) {
+            var line = lines.get(index);
+            if (line.heading() != null && isNextClause(lines, index, lastNumber)) {
+                lastNumber = line.heading().number();
+                current = new Section(lastNumber, line.heading().title(), line.text(), line.page(), new ArrayList<>());
+                sections.add(current);
+            } else {
+                if (current == null) {
+                    current = new Section(PREAMBLE, null, null, line.page(), new ArrayList<>());
                     sections.add(current);
-                } else {
-                    if (current == null) {
-                        current = new Section(PREAMBLE, null, null, index + 1, new ArrayList<>());
-                        sections.add(current);
-                    }
-                    current.lines().add(line);
                 }
+                current.lines().add(line.text());
             }
         }
         return sections;
+    }
+
+    /** The lines of the clauses and the preamble: no page footers, and nothing from the signature block on. */
+    private static List<Line> lines(List<String> pages) {
+        var lines = new ArrayList<Line>();
+        for (int index = 0; index < pages.size(); index++) {
+            for (var rawLine : pages.get(index).split("\n")) {
+                var text = cleaned(rawLine);
+                if (text.isEmpty() || PageFurniture.isPageFooter(text)) {
+                    continue;
+                }
+                if (PageFurniture.isSignaturesHeading(text)) {
+                    return lines;
+                }
+                lines.add(new Line(text, index + 1, ClauseHeading.parse(text).orElse(null)));
+            }
+        }
+        return lines;
+    }
+
+    /**
+     * Whether the heading at {@code index} numbers the clause that comes after the last one. A heading may skip up to
+     * {@link #MAX_SKIPPED_CLAUSES} numbers when the next heading in the document is numbered right after it.
+     */
+    private static boolean isNextClause(List<Line> lines, int index, int lastNumber) {
+        int number = lines.get(index).heading().number();
+        if (number == lastNumber + 1) {
+            return true;
+        }
+        if (number <= lastNumber || number > lastNumber + 1 + MAX_SKIPPED_CLAUSES) {
+            return false;
+        }
+        for (int next = index + 1; next < lines.size(); next++) {
+            if (lines.get(next).heading() != null) {
+                return lines.get(next).heading().number() == number + 1;
+            }
+        }
+        return false;
     }
 
     /**
