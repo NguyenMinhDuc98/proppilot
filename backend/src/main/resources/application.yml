@@ -70,10 +70,12 @@ proppilot:
   admin:
     token: ${ADMIN_TOKEN:}
   # The spans are exported only when enabled and there is an endpoint; the exporter itself reads the standard OTEL_*
-  # variables, so the endpoint is bound here only to know whether there is one
+  # variables, so the endpoints are bound here only to know whether there is one. They are named as the exporter names
+  # them: Spring finds the system property of that name and the variable OTEL_EXPORTER_OTLP_ENDPOINT alike
   otel:
     enabled: ${OTEL_ENABLED:false}
-    endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:}
+    endpoint: ${otel.exporter.otlp.endpoint:}
+    traces-endpoint: ${otel.exporter.otlp.traces.endpoint:}
   chat:
     max-message-length: ${CHAT_MAX_MESSAGE_LENGTH:500}
     max-history-items: ${CHAT_MAX_HISTORY_ITEMS:20}

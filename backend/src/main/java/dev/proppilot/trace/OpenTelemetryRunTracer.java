@@ -60,7 +60,8 @@ public final class OpenTelemetryRunTracer implements RunTracer, AutoCloseable {
     /**
      * A tracer configured the standard way: from the {@code OTEL_*} environment variables. The service name is
      * {@code proppilot} and the protocol {@code http/protobuf} unless the environment says otherwise; only traces are
-     * exported. A service name that a host passed on empty is the default one, not an unnamed service.
+     * exported. A service name that a host passed on empty is the default one, not an unnamed service. Throws when the
+     * SDK refuses what the environment gives it, such as an endpoint without a scheme.
      */
     public static OpenTelemetryRunTracer fromEnvironment() {
         var sdk = AutoConfiguredOpenTelemetrySdk.builder()

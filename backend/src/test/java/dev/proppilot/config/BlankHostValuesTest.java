@@ -16,6 +16,7 @@ import org.springframework.boot.test.context.assertj.AssertableApplicationContex
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
+import org.springframework.core.env.MapPropertySource;
 import org.springframework.core.env.SystemEnvironmentPropertySource;
 
 /**
@@ -36,7 +37,8 @@ class BlankHostValuesTest {
     private static final List<String> VARIABLES = List.of("LLM_PRICE_INPUT_PER_MTOK", "LLM_PRICE_OUTPUT_PER_MTOK",
             "PROMPT_CACHING", "ANTHROPIC_MODEL_LARGE", "LLM_LARGE_PRICE_INPUT_PER_MTOK",
             "LLM_LARGE_PRICE_OUTPUT_PER_MTOK", "LLM_CACHE_WRITE_MULTIPLIER", "LLM_CACHE_READ_MULTIPLIER",
-            "LLM_COMPLEXITY_THRESHOLD", "GUARDRAIL_MODE", "OTEL_ENABLED", "OTEL_EXPORTER_OTLP_ENDPOINT");
+            "LLM_COMPLEXITY_THRESHOLD", "GUARDRAIL_MODE", "OTEL_ENABLED", "OTEL_EXPORTER_OTLP_ENDPOINT",
+            "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT");
 
     private final ApplicationContextRunner runner = new ApplicationContextRunner()
             .withInitializer(new ConfigDataApplicationContextInitializer())
@@ -115,8 +117,7 @@ class BlankHostValuesTest {
                 "PROMPT_CACHING", "false",
                 "LLM_COMPLEXITY_THRESHOLD", "5",
                 "GUARDRAIL_MODE", "retry",
-                "OTEL_ENABLED", "true",
-                "OTEL_EXPORTER_OTLP_ENDPOINT", "http://collector:4318"));
+                "OTEL_ENABLED", "true"));
 
         assertThat(settings.llm().priceInputPerMtok()).isEqualByComparingTo("0.80");
         assertThat(settings.llm().priceOutputPerMtok()).isEqualByComparingTo("4");
@@ -129,7 +130,6 @@ class BlankHostValuesTest {
         assertThat(settings.llm().complexityThreshold()).isEqualTo(5);
         assertThat(settings.guardrail()).isEqualTo(GuardrailMode.RETRY);
         assertThat(settings.otel().enabled()).isTrue();
-        assertThat(settings.otel().hasEndpoint()).isTrue();
     }
 
     @Test
@@ -144,5 +144,18 @@ class BlankHostValuesTest {
     void aValueThatIsNotANumberStillStopsTheBackend() {
         onAHostThatSets(Map.of("LLM_COMPLEXITY_THRESHOLD", "three")).run(context -> assertThat(context).hasFailed());
         onAHostThatSets(Map.of("LLM_PRICE_INPUT_PER_MTOK", "cheap")).run(context -> assertThat(context).hasFailed());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"OTEL_EXPORTER_OTLP_ENDPOINT", "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"})
+    void anEndpointGivenAsEitherVariableIsFound(String variable) {
+        assertThat(settingsWith(Map.of(variable, "http://collector:4318")).otel().hasEndpoint()).isTrue();
+    }
+
+    @Test
+    void anEndpointGivenAsTheSystemPropertyOfTheExportersNameIsFoundToo() {
+        runner.withInitializer(context -> context.getEnvironment().getPropertySources().addFirst(
+                        new MapPropertySource("jvm", Map.of("otel.exporter.otlp.endpoint", "http://collector:4318"))))
+                .run(context -> assertThat(Settings.of(context).otel().hasEndpoint()).isTrue());
     }
 }
