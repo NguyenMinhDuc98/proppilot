@@ -2,9 +2,17 @@ export interface DonePayload {
   runId: string
   status: 'OK' | 'ERROR' | 'MAX_ITERATIONS' | 'TRUNCATED'
   provider: string
+  /** The model that gave the answer. */
   model: string
+  /** Why that model was chosen. */
+  routedReason: 'DEFAULT' | 'COMPLEX' | 'GUARDRAIL_RETRY' | 'FALLBACK'
+  /** Only the input tokens that were neither read from nor written to the prompt cache: add the two below for all. */
   inputTokens: number
   outputTokens: number
+  /** Input tokens the prompt cache served, at a tenth of the input price. */
+  cacheReadTokens: number
+  /** Input tokens that were written to the prompt cache, at a little more than the input price. */
+  cacheWriteTokens: number
   toolCalls: number
   iterations: number
   latencyMs: number

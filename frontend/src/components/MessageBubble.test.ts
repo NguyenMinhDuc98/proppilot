@@ -16,8 +16,9 @@ function render(overrides: Partial<ChatMessage>) {
 }
 
 const usage: DonePayload = {
-  runId: 'r1', status: 'OK', provider: 'anthropic', model: 'claude-haiku-4-5-20251001',
-  inputTokens: 100, outputTokens: 2048, toolCalls: 0, iterations: 1, latencyMs: 9000, costUsd: 0.01, truncated: false,
+  runId: 'r1', status: 'OK', provider: 'anthropic', model: 'claude-haiku-4-5-20251001', routedReason: 'DEFAULT',
+  inputTokens: 100, outputTokens: 2048, cacheReadTokens: 0, cacheWriteTokens: 0, toolCalls: 0, iterations: 1,
+  latencyMs: 9000, costUsd: 0.01, truncated: false,
 }
 
 const toolChip = (name: string, status: ToolChip['status'] = 'done'): ToolChip => ({ name, args: {}, status })
@@ -65,6 +66,16 @@ describe('MessageBubble truncated answers', () => {
   it('shows no notice for a complete answer or while streaming', () => {
     expect(render({ text: 'All done', usage }).find('[role="note"]').exists()).toBe(false)
     expect(render({ text: 'Partial', streaming: true }).find('[role="note"]').exists()).toBe(false)
+  })
+})
+
+describe('MessageBubble usage line', () => {
+  it('counts the tokens the prompt cache served and took in with the others', () => {
+    const cached = { ...usage, inputTokens: 12, outputTokens: 300, cacheReadTokens: 3400, cacheWriteTokens: 269 }
+
+    const wrapper = render({ text: 'Answer', usage: cached })
+
+    expect(wrapper.get('.meta').text()).toContain('3,981 tokens')
   })
 })
 

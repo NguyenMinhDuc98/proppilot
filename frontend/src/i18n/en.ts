@@ -62,6 +62,7 @@ export default {
       cost: 'Cost',
       latency: 'Latency',
       tokensIn: 'Tokens in',
+      tokensCached: 'Tokens from cache',
       tokensOut: 'Tokens out',
       rounds: 'Model rounds',
       model: 'Model',

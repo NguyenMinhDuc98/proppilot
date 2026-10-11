@@ -1,5 +1,6 @@
 import type { ChatMessage } from '../stores/chat'
 import { formatCost, formatCount, formatLatency, formatModel } from './format'
+import { totalInputTokens } from './usage'
 
 export interface TraceStep {
   kind: 'note' | 'call' | 'result' | 'failed' | 'answer'
@@ -12,7 +13,7 @@ export interface TraceStep {
 }
 
 export interface TraceStat {
-  id: 'cost' | 'latency' | 'tokensIn' | 'tokensOut' | 'rounds' | 'model'
+  id: 'cost' | 'latency' | 'tokensIn' | 'tokensCached' | 'tokensOut' | 'rounds' | 'model'
   value: string
 }
 
@@ -36,10 +37,14 @@ export function buildTrace(message: ChatMessage): { steps: TraceStep[]; stats: T
   const stats: TraceStat[] = [
     { id: 'cost', value: usage.provider === 'offline' ? '$0' : formatCost(usage.costUsd) },
     { id: 'latency', value: formatLatency(usage.latencyMs) },
-    { id: 'tokensIn', value: formatCount(usage.inputTokens) },
+    { id: 'tokensIn', value: formatCount(totalInputTokens(usage)) },
+  ]
+  // Only when the cache served something: a run that was not cached has nothing to explain.
+  if (usage.cacheReadTokens > 0) stats.push({ id: 'tokensCached', value: formatCount(usage.cacheReadTokens) })
+  stats.push(
     { id: 'tokensOut', value: formatCount(usage.outputTokens) },
     { id: 'rounds', value: String(usage.iterations) },
     { id: 'model', value: usage.provider === 'offline' ? usage.model : formatModel(usage.model) },
-  ]
+  )
   return { steps, stats }
 }

@@ -62,6 +62,7 @@ export default {
       cost: 'التكلفة',
       latency: 'الزمن',
       tokensIn: 'رموز الإدخال',
+      tokensCached: 'رموز من الذاكرة المؤقتة',
       tokensOut: 'رموز الإخراج',
       rounds: 'جولات النموذج',
       model: 'النموذج',

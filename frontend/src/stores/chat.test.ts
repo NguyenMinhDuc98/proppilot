@@ -28,8 +28,9 @@ const serverAllowsHistoryItems = (maxHistoryItems: number) => serverAllows({ max
 const serverAllowsTurnsOf = (maxHistoryTurnLength: number) => serverAllows({ maxHistoryTurnLength })
 
 const done: ChatEvent = {
-  type: 'done', runId: 'r1', status: 'OK', provider: 'offline', model: 'rule-based',
-  inputTokens: 10, outputTokens: 5, toolCalls: 1, iterations: 2, latencyMs: 30, costUsd: 0, truncated: false,
+  type: 'done', runId: 'r1', status: 'OK', provider: 'offline', model: 'rule-based', routedReason: 'DEFAULT',
+  inputTokens: 10, outputTokens: 5, cacheReadTokens: 0, cacheWriteTokens: 0, toolCalls: 1, iterations: 2,
+  latencyMs: 30, costUsd: 0, truncated: false,
 }
 
 function script(events: ChatEvent[]) {

@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import type { LeaseSource } from '../api/types'
 import { buildAnswer } from '../composables/answer'
 import { formatCost, formatLatency } from '../composables/format'
+import { totalInputTokens } from '../composables/usage'
 import type { ChatMessage } from '../stores/chat'
 import { AnswerNodes } from './AnswerNodes'
 import ApprovalCard from './ApprovalCard.vue'
@@ -31,7 +32,7 @@ const usageParts = computed(() => {
     costLabel.value,
     formatLatency(u.latencyMs),
     t('chat.usage.toolCalls', { n: u.toolCalls }, u.toolCalls),
-    t('chat.usage.tokens', { n: (u.inputTokens + u.outputTokens).toLocaleString('en-US') }),
+    t('chat.usage.tokens', { n: (totalInputTokens(u) + u.outputTokens).toLocaleString('en-US') }),
   ]
 })
 // Only tools that returned data count as sources, each once, however many times the model called it.

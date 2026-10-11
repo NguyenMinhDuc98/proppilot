@@ -37,8 +37,9 @@ vi.mock('../api/chat', () => ({
 vi.mock('../composables/useAppInfo', () => ({ useAppInfo: () => ({ info: { value: null } }) }))
 
 const done: ChatEvent = {
-  type: 'done', runId: 'r1', status: 'OK', provider: 'offline', model: 'rule-based',
-  inputTokens: 10, outputTokens: 5, toolCalls: 1, iterations: 1, latencyMs: 30, costUsd: 0, truncated: false,
+  type: 'done', runId: 'r1', status: 'OK', provider: 'offline', model: 'rule-based', routedReason: 'DEFAULT',
+  inputTokens: 10, outputTokens: 5, cacheReadTokens: 0, cacheWriteTokens: 0, toolCalls: 1, iterations: 1,
+  latencyMs: 30, costUsd: 0, truncated: false,
 }
 
 /** Puts the action into an assistant message the way the stream does, and shows that message. */

@@ -4,8 +4,9 @@ import type { ChatMessage } from '../stores/chat'
 import { buildTrace } from './trace'
 
 const usage: DonePayload = {
-  runId: 'r1', status: 'OK', provider: 'anthropic', model: 'claude-haiku-4-5-20251001',
-  inputTokens: 3681, outputTokens: 331, toolCalls: 1, iterations: 2, latencyMs: 4200, costUsd: 0.005859, truncated: false,
+  runId: 'r1', status: 'OK', provider: 'anthropic', model: 'claude-haiku-4-5-20251001', routedReason: 'DEFAULT',
+  inputTokens: 3681, outputTokens: 331, cacheReadTokens: 0, cacheWriteTokens: 0, toolCalls: 1, iterations: 2,
+  latencyMs: 4200, costUsd: 0.005859, truncated: false,
 }
 
 const message = (overrides: Partial<ChatMessage>): ChatMessage => ({
@@ -71,6 +72,26 @@ describe('buildTrace', () => {
     expect(byId).toEqual({
       cost: '$0.00586', latency: '4.2 s', tokensIn: '3,681', tokensOut: '331', rounds: '2', model: 'Claude Haiku 4.5',
     })
+  })
+
+  it('counts what the prompt cache served and took in as tokens in, and shows the cached part apart', () => {
+    const cached = { ...usage, inputTokens: 12, cacheReadTokens: 3400, cacheWriteTokens: 269 }
+
+    const { stats } = buildTrace(message({ usage: cached }))
+    const byId = Object.fromEntries(stats.map((s) => [s.id, s.value]))
+
+    expect(byId.tokensIn).toBe('3,681')
+    expect(byId.tokensCached).toBe('3,400')
+    expect(stats.map((s) => s.id)).toEqual(['cost', 'latency', 'tokensIn', 'tokensCached', 'tokensOut', 'rounds', 'model'])
+  })
+
+  it('counts a cache write as input too, and has no cached stat when nothing was read from the cache', () => {
+    const written = { ...usage, inputTokens: 12, cacheWriteTokens: 3669 }
+
+    const { stats } = buildTrace(message({ usage: written }))
+
+    expect(stats.find((s) => s.id === 'tokensIn')?.value).toBe('3,681')
+    expect(stats.map((s) => s.id)).not.toContain('tokensCached')
   })
 
   it('shows the offline assistant as free and keeps its model name', () => {
