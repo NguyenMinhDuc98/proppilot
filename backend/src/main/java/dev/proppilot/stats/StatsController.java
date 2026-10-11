@@ -23,6 +23,8 @@ public class StatsController {
     public StatsView stats() {
         var totals = runs.totals();
         var tools = runs.toolCounts().stream().map(t -> new StatsView.ToolUsage(t.getTool(), t.getCalls())).toList();
+        var models = runs.modelCounts().stream()
+                .map(m -> new StatsView.ModelUsage(m.getModel(), m.getRuns(), scale(m.getCostUsd()))).toList();
         return new StatsView(
                 totals.getRuns(),
                 scale(totals.getTotalCost()),
@@ -31,7 +33,14 @@ public class StatsController {
                 totals.getAvgToolCalls() == null ? 0 : Math.round(totals.getAvgToolCalls() * 100) / 100.0,
                 totals.getInputTokens() == null ? 0 : totals.getInputTokens(),
                 totals.getOutputTokens() == null ? 0 : totals.getOutputTokens(),
-                tools);
+                tools,
+                models,
+                new StatsView.CacheUsage(orZero(totals.getCacheReadTokens()), orZero(totals.getCacheWriteTokens())),
+                new StatsView.GuardrailUsage(orZero(totals.getFlaggedRuns())));
+    }
+
+    private static long orZero(Long value) {
+        return value == null ? 0 : value;
     }
 
     private static BigDecimal scale(BigDecimal value) {

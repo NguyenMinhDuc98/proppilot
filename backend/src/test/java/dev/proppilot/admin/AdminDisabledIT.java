@@ -27,6 +27,15 @@ class AdminDisabledIT extends PostgresIntegrationTest {
     }
 
     @Test
+    void theRunDetailDoesNotExistEither() throws Exception {
+        var id = "00000000-0000-0000-0000-000000000001";
+
+        mvc.perform(get("/api/admin/runs/" + id)).andExpect(status().isNotFound());
+        mvc.perform(get("/api/admin/runs/" + id).header("X-Admin-Token", "any-token-any-token-any-token"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
     void theDemoResetDoesNotExistEither() throws Exception {
         mvc.perform(post("/api/admin/reset")).andExpect(status().isNotFound());
         mvc.perform(post("/api/admin/reset").header("X-Admin-Token", "any-token-any-token-any-token"))

@@ -12,6 +12,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import dev.proppilot.PostgresIntegrationTest;
 import dev.proppilot.SqlStatementCounter;
 import dev.proppilot.agent.AgentResult;
+import dev.proppilot.agent.LlmCallRecord;
+import dev.proppilot.agent.ToolCallRecord;
+import dev.proppilot.agent.llm.StopReason;
 import dev.proppilot.agent.llm.Usage;
 import dev.proppilot.chat.ChatRun;
 import dev.proppilot.chat.ChatRunRepository;
@@ -57,6 +60,17 @@ class AdminRunsApiIT extends PostgresIntegrationTest {
                 new BigDecimal("0.000345")));
     }
 
+    private UUID saveRun(String question, Instant at, String model, AgentResult.Status status, int guardrailViolations) {
+        var id = UUID.randomUUID();
+        var result = new AgentResult("answer", new Usage(120, 45), 0, 1, status);
+        runs.save(new ChatRun(id, at, question, "anthropic", model, result, List.of(), 850, new BigDecimal("0.000345")));
+        if (guardrailViolations > 0) {
+            jdbc.update("update chat_runs set guardrail_status = 'FLAGGED', guardrail_violations = ? where id = ?",
+                    guardrailViolations, id);
+        }
+        return id;
+    }
+
     @Test
     void listsTheLatestRunsNewestFirstWithEverythingAnAdminNeeds() throws Exception {
         saveRun("older question", Instant.parse("2026-10-01T08:00:00Z"), List.of());
@@ -98,8 +112,8 @@ class AdminRunsApiIT extends PostgresIntegrationTest {
                 List.of("search_units", "get_payment_history")));
         var statements = new SqlStatementCounter(entityManagerFactory);
 
-        long forThree = statements.during(() -> controller.runs(3));
-        long forTwenty = statements.during(() -> controller.runs(20));
+        long forThree = statements.during(() -> controller.runs(3, null, null, null, null));
+        long forTwenty = statements.during(() -> controller.runs(20, null, null, null, null));
 
         assertThat(forThree).as("one query for the runs, one for all their tool names").isEqualTo(2);
         assertThat(forTwenty).isEqualTo(forThree);
@@ -142,5 +156,150 @@ class AdminRunsApiIT extends PostgresIntegrationTest {
     @Test
     void checksTheTokenBeforeLookingAtAnyOtherParameter() throws Exception {
         mvc.perform(get("/api/admin/runs?limit=0")).andExpect(status().isForbidden());
+    }
+
+    private static final String HAIKU = "claude-haiku-4-5-20251001";
+    private static final String LARGE = "claude-sonnet-4-5";
+    private static final Instant T0 = Instant.parse("2026-10-01T08:00:00Z");
+
+    @Test
+    void listsTheIdAndWhatTheTraceFiguresSay() throws Exception {
+        var result = new AgentResult("answer", new Usage(120, 45, 3000, 400), 2, 3, AgentResult.Status.OK);
+        var id = UUID.randomUUID();
+        runs.save(new ChatRun(id, T0, "a question", "anthropic", HAIKU, result, List.of("search_units", "get_unit_details"),
+                850, new BigDecimal("0.000345")));
+        jdbc.update("update chat_runs set routed_reason = 'complex', guardrail_status = 'FLAGGED', "
+                + "guardrail_violations = 1 where id = ?", id);
+
+        mvc.perform(get("/api/admin/runs").header("X-Admin-Token", TOKEN))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].id").value(id.toString()))
+                .andExpect(jsonPath("$[0].routedReason").value("complex"))
+                .andExpect(jsonPath("$[0].guardrailStatus").value("FLAGGED"))
+                .andExpect(jsonPath("$[0].iterations").value(3))
+                .andExpect(jsonPath("$[0].inputTokens").value(120))
+                .andExpect(jsonPath("$[0].cacheReadTokens").value(3000))
+                .andExpect(jsonPath("$[0].cacheWriteTokens").value(400));
+    }
+
+    @Test
+    void filtersByStatus() throws Exception {
+        saveRun("fine", T0, HAIKU, AgentResult.Status.OK, 0);
+        saveRun("broken", T0.plusSeconds(1), HAIKU, AgentResult.Status.ERROR, 0);
+        saveRun("cut", T0.plusSeconds(2), HAIKU, AgentResult.Status.TRUNCATED, 0);
+
+        mvc.perform(get("/api/admin/runs?status=ERROR").header("X-Admin-Token", TOKEN))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].question").value("broken"));
+    }
+
+    @Test
+    void filtersByTheModelThatAnswered() throws Exception {
+        saveRun("small", T0, HAIKU, AgentResult.Status.OK, 0);
+        saveRun("large", T0.plusSeconds(1), LARGE, AgentResult.Status.OK, 0);
+
+        mvc.perform(get("/api/admin/runs").queryParam("model", LARGE).header("X-Admin-Token", TOKEN))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].question").value("large"));
+    }
+
+    @Test
+    void filtersTheRunsTheGuardrailFlagged() throws Exception {
+        saveRun("grounded", T0, HAIKU, AgentResult.Status.OK, 0);
+        saveRun("flagged", T0.plusSeconds(1), HAIKU, AgentResult.Status.OK, 2);
+
+        mvc.perform(get("/api/admin/runs?guardrailFlagged=true").header("X-Admin-Token", TOKEN))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].question").value("flagged"));
+        mvc.perform(get("/api/admin/runs?guardrailFlagged=false").header("X-Admin-Token", TOKEN))
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].question").value("grounded"));
+    }
+
+    @Test
+    void pagesBackwardsFromACursor() throws Exception {
+        IntStream.range(0, 5).forEach(i -> saveRun("run " + i, T0.plusSeconds(i), HAIKU, AgentResult.Status.OK, 0));
+
+        mvc.perform(get("/api/admin/runs?limit=2").header("X-Admin-Token", TOKEN))
+                .andExpect(jsonPath("$[*].question").value(contains("run 4", "run 3")));
+        mvc.perform(get("/api/admin/runs").queryParam("limit", "2").queryParam("before", T0.plusSeconds(3).toString())
+                        .header("X-Admin-Token", TOKEN))
+                .andExpect(jsonPath("$[*].question").value(contains("run 2", "run 1")));
+        mvc.perform(get("/api/admin/runs").queryParam("before", T0.toString()).header("X-Admin-Token", TOKEN))
+                .andExpect(jsonPath("$", hasSize(0)));
+    }
+
+    @Test
+    void combinesFilters() throws Exception {
+        saveRun("small ok", T0, HAIKU, AgentResult.Status.OK, 0);
+        saveRun("large ok", T0.plusSeconds(1), LARGE, AgentResult.Status.OK, 0);
+        saveRun("large flagged", T0.plusSeconds(2), LARGE, AgentResult.Status.OK, 1);
+        saveRun("large flagged late", T0.plusSeconds(3), LARGE, AgentResult.Status.OK, 1);
+
+        mvc.perform(get("/api/admin/runs").queryParam("model", LARGE).queryParam("guardrailFlagged", "true")
+                        .queryParam("before", T0.plusSeconds(3).toString()).header("X-Admin-Token", TOKEN))
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].question").value("large flagged"));
+    }
+
+    @Test
+    void rejectsFiltersItCannotRead() throws Exception {
+        mvc.perform(get("/api/admin/runs?status=NOPE").header("X-Admin-Token", TOKEN)).andExpect(status().isBadRequest());
+        mvc.perform(get("/api/admin/runs?before=yesterday").header("X-Admin-Token", TOKEN))
+                .andExpect(status().isBadRequest());
+        mvc.perform(get("/api/admin/runs?guardrailFlagged=perhaps").header("X-Admin-Token", TOKEN))
+                .andExpect(status().isBadRequest());
+        mvc.perform(get("/api/admin/runs").queryParam("model", "m".repeat(65)).header("X-Admin-Token", TOKEN))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void filtersAreCheckedAfterTheToken() throws Exception {
+        mvc.perform(get("/api/admin/runs?status=NOPE")).andExpect(status().isForbidden());
+    }
+
+    @Test
+    void servesTheTraceOfARunWithItsQuestion() throws Exception {
+        var llmCall = new LlmCallRecord(1, HAIKU, 120, 45, 0, 0, 640, StopReason.END_TURN, LlmCallRecord.Outcome.OK, null,
+                T0);
+        var toolCall = new ToolCallRecord(1, "search_units", "{\"city\":\"Riyadh\"}", "3 units", false, 25, T0);
+        var result = new AgentResult("answer", new Usage(120, 45), 1, 1, AgentResult.Status.OK, null, List.of(llmCall),
+                List.of(toolCall));
+        var id = UUID.randomUUID();
+        runs.save(new ChatRun(id, T0, "who is late on rent?", "anthropic", HAIKU, result, List.of("search_units"), 850,
+                new BigDecimal("0.000345")));
+
+        mvc.perform(get("/api/admin/runs/{id}", id).header("X-Admin-Token", TOKEN))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.question").value("who is late on rent?"))
+                .andExpect(jsonPath("$.runId").value(id.toString()))
+                .andExpect(jsonPath("$.status").value("OK"))
+                .andExpect(jsonPath("$.model").value(HAIKU))
+                .andExpect(jsonPath("$.totals.inputTokens").value(120))
+                .andExpect(jsonPath("$.guardrail.violations").value(0))
+                .andExpect(jsonPath("$.llmCalls[0].latencyMs").value(640))
+                .andExpect(jsonPath("$.toolCalls[0].name").value("search_units"))
+                .andExpect(jsonPath("$.trace").doesNotExist());
+    }
+
+    @Test
+    void theRunDetailAnswersNotFoundForUnknownAndMalformedIds() throws Exception {
+        mvc.perform(get("/api/admin/runs/{id}", UUID.randomUUID()).header("X-Admin-Token", TOKEN))
+                .andExpect(status().isNotFound());
+        mvc.perform(get("/api/admin/runs/{id}", "not-a-uuid").header("X-Admin-Token", TOKEN))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void theRunDetailNeedsTheTokenToo() throws Exception {
+        var id = UUID.randomUUID();
+        saveRun("private question", T0, HAIKU, AgentResult.Status.OK, 0);
+
+        mvc.perform(get("/api/admin/runs/{id}", id)).andExpect(status().isForbidden());
+        mvc.perform(get("/api/admin/runs/{id}", id).header("X-Admin-Token", "wrong-token-wrong-token-wrong"))
+                .andExpect(status().isForbidden());
     }
 }
