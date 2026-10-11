@@ -8,12 +8,14 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  * LLM settings. Provider "offline" uses the built-in rule-based assistant (no key, no cost);
  * provider "anthropic" calls the Claude Messages API.
  *
- * <p>A host may pass a variable on empty, which binds as no value. The prompt caching switch, the cache multipliers, the
- * larger model's prices and the complexity threshold therefore have their default here as well as in application.yml,
- * and are boxed where a primitive could not hold "no value". A blank one then means its default: it neither stops the
- * backend nor leaves a price null for a question to fail on later.
+ * <p>A host may pass a variable on empty or as only spaces, which binds as no value. The prices, the prompt caching
+ * switch, the cache multipliers and the complexity threshold therefore have their default here as well as in
+ * application.yml, and are boxed where a primitive could not hold "no value". A blank one then means its default (see
+ * {@link BlankToDefaultConverter}): it neither stops the backend nor leaves a price null for a question to fail on
+ * later.
  *
  * @param priceInputPerMtok USD per million input tokens that were neither read from nor written to the prompt cache
+ * @param priceOutputPerMtok USD per million output tokens
  * @param cacheWriteMultiplier the price of a token written to the prompt cache, as a multiple of the input price
  * @param cacheReadMultiplier the price of a token read from the prompt cache, as a multiple of the input price
  * @param promptCaching whether requests mark the prompt prefix for the API to cache
@@ -33,8 +35,8 @@ public record LlmProperties(
         int timeoutSeconds,
         int maxRetries,
         int retryBaseDelayMs,
-        BigDecimal priceInputPerMtok,
-        BigDecimal priceOutputPerMtok,
+        @DefaultValue("1.00") BigDecimal priceInputPerMtok,
+        @DefaultValue("5.00") BigDecimal priceOutputPerMtok,
         @DefaultValue("1.25") BigDecimal cacheWriteMultiplier,
         @DefaultValue("0.10") BigDecimal cacheReadMultiplier,
         @DefaultValue("true") Boolean promptCaching,
