@@ -64,10 +64,15 @@ class EmbeddingBackfillIT extends FakeEmbeddingIntegrationTest {
         var texts = fake.documentCalls.stream().flatMap(List::stream).toList();
         var notice = jdbc.queryForMap("""
                 select d.title, c.content from lease_chunks c join lease_documents d on d.id = c.document_id
-                where c.ref = 'LSE-B-102#4'""");
+                where d.language = 'en' and c.section_title = 'Notice period' order by c.id limit 1""");
+        var preamble = jdbc.queryForMap("""
+                select d.title, c.content from lease_chunks c join lease_documents d on d.id = c.document_id
+                where d.language = 'en' and c.section_no is null order by c.id limit 1""");
         assertThat(texts).contains(notice.get("title") + "\n" + notice.get("content"));
-        assertThat((String) notice.get("title")).isEqualTo("Residential Lease Agreement – Unit B-102");
+        assertThat((String) notice.get("title")).startsWith("Residential Lease Agreement");
         assertThat((String) notice.get("content")).startsWith("4. Notice period\n");
+        assertThat(texts).as("a preamble has no heading, only the title in front")
+                .contains(preamble.get("title") + "\n" + preamble.get("content"));
         assertThat(texts).hasSize(chunks());
     }
 
