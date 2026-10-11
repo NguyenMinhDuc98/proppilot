@@ -43,7 +43,7 @@ public class VoyageEmbeddingClient implements EmbeddingClient {
     private static final String PROVIDER = "Voyage API";
     private static final Duration QUERY_BUDGET = Duration.ofSeconds(10);
     private static final Duration BATCH_BUDGET = Duration.ofSeconds(90);
-    private static final int LOGGED_ERROR_BODY_BYTES = 300;
+    private static final int LOGGED_ERROR_BODY_CHARS = 300;
 
     private final EmbeddingProperties props;
     private final ObjectMapper json;
@@ -210,10 +210,10 @@ public class VoyageEmbeddingClient implements EmbeddingClient {
         return new LlmException("Voyage reply is not usable: " + reason, ErrorCode.LLM_ERROR);
     }
 
-    /** What the API said, for the log: cut short, and without the key should it ever be echoed. */
+    /** What the API said, for the log: without the key should it ever be echoed, and then cut short. */
     private String excerpt(byte[] body) {
-        var text = new String(body, 0, Math.min(body.length, LOGGED_ERROR_BODY_BYTES), StandardCharsets.UTF_8);
-        return text.replace(props.apiKey(), "[key]");
+        var text = new String(body, StandardCharsets.UTF_8).replace(props.apiKey(), "[key]");
+        return text.length() <= LOGGED_ERROR_BODY_CHARS ? text : text.substring(0, LOGGED_ERROR_BODY_CHARS);
     }
 
     private static boolean isVisibleAscii(int c) {

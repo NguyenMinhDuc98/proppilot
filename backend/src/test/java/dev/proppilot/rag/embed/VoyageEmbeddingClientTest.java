@@ -322,22 +322,48 @@ class VoyageEmbeddingClientTest {
         }
     }
 
-    @Test
-    void theLogNeverHoldsTheKeyEvenWhenTheApiEchoesIt() {
+    /** What the client writes to its log while {@code action} runs. */
+    private static List<String> logged(Runnable action) {
         var appender = new ListAppender<ILoggingEvent>();
         appender.start();
         var logger = (Logger) LoggerFactory.getLogger(VoyageEmbeddingClient.class);
         logger.addAppender(appender);
         try {
-            replies.add(new Reply(401, Map.of(), "{\"detail\":\"Bearer " + API_KEY + " is invalid\"}", Duration.ZERO));
-
-            assertThatThrownBy(() -> client().embedQuery("question")).isInstanceOf(LlmException.class);
+            action.run();
         } finally {
             logger.detachAppender(appender);
         }
+        return appender.list.stream().map(ILoggingEvent::getFormattedMessage).toList();
+    }
 
-        assertThat(appender.list).isNotEmpty()
-                .allSatisfy(event -> assertThat(event.getFormattedMessage()).doesNotContain(API_KEY));
+    private List<String> loggedWhenAQuestionIsRefusedWith(String body) {
+        replies.add(new Reply(400, Map.of(), body, Duration.ZERO));
+        return logged(() -> assertThatThrownBy(() -> client().embedQuery("question"))
+                .isInstanceOf(LlmException.class));
+    }
+
+    @Test
+    void theLogNeverHoldsTheKeyEvenWhenTheApiEchoesIt() {
+        var messages = loggedWhenAQuestionIsRefusedWith("{\"detail\":\"Bearer " + API_KEY + " is invalid\"}");
+
+        assertThat(messages).isNotEmpty()
+                .allSatisfy(message -> assertThat(message).doesNotContain(API_KEY).contains("[key]"));
+    }
+
+    @Test
+    void theLogHoldsNoPartOfAKeyThatTheCutOfTheExcerptWouldSplit() {
+        var messages = loggedWhenAQuestionIsRefusedWith("x".repeat(290) + API_KEY);
+
+        assertThat(messages).isNotEmpty()
+                .allSatisfy(message -> assertThat(message).doesNotContain("pa-test").contains("[key]"));
+    }
+
+    @Test
+    void theLogHoldsOnlyTheStartOfALongReply() {
+        var messages = loggedWhenAQuestionIsRefusedWith("y".repeat(5000));
+
+        assertThat(messages).hasSize(1);
+        assertThat(messages.get(0)).hasSizeLessThan(400);
     }
 
     @Test
