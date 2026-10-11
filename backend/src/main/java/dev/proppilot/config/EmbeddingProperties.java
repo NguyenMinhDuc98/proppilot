@@ -27,7 +27,8 @@ public record EmbeddingProperties(
     private static final int MAX_MODEL_LENGTH = 64;
 
     public EmbeddingProperties {
-        provider = provider == null ? NONE : provider.strip().toLowerCase(Locale.ROOT);
+        // A variable that the host passes on empty (a dashboard value that was never filled in) means no embeddings.
+        provider = provider == null || provider.isBlank() ? NONE : provider.strip().toLowerCase(Locale.ROOT);
         if (!provider.equals(NONE) && !provider.equals(VOYAGE)) {
             throw new IllegalArgumentException("EMBEDDING_PROVIDER must be " + NONE + " or " + VOYAGE);
         }

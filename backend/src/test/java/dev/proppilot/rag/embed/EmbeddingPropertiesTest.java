@@ -24,8 +24,14 @@ class EmbeddingPropertiesTest {
     }
 
     @Test
+    void aBlankProviderIsNoneSoAnUnfilledDashboardValueCannotStopTheBackend() {
+        assertThat(props("", "", "voyage-4-lite", 1024).provider()).isEqualTo("none");
+        assertThat(props("   ", "", "voyage-4-lite", 1024).provider()).isEqualTo("none");
+    }
+
+    @Test
     void anyOtherProviderIsRefusedWithTheNameOfTheSetting() {
-        for (var provider : new String[] {"openai", "", "  "}) {
+        for (var provider : new String[] {"openai", "voyage-ai", "none,voyage"}) {
             assertThatThrownBy(() -> props(provider, "", "voyage-4-lite", 1024))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("EMBEDDING_PROVIDER must be none or voyage");

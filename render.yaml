@@ -28,9 +28,8 @@ services:
       - key: ANTHROPIC_API_KEY
         sync: false
       # Set in the Render dashboard: "none" (lease search by keywords, free) or "voyage" (also by meaning; needs
-      # VOYAGE_API_KEY). Deliberately not given a value here, for the same reason as LLM_PROVIDER. Never leave it
-      # blank: an empty value stops the backend from starting. EMBEDDING_MODEL is optional and is added in the
-      # dashboard when wanted.
+      # VOYAGE_API_KEY). Deliberately not given a value here, for the same reason as LLM_PROVIDER. Unset or blank
+      # means "none". EMBEDDING_MODEL is optional and is added in the dashboard when wanted.
       - key: EMBEDDING_PROVIDER
         sync: false
       - key: VOYAGE_API_KEY

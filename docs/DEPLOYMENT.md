@@ -28,7 +28,7 @@ Flyway creates the schema and seed data on the first backend start; nothing to r
    - `DB_URL`, `DB_USER`, `DB_PASSWORD` from Neon
    - `CORS_ALLOWED_ORIGINS` = your Vercel URL (set a placeholder first, update after step 3)
    - `ANTHROPIC_API_KEY` only if you switch `LLM_PROVIDER` to `anthropic`
-   - `EMBEDDING_PROVIDER` and `VOYAGE_API_KEY`, only to turn on embeddings for the lease search (section 5); leave `EMBEDDING_PROVIDER` unset or `none` otherwise, and never blank
+   - `EMBEDDING_PROVIDER` and `VOYAGE_API_KEY`, only to turn on embeddings for the lease search (section 5); leave `EMBEDDING_PROVIDER` unset, blank or `none` otherwise
    - `ADMIN_TOKEN` (24 or more characters, `openssl rand -hex 24`): it switches on the admin endpoints, and the nightly demo reset in section 7 needs it
 4. Wait for the deploy; `https://<service>.onrender.com/actuator/health` should return `{"status":"UP"}`.
 5. The first start after this version is deployed applies migrations `V5` and `V6`, and then writes the lease documents in a background thread, so the health check does not wait for them. See section 5 for what to expect.

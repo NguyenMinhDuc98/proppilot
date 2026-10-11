@@ -375,7 +375,7 @@ LLM_PROVIDER=anthropic ANTHROPIC_API_KEY=sk-ant-... docker compose up --build
 | `ACTION_MAX_APPROVALS_PER_DAY` | `100` | Global daily cap on approved changes (protects the shared demo data) |
 | `ACTION_MAX_PROPOSALS_PER_RUN` | `3` | Most changes one question may propose |
 | `ACTION_MAX_PROPOSALS_PER_DAY` | `200` | Global daily cap on proposed changes |
-| `EMBEDDING_PROVIDER` | `none` | `none` (lease search by keywords, free) or `voyage` (also by meaning). Anything else, a blank value included, stops the backend from starting |
+| `EMBEDDING_PROVIDER` | `none` | `none` (lease search by keywords, free) or `voyage` (also by meaning). A blank value counts as `none`; any other value stops the backend from starting |
 | `VOYAGE_API_KEY` | – | Required for `voyage`. Read only by the backend. New accounts have rate limits: https://docs.voyageai.com/docs/rate-limits |
 | `EMBEDDING_MODEL` | `voyage-4-lite` | Voyage model id. Chunks embedded by another model are embedded again |
 | `EMBEDDING_DIMENSIONS` | `1024` | Must be 1024, the size of the `lease_chunks.embedding` column, or the backend refuses to start |
@@ -386,8 +386,8 @@ LLM_PROVIDER=anthropic ANTHROPIC_API_KEY=sk-ant-... docker compose up --build
 ## Tests
 
 ```bash
-cd backend && ./mvnw verify      # 1406 tests in 98 classes; 43 of them are integration tests that start PostgreSQL (pgvector) via Testcontainers, so Docker is needed
-cd frontend && npm test          # 324 Vitest tests in 23 files: SSE parser, chat store, approval card, Activity page, Markdown sanitising, citation chips and the clause drawer, trace builder, error codes, info badge, matching English and Arabic message keys
+cd backend && ./mvnw verify      # 1407 tests in 98 classes; 43 of them are integration tests that start PostgreSQL (pgvector) via Testcontainers, so Docker is needed
+cd frontend && npm test          # 330 Vitest tests in 24 files: SSE parser, chat store, approval card, Activity page, Markdown sanitising, citation chips and the clause drawer, trace builder, error codes, info badge, matching English and Arabic message keys
 node --test evals/grade.test.mjs # 11 tests of the eval grading and of the shape of every case in questions.json
 ```
 
