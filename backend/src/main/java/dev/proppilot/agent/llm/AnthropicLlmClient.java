@@ -25,8 +25,10 @@ import org.springframework.stereotype.Component;
 
 /** Calls the Claude Messages API over plain HTTP with streaming enabled, retrying transient failures. */
 @Component
-@ConditionalOnProperty(name = "proppilot.llm.provider", havingValue = "anthropic")
+@ConditionalOnProperty(name = "proppilot.llm.provider", havingValue = AnthropicLlmClient.PROVIDER)
 public class AnthropicLlmClient implements LlmClient {
+
+    public static final String PROVIDER = "anthropic";
 
     private static final Logger log = LoggerFactory.getLogger(AnthropicLlmClient.class);
     private static final String API_VERSION = "2023-06-01";
@@ -119,7 +121,7 @@ public class AnthropicLlmClient implements LlmClient {
 
     @Override
     public String provider() {
-        return "anthropic";
+        return PROVIDER;
     }
 
     @Override

@@ -1,4 +1,4 @@
-package dev.proppilot.agent.llm.offline;
+package dev.proppilot.text;
 
 import java.util.Map;
 import java.util.OptionalInt;
@@ -10,10 +10,10 @@ import java.util.regex.Pattern;
  * and 365, which is what the tool accepts. A number that is not about the window, such as the days of notice a lease
  * requires, is not read: only a number that a word like "in" or "within" leads in is.
  *
- * <p>The text is folded (see {@link dev.proppilot.text.Folding}). A run of white space is taken by one quantifier only,
- * and a quantifier that follows it never gives it back, so each pattern costs time in proportion to the question.
+ * <p>The text is folded (see {@link Folding}). A run of white space is taken by one quantifier only, and a quantifier
+ * that follows it never gives it back, so each pattern costs time in proportion to the question.
  */
-final class ExpiryWindow {
+public final class ExpiryWindow {
 
     private static final int MAX_DAYS = 365;
     private static final String WORD_START = "(?<![\\p{L}\\p{N}])";
@@ -50,7 +50,7 @@ final class ExpiryWindow {
     }
 
     /** Empty when the question names no window. */
-    static OptionalInt days(String folded) {
+    public static OptionalInt days(String folded) {
         var english = ENGLISH_COUNT.matcher(folded);
         if (english.find()) {
             return count(english.group(1), english.group(2));

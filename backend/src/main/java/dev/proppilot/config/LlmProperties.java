@@ -15,6 +15,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *                   when there is none, which switches both off
  * @param largePriceInputPerMtok the input price of the larger model, USD per million tokens
  * @param largePriceOutputPerMtok the output price of the larger model, USD per million tokens
+ * @param complexityThreshold the score at which a question counts as multi-step or complex and goes to the larger model
  */
 @ConfigurationProperties(prefix = "proppilot.llm")
 public record LlmProperties(
@@ -33,7 +34,8 @@ public record LlmProperties(
         boolean promptCaching,
         String largeModel,
         BigDecimal largePriceInputPerMtok,
-        BigDecimal largePriceOutputPerMtok) {
+        BigDecimal largePriceOutputPerMtok,
+        int complexityThreshold) {
 
     public LlmProperties {
         largeModel = largeModel == null ? "" : largeModel.strip();

@@ -48,6 +48,8 @@ proppilot:
     large-model: ${ANTHROPIC_MODEL_LARGE:}
     large-price-input-per-mtok: ${LLM_LARGE_PRICE_INPUT_PER_MTOK:3.00}
     large-price-output-per-mtok: ${LLM_LARGE_PRICE_OUTPUT_PER_MTOK:15.00}
+    # The score from which a question goes to the larger model (see ComplexityRule for what scores)
+    complexity-threshold: ${LLM_COMPLEXITY_THRESHOLD:3}
   embedding:
     provider: ${EMBEDDING_PROVIDER:none}
     api-key: ${VOYAGE_API_KEY:}

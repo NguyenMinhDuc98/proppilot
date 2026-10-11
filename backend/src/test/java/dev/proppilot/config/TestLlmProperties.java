@@ -19,6 +19,7 @@ public final class TestLlmProperties {
     private String largeModel = "";
     private BigDecimal largePriceInputPerMtok = new BigDecimal("3.00");
     private BigDecimal largePriceOutputPerMtok = new BigDecimal("15.00");
+    private int complexityThreshold = 3;
 
     private TestLlmProperties() {
     }
@@ -81,9 +82,15 @@ public final class TestLlmProperties {
         return this;
     }
 
+    public TestLlmProperties complexityThreshold(int complexityThreshold) {
+        this.complexityThreshold = complexityThreshold;
+        return this;
+    }
+
     public LlmProperties build() {
         return new LlmProperties(provider, "test-api-key-123", model, apiUrl, 1024, timeoutSeconds, maxRetries,
                 retryBaseDelayMs, priceInputPerMtok, priceOutputPerMtok, cacheWriteMultiplier, cacheReadMultiplier,
-                promptCaching, largeModel, largePriceInputPerMtok, largePriceOutputPerMtok);
+                promptCaching, largeModel, largePriceInputPerMtok, largePriceOutputPerMtok,
+                complexityThreshold);
     }
 }

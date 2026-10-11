@@ -18,11 +18,20 @@ public class ScriptedLlmClient implements LlmClient {
 
     private final Queue<Object> script = new ArrayDeque<>();
     private Runnable beforeEachCall = () -> { };
+    private String provider = "scripted";
+    private String model = "test";
     public final List<LlmRequest> requests = new ArrayList<>();
 
     /** Runs at the start of every call, for example to hold the model until the test has done something else. */
     public ScriptedLlmClient beforeEachCall(Runnable hook) {
         beforeEachCall = hook;
+        return this;
+    }
+
+    /** Plays another provider and default model, for the code that treats them differently. */
+    public ScriptedLlmClient servingAs(String provider, String model) {
+        this.provider = provider;
+        this.model = model;
         return this;
     }
 
@@ -51,6 +60,12 @@ public class ScriptedLlmClient implements LlmClient {
         return this;
     }
 
+    /** A call that streams {@code text} to the client and then fails, as a reply cut short by an overload does. */
+    public ScriptedLlmClient thenStreamAndFail(String text, ErrorCode code, String message) {
+        script.add(new StreamedThenFailed(text, new LlmException(message, code)));
+        return this;
+    }
+
     /** For tests that share one instance as a Spring bean. */
     public void reset() {
         script.clear();
@@ -66,6 +81,10 @@ public class ScriptedLlmClient implements LlmClient {
         if (next instanceof LlmException e) {
             throw e;
         }
+        if (next instanceof StreamedThenFailed streamed) {
+            onTextDelta.accept(streamed.text());
+            throw streamed.failure();
+        }
         var response = (LlmResponse) next;
         if (!response.text().isEmpty()) {
             onTextDelta.accept(response.text());
@@ -73,13 +92,16 @@ public class ScriptedLlmClient implements LlmClient {
         return response;
     }
 
+    private record StreamedThenFailed(String text, LlmException failure) {
+    }
+
     @Override
     public String provider() {
-        return "scripted";
+        return provider;
     }
 
     @Override
     public String model() {
-        return "test";
+        return model;
     }
 }
