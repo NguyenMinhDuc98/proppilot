@@ -48,11 +48,11 @@ class OpenTelemetryExportTest {
     @AfterEach
     void stopCollector() {
         System.clearProperty("otel.exporter.otlp.endpoint");
+        System.clearProperty("otel.service.name");
         collector.stop(0);
     }
 
-    @Test
-    void sendsARunToTheConfiguredEndpointAsOtlpOverHttp() {
+    private TracedRun exportARun() {
         var at = Instant.parse("2026-10-01T08:00:00Z");
         var call = new LlmCallRecord(1, "claude-haiku-4-5-20251001", 100, 20, 0, 0, 500, StopReason.END_TURN,
                 LlmCallRecord.Outcome.OK, null, at);
@@ -62,12 +62,43 @@ class OpenTelemetryExportTest {
         try (var tracer = OpenTelemetryRunTracer.fromEnvironment()) {
             tracer.record(run);
         }
+        return run;
+    }
+
+    /** The resource attribute {@code service.name} as protobuf writes it: key, then a string value of that length. */
+    private static String serviceNameAttribute(String name) {
+        return "service.name\u0012" + (char) (name.length() + 2) + "\n" + (char) name.length() + name;
+    }
+
+    @Test
+    void sendsARunToTheConfiguredEndpointAsOtlpOverHttp() {
+        var run = exportARun();
 
         assertThat(received).hasSize(1);
         var export = received.get(0);
         assertThat(export.path()).isEqualTo("/v1/traces");
         assertThat(export.contentType()).isEqualTo("application/x-protobuf");
-        assertThat(export.body()).contains("service.name").contains("proppilot").contains("proppilot.run")
+        assertThat(export.body()).contains(serviceNameAttribute("proppilot")).contains("proppilot.run")
                 .contains(run.runId().toString());
+    }
+
+    @Test
+    void namesTheServiceAsConfigured() {
+        System.setProperty("otel.service.name", "proppilot-demo");
+
+        exportARun();
+
+        assertThat(received).hasSize(1);
+        assertThat(received.get(0).body()).contains(serviceNameAttribute("proppilot-demo"));
+    }
+
+    @Test
+    void namesTheServiceProppilotWhenTheHostPassesTheNameOnEmpty() {
+        System.setProperty("otel.service.name", "");
+
+        exportARun();
+
+        assertThat(received).hasSize(1);
+        assertThat(received.get(0).body()).contains(serviceNameAttribute("proppilot"));
     }
 }

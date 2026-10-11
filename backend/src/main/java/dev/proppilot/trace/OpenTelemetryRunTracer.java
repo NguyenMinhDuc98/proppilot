@@ -9,6 +9,7 @@ import io.opentelemetry.api.trace.Tracer;
 import io.opentelemetry.context.Context;
 import io.opentelemetry.sdk.OpenTelemetrySdk;
 import io.opentelemetry.sdk.autoconfigure.AutoConfiguredOpenTelemetrySdk;
+import io.opentelemetry.sdk.autoconfigure.spi.ConfigProperties;
 import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
@@ -45,6 +46,8 @@ public final class OpenTelemetryRunTracer implements RunTracer, AutoCloseable {
     static final AttributeKey<Boolean> TOOL_ERROR = AttributeKey.booleanKey("tool.error");
 
     private static final String INSTRUMENTATION = "dev.proppilot";
+    private static final String SERVICE_NAME_PROPERTY = "otel.service.name";
+    private static final String DEFAULT_SERVICE_NAME = "proppilot";
 
     private final OpenTelemetrySdk sdk;
     private final Tracer tracer;
@@ -57,19 +60,24 @@ public final class OpenTelemetryRunTracer implements RunTracer, AutoCloseable {
     /**
      * A tracer configured the standard way: from the {@code OTEL_*} environment variables. The service name is
      * {@code proppilot} and the protocol {@code http/protobuf} unless the environment says otherwise; only traces are
-     * exported.
+     * exported. A service name that a host passed on empty is the default one, not an unnamed service.
      */
     public static OpenTelemetryRunTracer fromEnvironment() {
         var sdk = AutoConfiguredOpenTelemetrySdk.builder()
                 .addPropertiesSupplier(() -> Map.of(
-                        "otel.service.name", "proppilot",
                         "otel.exporter.otlp.protocol", "http/protobuf",
                         "otel.metrics.exporter", "none",
                         "otel.logs.exporter", "none"))
+                .addPropertiesCustomizer(OpenTelemetryRunTracer::serviceNameWhenBlank)
                 .disableShutdownHook()
                 .build()
                 .getOpenTelemetrySdk();
         return new OpenTelemetryRunTracer(sdk);
+    }
+
+    private static Map<String, String> serviceNameWhenBlank(ConfigProperties config) {
+        var name = config.getString(SERVICE_NAME_PROPERTY);
+        return name == null || name.isBlank() ? Map.of(SERVICE_NAME_PROPERTY, DEFAULT_SERVICE_NAME) : Map.of();
     }
 
     @Override

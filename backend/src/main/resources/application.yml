@@ -69,8 +69,11 @@ proppilot:
     mode: ${GUARDRAIL_MODE:warn}
   admin:
     token: ${ADMIN_TOKEN:}
+  # The spans are exported only when enabled and there is an endpoint; the exporter itself reads the standard OTEL_*
+  # variables, so the endpoint is bound here only to know whether there is one
   otel:
     enabled: ${OTEL_ENABLED:false}
+    endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:}
   chat:
     max-message-length: ${CHAT_MAX_MESSAGE_LENGTH:500}
     max-history-items: ${CHAT_MAX_HISTORY_ITEMS:20}
