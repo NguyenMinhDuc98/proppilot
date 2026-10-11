@@ -135,6 +135,7 @@ const errorText = computed(() => {
 .markdown :deep(ul), .markdown :deep(ol) { margin: 0 0 10px; padding-inline-start: 22px; }
 .markdown :deep(li + li) { margin-top: 3px; }
 .markdown :deep(strong) { font-weight: 700; }
+.markdown :deep(blockquote) { margin: 0 0 10px; padding: 2px 14px; border-inline-start: 3px solid var(--pp-border-strong); }
 .markdown :deep(code) { background: var(--pp-primary-soft); color: var(--pp-primary-ink); padding: 1px 6px; border-radius: 6px; font-size: 0.9em; }
 .markdown :deep(h1), .markdown :deep(h2), .markdown :deep(h3) { margin: 14px 0 6px; font-size: 15px; font-weight: 700; }
 .markdown :deep(.table-wrap) {
