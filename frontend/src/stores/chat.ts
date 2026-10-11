@@ -35,6 +35,26 @@ export interface ChatMessage {
 /** The server's proppilot.chat.max-history-items default, assumed until /api/info has reported the real limit. */
 const DEFAULT_MAX_HISTORY_ITEMS = 20
 
+/** The server's proppilot.chat.max-history-turn-length default, assumed until /api/info has reported the real limit. */
+const DEFAULT_MAX_HISTORY_TURN_LENGTH = 4000
+
+const isHighSurrogate = (code: number) => code >= 0xd800 && code <= 0xdbff
+
+/**
+ * An answer that quotes lease clauses can be longer than a history turn may be, and a turn the server refuses would
+ * fail every later question. What a follow-up needs is the beginning of the answer, so the text is cut, at the end of
+ * a line when there is one in its second half, rather than the exchange dropped. The cut is marked with an ellipsis.
+ */
+function fitTurn(text: string, maxLength: number): string {
+  if (text.length <= maxLength) return text
+  const room = maxLength - 1 // the ellipsis takes one
+  const lineEnd = text.lastIndexOf('\n', room)
+  if (lineEnd > maxLength / 2) return `${text.slice(0, lineEnd).trimEnd()}…`
+  // Half of a character that takes two code units is not text a server has to accept.
+  const end = isHighSurrogate(text.charCodeAt(room - 1)) ? room - 1 : room
+  return `${text.slice(0, end).trimEnd()}…`
+}
+
 /** The decision of a card that is on its way to the server. */
 export type Decision = 'approving' | 'rejecting'
 
@@ -63,10 +83,12 @@ export const useChatStore = defineStore('chat', () => {
 
   /**
    * Only exchanges that completed successfully, so a failed or half-streamed answer never pollutes the next question.
-   * Capped to what the server accepts, dropping the oldest whole exchanges so a question never loses its answer.
+   * Capped to what the server accepts: the oldest whole exchanges are dropped so a question never loses its answer,
+   * and an answer longer than a turn may be is cut.
    * The confirmation of a decision follows an answer, not a question, so it is never part of an exchange.
    */
   function history(): HistoryTurn[] {
+    const maxTurnLength = info.value?.maxHistoryTurnLength ?? DEFAULT_MAX_HISTORY_TURN_LENGTH
     const exchanges: HistoryTurn[][] = []
     for (let i = 0; i + 1 < messages.value.length; i++) {
       const question = messages.value[i]
@@ -74,7 +96,7 @@ export const useChatStore = defineStore('chat', () => {
       if (question.role !== 'user' || answer.streaming || answer.error || answer.text.trim() === '') continue
       exchanges.push([
         { role: 'user', text: question.text },
-        { role: 'assistant', text: answer.text },
+        { role: 'assistant', text: fitTurn(answer.text, maxTurnLength) },
       ])
     }
     // Not slice(-maxExchanges): that would keep every exchange when the limit is below 2.

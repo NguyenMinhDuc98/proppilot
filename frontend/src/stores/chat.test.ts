@@ -18,9 +18,14 @@ vi.mock('../api/chat', () => ({
 const info = ref<AppInfo | null>(null)
 vi.mock('../composables/useAppInfo', () => ({ useAppInfo: () => ({ info }) }))
 
-function serverAllowsHistoryItems(maxHistoryItems: number) {
-  info.value = { mode: 'offline', provider: 'offline', model: 'rule-based', maxHistoryItems }
+function serverAllows(limits: Pick<AppInfo, 'maxHistoryItems'> | Pick<AppInfo, 'maxHistoryTurnLength'>) {
+  info.value = {
+    mode: 'offline', provider: 'offline', model: 'rule-based', maxHistoryItems: 20, maxHistoryTurnLength: 4000, ...limits,
+  }
 }
+
+const serverAllowsHistoryItems = (maxHistoryItems: number) => serverAllows({ maxHistoryItems })
+const serverAllowsTurnsOf = (maxHistoryTurnLength: number) => serverAllows({ maxHistoryTurnLength })
 
 const done: ChatEvent = {
   type: 'done', runId: 'r1', status: 'OK', provider: 'offline', model: 'rule-based',
@@ -253,6 +258,80 @@ describe('chat store', () => {
       { role: 'user', text: 'how many units?' },
       { role: 'assistant', text: 'There are 6 units' },
     ])
+  })
+
+  describe('an answer longer than the server accepts for one history turn', () => {
+    /** Sends a question the model answers with `answer`, then another, and returns the history the second carried. */
+    async function historyAfter(answer: string): Promise<{ role: string; text: string }[]> {
+      script([{ type: 'token', text: answer }, done])
+      script([{ type: 'token', text: 'ok' }, done])
+      const chat = useChatStore()
+      await chat.send('what are the house rules?')
+      await chat.send('and parking?')
+      return streamChat.mock.calls[1][1]
+    }
+
+    it('is cut to the 4000 characters assumed before the server has reported its limit, and its question is kept', async () => {
+      const history = await historyAfter('The house rules are quoted below. '.repeat(150))
+
+      expect(history).toHaveLength(2)
+      expect(history[0]).toEqual({ role: 'user', text: 'what are the house rules?' })
+      expect(history[1].role).toBe('assistant')
+      expect(history[1].text.length).toBeLessThanOrEqual(4000)
+      expect(history[1].text.startsWith('The house rules are quoted below.')).toBe(true)
+      expect(history[1].text.endsWith('…')).toBe(true)
+    })
+
+    it('is cut to the limit the server reports', async () => {
+      serverAllowsTurnsOf(300)
+
+      const history = await historyAfter('x'.repeat(5000))
+
+      expect(history[1].text).toBe(`${'x'.repeat(299)}…`)
+    })
+
+    it('is cut at the end of a line when one is in the second half of what fits', async () => {
+      const answer = `${'a'.repeat(3000)}\n${'b'.repeat(3000)}`
+
+      const history = await historyAfter(answer)
+
+      expect(history[1].text).toMatch(/^a{3000}…$/)
+    })
+
+    it('is cut where it fits, not at an early line end that would leave too little of it', async () => {
+      const answer = `${'a'.repeat(100)}\n${'b'.repeat(5000)}`
+
+      const history = await historyAfter(answer)
+
+      expect(history[1].text).toMatch(/^a{100}\nb{3898}…$/)
+      expect(history[1].text).toHaveLength(4000)
+    })
+
+    it('is not cut inside a character that takes two code units', async () => {
+      const history = await historyAfter(`${'x'.repeat(3998)}${'😀'.repeat(10)}`)
+
+      expect(history[1].text).toMatch(/^x{3998}…$/)
+    })
+
+    it('is left whole when it is exactly as long as the server accepts', async () => {
+      const history = await historyAfter('y'.repeat(4000))
+
+      expect(history[1].text).toMatch(/^y{4000}$/)
+    })
+
+    it('still lets the next question be asked after the exchange, and again after that', async () => {
+      script([{ type: 'token', text: 'z'.repeat(5000) }, done])
+      script([{ type: 'token', text: 'second' }, done])
+      script([{ type: 'token', text: 'third' }, done])
+      const chat = useChatStore()
+
+      await chat.send('one')
+      await chat.send('two')
+      await chat.send('three')
+
+      const lengths = (streamChat.mock.calls[2][1] as { text: string }[]).map((turn) => turn.text.length)
+      expect(lengths).toEqual([3, 4000, 3, 6])
+    })
   })
 
   it('drops a failed exchange from the history', async () => {
