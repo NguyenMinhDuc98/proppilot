@@ -247,6 +247,24 @@ class OfflineLeaseIntentsTest {
         assertThat(call.input().has("unit_code")).isFalse();
     }
 
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', textBlock = """
+            Is a written reminder required before the late fee in the A-203 lease? | search_lease_documents
+            Is a reminder required before the late fee for unit A-203? | search_lease_documents
+            What does the lease say about payment reminders? | search_lease_documents
+            Do any leases require a reminder before renewal? | search_lease_documents
+            Show the clause about the reminder before the late fee for unit A-203 | search_lease_documents
+            هل يشترط العقد تذكيرا كتابيا قبل غرامة التأخير للوحدة A-203؟ | search_lease_documents
+            Draft a reminder about the late fee for unit A-203 | draft_tenant_message
+            Write a message about the lease renewal to unit A-203 | draft_tenant_message
+            Late fee reminder for unit A-203 | draft_tenant_message
+            Renewal reminder for tenant Ahmed | draft_tenant_message
+            اكتب رسالة تذكير بغرامة التأخير للوحدة A-203 | draft_tenant_message
+            """)
+    void aQuestionAboutALeaseThatMentionsAReminderIsNotARequestToDraftOne(String question, String tool) {
+        assertThat(route(question).name()).isEqualTo(tool);
+    }
+
     @Test
     void theUnitWinsOverTheTenantWhenBothAreNamed() {
         var call = route("What is the late fee for tenant Ahmed in unit A-504?");

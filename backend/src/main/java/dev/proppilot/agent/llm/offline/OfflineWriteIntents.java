@@ -88,6 +88,11 @@ final class OfflineWriteIntents {
         return "(?:(?!(?:" + BREAKER + ")" + WORD_END + ")" + WORD + "\\s+){0," + most + "}";
     }
 
+    /** Whether the question uses a verb of drafting: "draft", "write", "compose", "صغ", "اكتب". */
+    static boolean asksToDraft(String question) {
+        return DRAFTING.matcher(Folding.fold(Folding.withoutDiacritics(question))).find();
+    }
+
     /** Empty unless the question holds a command to change something. */
     Optional<OfflineIntentRouter.Call> route(String question) {
         var text = Folding.withoutDiacritics(question);

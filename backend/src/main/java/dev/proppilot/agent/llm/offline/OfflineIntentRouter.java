@@ -13,7 +13,8 @@ import java.util.regex.Pattern;
  * Maps a question to at most one tool call; returns empty when it does not understand. A command to change something
  * is checked first, because its words ("reminder", "payment") also appear in the read questions. A request to draft a
  * message comes next and a question about what a lease says after it, because "renewal" and "notice" are also what a
- * draft is about; both go before the questions about payments, which share words such as "late" with the lease clauses.
+ * draft is about. A question that asks what a lease says about reminders, with no verb of drafting, is the second and
+ * not the first. Both go before the questions about payments, which share words such as "late" with the lease clauses.
  */
 final class OfflineIntentRouter {
 
@@ -32,6 +33,11 @@ final class OfflineIntentRouter {
     private static final Pattern MONTH = Pattern.compile("\\b(20\\d{2}-(?:0[1-9]|1[0-2]))\\b");
     static final Pattern TENANT_NAME = Pattern.compile("tenant\\s+([A-Za-z][A-Za-z-]+)", Pattern.CASE_INSENSITIVE);
     static final Pattern TENANT_NAME_AR = Pattern.compile("(?:للمستأجر|المستأجر)\\s+(\\S+)");
+    /** A sentence that starts as a question or as a request for information. */
+    private static final Pattern QUESTION_OPENERS = Pattern.compile("^\\W*(?:what|which|who|how|when|where|why|is|are"
+            + "|does|do|can|could|should|will|would|may|show|tell|list|give|explain|describe|check|find"
+            + "|هل|ما|ماذا|من|كم|كيف|متى|أين|اين|لماذا|اعرض|اذكر|وضح)(?![\\p{L}\\p{N}])",
+            Pattern.UNICODE_CHARACTER_CLASS);
 
     private static final Map<String, String> CITIES = Map.of(
             "riyadh", "Riyadh", "الرياض", "Riyadh", "jeddah", "Jeddah", "جدة", "Jeddah", "dammam", "Dammam", "الدمام", "Dammam");
@@ -55,10 +61,11 @@ final class OfflineIntentRouter {
         var unit = UNIT_CODE.matcher(question);
         String unitCode = unit.find() ? unit.group(1).toUpperCase() + "-" + unit.group(2) : null;
 
-        if (hasAny(q, "draft", "reminder", "write a message", "رسالة", "تذكير", "صياغة", "صيغ")) {
+        var lease = leases.route(question);
+        if (hasAny(q, "draft", "reminder", "write a message", "رسالة", "تذكير", "صياغة", "صيغ")
+                && !(lease.isPresent() && asksAboutALease(question, q))) {
             return draft(question, q, unitCode);
         }
-        var lease = leases.route(question);
         if (lease.isPresent()) {
             return lease;
         }
@@ -95,6 +102,15 @@ final class OfflineIntentRouter {
      */
     Optional<Call> followUp(String question, String tool, JsonNode result) {
         return "find_expiring_leases".equals(tool) ? leases.followUp(question, result) : Optional.empty();
+    }
+
+    /**
+     * A question about what a lease says that mentions a reminder or a message ("is a written reminder required before
+     * the late fee?") is not a request to draft one: it has no drafting verb, and it asks.
+     */
+    private static boolean asksAboutALease(String question, String q) {
+        return !OfflineWriteIntents.asksToDraft(question) && (q.contains("?") || q.contains("؟")
+                || QUESTION_OPENERS.matcher(q).find());
     }
 
     private Optional<Call> draft(String question, String q, String unitCode) {
