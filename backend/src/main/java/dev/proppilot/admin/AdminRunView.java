@@ -8,7 +8,8 @@ import java.util.UUID;
 
 /**
  * A run in the admin list. {@code inputTokens} are the uncached ones; {@code guardrailStatus} and
- * {@code routedReason} are null for a run the guardrail did not check or that was not routed.
+ * {@code routedReason} are null for a run the guardrail did not check or that was not routed, and
+ * {@code guardrailViolations} counts the values of the answer that it could not ground.
  */
 public record AdminRunView(
         UUID id,
@@ -19,6 +20,7 @@ public record AdminRunView(
         String model,
         String routedReason,
         String guardrailStatus,
+        int guardrailViolations,
         List<String> toolNames,
         int iterations,
         int inputTokens,
@@ -32,7 +34,7 @@ public record AdminRunView(
     static AdminRunView of(ChatRun run) {
         return new AdminRunView(run.getId(), run.getCreatedAt(), run.getQuestion(), run.getStatus().name(),
                 run.getProvider(), run.getModel(), run.getRoutedReason(), run.getGuardrailStatus(),
-                List.copyOf(run.getToolNames()), run.getIterations(), run.getInputTokens(), run.getOutputTokens(),
+                run.getGuardrailViolations(), List.copyOf(run.getToolNames()), run.getIterations(), run.getInputTokens(), run.getOutputTokens(),
                 run.getCacheReadTokens(), run.getCacheWriteTokens(), run.getCostUsd(), run.getLatencyMs());
     }
 }

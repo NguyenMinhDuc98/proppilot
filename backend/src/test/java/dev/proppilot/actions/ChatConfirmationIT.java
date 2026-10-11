@@ -122,6 +122,8 @@ class ChatConfirmationIT extends ActionIntegrationTest {
 
         assertThat(confirmed).doesNotContain("event:tool_call").doesNotContain("action_proposed")
                 .contains("event:done").contains("\"toolCalls\":0").contains("\"status\":\"OK\"");
+        // the stored summary and result that the server wrote into the turn are what the answer is checked against
+        assertThat(confirmed).doesNotContain("event:guardrail").contains("\"guardrailStatus\":\"OK\"");
         assertThat(answerOf(confirmed)).contains("Approved and done", "SAR 100.00", unit, "was applied");
         assertThat(confirmedAt(id)).isNotNull();
         mvc.perform(chatRequest(confirmationOf(id, "[]"))).andExpect(status().isConflict());

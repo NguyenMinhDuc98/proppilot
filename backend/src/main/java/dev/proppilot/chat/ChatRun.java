@@ -1,6 +1,7 @@
 package dev.proppilot.chat;
 
 import dev.proppilot.agent.AgentResult;
+import dev.proppilot.guardrail.GuardrailOutcome;
 import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
 import jakarta.persistence.ElementCollection;
@@ -13,6 +14,7 @@ import jakarta.persistence.OrderBy;
 import jakarta.persistence.Table;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -22,8 +24,8 @@ import org.hibernate.annotations.BatchSize;
 
 /**
  * Usage record of one question: tokens, tool calls, latency and estimated cost, with the trace of the model calls and
- * tool executions it took and the model that answered, and why it was chosen. Saving a run saves its trace in the same
- * transaction.
+ * tool executions it took, the model that answered and why it was chosen, and what the grounding guardrail found in the
+ * answer. Saving a run saves its trace in the same transaction.
  */
 @Entity
 @Table(name = "chat_runs")
@@ -54,6 +56,7 @@ public class ChatRun {
     private String complexityRules;
     /** What the grounding guardrail concluded about the answer, or null when it did not check it. */
     private String guardrailStatus;
+    /** How many values of the answer it could not ground; they are in {@code guardrailFindingRows}. */
     private int guardrailViolations;
 
     @Enumerated(EnumType.STRING)
@@ -75,6 +78,11 @@ public class ChatRun {
     @CollectionTable(name = "run_tool_calls", joinColumns = @JoinColumn(name = "run_id"))
     @OrderBy("sequence")
     private List<RunToolCall> toolCallRows;
+
+    @ElementCollection
+    @CollectionTable(name = "run_guardrail_findings", joinColumns = @JoinColumn(name = "run_id"))
+    @OrderBy("sequence")
+    private List<RunGuardrailFinding> guardrailFindingRows;
 
     public ChatRun(UUID id, Instant createdAt, String question, String provider, AgentResult result,
                    List<String> toolNames, long latencyMs, BigDecimal costUsd) {
@@ -99,7 +107,24 @@ public class ChatRun {
         this.toolNames = List.copyOf(toolNames);
         this.llmCallRows = result.llmCallRecords().stream().map(RunLlmCall::of).toList();
         this.toolCallRows = result.toolCallRecords().stream().map(RunToolCall::of).toList();
+        var guardrail = result.guardrail();
+        if (guardrail != null) {
+            this.guardrailStatus = guardrail.status().name();
+            this.guardrailViolations = guardrail.violations().size();
+        }
+        this.guardrailFindingRows = findings(guardrail);
         this.latencyMs = latencyMs;
         this.costUsd = costUsd;
+    }
+
+    private static List<RunGuardrailFinding> findings(GuardrailOutcome guardrail) {
+        if (guardrail == null) {
+            return List.of();
+        }
+        var rows = new ArrayList<RunGuardrailFinding>();
+        for (var violation : guardrail.violations()) {
+            rows.add(RunGuardrailFinding.of(rows.size() + 1, violation));
+        }
+        return rows;
     }
 }

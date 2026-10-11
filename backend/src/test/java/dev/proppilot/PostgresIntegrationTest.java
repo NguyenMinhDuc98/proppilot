@@ -15,7 +15,10 @@ import org.testcontainers.utility.DockerImageName;
 public abstract class PostgresIntegrationTest {
 
     public static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>(
-            DockerImageName.parse("pgvector/pgvector:pg16").asCompatibleSubstituteFor("postgres"));
+            DockerImageName.parse("pgvector/pgvector:pg16").asCompatibleSubstituteFor("postgres"))
+            // Spring caches a context for every distinct test configuration and each keeps a pool of connections, so
+            // the default limit of 100 is not enough for the suite. fsync=off is the default command of the container.
+            .withCommand("postgres", "-c", "fsync=off", "-c", "max_connections=300");
 
     static {
         POSTGRES.start();

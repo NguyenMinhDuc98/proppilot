@@ -2,11 +2,15 @@ package dev.proppilot.admin;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.proppilot.actions.AuditTrail;
+import dev.proppilot.guardrail.TenantNames;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/** Puts the shared demo data back to how the migrations seeded it, so strangers' changes never pile up. */
+/**
+ * Puts the shared demo data back to how the migrations seeded it, so strangers' changes never pile up. The tenant names
+ * that the grounding guardrail looks for are read again with it.
+ */
 @Service
 public class DemoResetService {
 
@@ -15,11 +19,13 @@ public class DemoResetService {
     private final JdbcTemplate jdbc;
     private final AuditTrail audit;
     private final ObjectMapper json;
+    private final TenantNames tenantNames;
 
-    public DemoResetService(JdbcTemplate jdbc, AuditTrail audit, ObjectMapper json) {
+    public DemoResetService(JdbcTemplate jdbc, AuditTrail audit, ObjectMapper json, TenantNames tenantNames) {
         this.jdbc = jdbc;
         this.audit = audit;
         this.json = json;
+        this.tenantNames = tenantNames;
     }
 
     @Transactional
@@ -41,6 +47,7 @@ public class DemoResetService {
 
         var counts = new ResetView(payments, requests, messages, actions, entries);
         audit.reset(ACTOR, json.valueToTree(counts));
+        tenantNames.refresh();
         return counts;
     }
 }
