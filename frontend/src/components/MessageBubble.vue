@@ -24,9 +24,13 @@ const usage = computed(() => props.message.usage)
 const guardrail = computed(() => (props.message.streaming ? undefined : props.message.guardrail))
 // The assistant is answering again, and the answer to replace has been dropped: say so until the new one starts.
 const rechecking = computed(() => props.message.streaming && !!props.message.replaced && !props.message.text)
-// An answer that was flagged is explained in the trace even when no tool was called for it.
+// An answer that was flagged, or asked for again, is explained in the trace even when no tool was called for it. One
+// that was checked and found fine has nothing to explain.
 const showTrace = computed(
-  () => !isUser.value && !props.message.streaming && (props.message.tools.length > 0 || !!guardrail.value),
+  () =>
+    !isUser.value &&
+    !props.message.streaming &&
+    (props.message.tools.length > 0 || (!!guardrail.value && guardrail.value.status !== 'OK')),
 )
 const costLabel = computed(() =>
   usage.value?.provider === 'offline' ? t('chat.usage.free') : formatCost(usage.value?.costUsd ?? 0),

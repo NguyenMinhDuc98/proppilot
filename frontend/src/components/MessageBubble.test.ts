@@ -1,6 +1,6 @@
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DonePayload, ErrorCode } from '../api/types'
 import { i18n } from '../i18n'
 import ar from '../i18n/ar'
@@ -9,7 +9,8 @@ import type { ChatMessage, ToolChip } from '../stores/chat'
 import MessageBubble from './MessageBubble.vue'
 
 // The trace drawer asks for the stored trace of a run; these tests are about the bubble, so it is not there.
-vi.mock('../api/runs', () => ({ fetchRunTrace: () => Promise.reject(new Error('no trace in this test')) }))
+const fetchRunTrace = vi.fn()
+vi.mock('../api/runs', () => ({ fetchRunTrace: (...args: unknown[]) => fetchRunTrace(...args) }))
 
 const errorCodes: ErrorCode[] = ['llm_overloaded', 'llm_timeout', 'llm_auth', 'llm_error', 'run_timeout']
 
@@ -26,6 +27,11 @@ const usage: DonePayload = {
 }
 
 const toolChip = (name: string, status: ToolChip['status'] = 'done'): ToolChip => ({ name, args: {}, status })
+
+beforeEach(() => {
+  fetchRunTrace.mockReset()
+  fetchRunTrace.mockRejectedValue(new Error('no trace in this test'))
+})
 
 afterEach(() => {
   i18n.global.locale.value = 'en'
@@ -118,12 +124,39 @@ describe('MessageBubble guardrail', () => {
     expect(wrapper.find('.trace').exists()).toBe(true)
   })
 
+  it.each(['RETRIED_OK', 'RETRIED_FLAGGED'] as const)(
+    'shows the trace of an answer that was asked for again and is %s, even when no tool was called',
+    (status) => {
+      const wrapper = render({ text: 'Answer', guardrail: { status, values: [] }, usage })
+
+      expect(wrapper.find('.trace').exists()).toBe(true)
+    },
+  )
+
   it('shows no trace for an answer that called no tool and was not flagged', () => {
     expect(render({ text: 'Hello', usage }).find('.trace').exists()).toBe(false)
   })
 
+  it('shows no trace, and asks for none, for a checked answer with nothing to explain and no tool called', async () => {
+    const wrapper = render({ text: 'Hello', guardrail: { status: 'OK', values: [] }, usage })
+    await flushPromises()
+
+    expect(wrapper.find('.trace').exists()).toBe(false)
+    expect(fetchRunTrace).not.toHaveBeenCalled()
+  })
+
+  it('shows the trace of a checked answer that called a tool', async () => {
+    const wrapper = render({
+      text: 'Answer', guardrail: { status: 'OK', values: [] }, tools: [toolChip('search_units')], usage,
+    })
+    await flushPromises()
+
+    expect(wrapper.find('.trace').exists()).toBe(true)
+    expect(fetchRunTrace).toHaveBeenCalledWith('r1')
+  })
+
   it('says the figures are being checked again while the answer to replace has been dropped', async () => {
-    const replaced = { sources: [] }
+    const replaced = {}
     const wrapper = render({ text: '', streaming: true, replaced, tools: [toolChip('get_occupancy_summary')] })
 
     expect(wrapper.get('[role="status"]').text()).toBe(en.chat.rechecking)
@@ -134,7 +167,7 @@ describe('MessageBubble guardrail', () => {
   })
 
   it('stops saying so once the new answer is streaming, and when nothing was asked again', () => {
-    const replaced = { sources: [] }
+    const replaced = {}
 
     expect(render({ text: 'The portfolio has 150 units.', streaming: true, replaced }).find('[role="status"]').exists()).toBe(false)
     expect(render({ text: '', streaming: true }).text()).not.toContain(en.chat.rechecking)
