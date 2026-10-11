@@ -1,3 +1,13 @@
+/** What the grounding guardrail concluded about the answer; null when it did not check it. */
+export type GuardrailStatus = 'OK' | 'FLAGGED' | 'RETRIED_OK' | 'RETRIED_FLAGGED'
+
+/** A value of an answer that nothing the assistant was given supports: a figure, a unit code, a tenant name or a citation. */
+export interface UnverifiedValue {
+  kind: 'NUMBER' | 'UNIT_CODE' | 'TENANT_NAME' | 'CITATION'
+  /** As the answer wrote it, cut to 40 characters. */
+  value: string
+}
+
 export interface DonePayload {
   runId: string
   status: 'OK' | 'ERROR' | 'MAX_ITERATIONS' | 'TRUNCATED'
@@ -6,6 +16,7 @@ export interface DonePayload {
   model: string
   /** Why that model was chosen. */
   routedReason: 'DEFAULT' | 'COMPLEX' | 'GUARDRAIL_RETRY' | 'FALLBACK'
+  guardrailStatus: GuardrailStatus | null
   /** Only the input tokens that were neither read from nor written to the prompt cache: add the two below for all. */
   inputTokens: number
   outputTokens: number
@@ -50,7 +61,11 @@ export type ChatEvent =
   | { type: 'tool_result'; name: string; summary: string; error: boolean; sources?: LeaseSource[] }
   | ({ type: 'action_proposed' } & ActionView)
   | { type: 'token'; text: string }
+  /** The answer streamed so far is to be dropped: the assistant was asked to answer again, and a new answer follows. */
+  | { type: 'revise'; reason: 'grounding' }
   | { type: 'error'; message: string; code: ErrorCode }
+  /** Sent before `done`, only for an answer that states values nothing supports. */
+  | { type: 'guardrail'; status: 'unverified'; values: UnverifiedValue[] }
   | ({ type: 'done' } & DonePayload)
 
 export interface HistoryTurn {

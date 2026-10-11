@@ -38,6 +38,7 @@ vi.mock('../composables/useAppInfo', () => ({ useAppInfo: () => ({ info: { value
 
 const done: ChatEvent = {
   type: 'done', runId: 'r1', status: 'OK', provider: 'offline', model: 'rule-based', routedReason: 'DEFAULT',
+  guardrailStatus: 'OK',
   inputTokens: 10, outputTokens: 5, cacheReadTokens: 0, cacheWriteTokens: 0, toolCalls: 1, iterations: 1,
   latencyMs: 30, costUsd: 0, truncated: false,
 }

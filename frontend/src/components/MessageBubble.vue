@@ -19,6 +19,12 @@ const { t, te, locale } = useI18n()
 const isUser = computed(() => props.message.role === 'user')
 const answer = computed(() => buildAnswer(isUser.value ? '' : props.message.text, props.message.sources))
 const usage = computed(() => props.message.usage)
+// Values the guardrail could not match to the data, each once; they are shown when the answer is complete.
+const unverified = computed(() => {
+  if (props.message.streaming) return ''
+  const values = [...new Set((props.message.unverified ?? []).map((item) => item.value))]
+  return new Intl.ListFormat(locale.value, { type: 'conjunction' }).format(values)
+})
 const showTrace = computed(() => !isUser.value && !props.message.streaming && props.message.tools.length > 0)
 const costLabel = computed(() =>
   usage.value?.provider === 'offline' ? t('chat.usage.free') : formatCost(usage.value?.costUsd ?? 0),
@@ -94,6 +100,9 @@ const errorText = computed(() => {
         <ApprovalCard v-for="action in message.actions" :key="action.id" :action="action" />
         <div v-if="dataSources" class="sources">{{ dataSources }}</div>
         <div v-if="usage?.truncated" class="notice" role="note">{{ t('chat.truncated') }}</div>
+        <div v-if="unverified" class="notice" role="note">
+          {{ t('chat.unverified') }} <bdi class="unverified">{{ unverified }}</bdi>
+        </div>
         <div v-if="message.error" class="error" role="alert">{{ errorText }}</div>
         <div v-if="usage" class="meta">
           <bdi v-for="(part, i) in usageParts" :key="i">{{ part }}</bdi>
@@ -125,6 +134,7 @@ const errorText = computed(() => {
 .thinking { color: var(--pp-muted); }
 .sources { font-size: 12.5px; color: var(--pp-muted); }
 .notice { align-self: flex-start; color: var(--pp-warn-ink); background: var(--pp-warn-bg); padding: 6px 12px; border-radius: 10px; font-size: 13px; }
+.unverified { font-weight: 600; font-variant-numeric: tabular-nums; }
 .error { color: var(--pp-danger-ink); background: var(--pp-danger-bg); padding: 8px 12px; border-radius: 10px; }
 .meta { display: flex; flex-wrap: wrap; gap: 2px 14px; font-size: 12px; color: var(--pp-muted); font-variant-numeric: tabular-nums; }
 

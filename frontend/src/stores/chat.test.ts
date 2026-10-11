@@ -29,6 +29,7 @@ const serverAllowsTurnsOf = (maxHistoryTurnLength: number) => serverAllows({ max
 
 const done: ChatEvent = {
   type: 'done', runId: 'r1', status: 'OK', provider: 'offline', model: 'rule-based', routedReason: 'DEFAULT',
+  guardrailStatus: 'OK',
   inputTokens: 10, outputTokens: 5, cacheReadTokens: 0, cacheWriteTokens: 0, toolCalls: 1, iterations: 2,
   latencyMs: 30, costUsd: 0, truncated: false,
 }
@@ -77,6 +78,42 @@ describe('chat store', () => {
     expect(assistant.usage?.toolCalls).toBe(1)
     expect(assistant.streaming).toBe(false)
     expect(chat.busy).toBe(false)
+  })
+
+  it('drops the answer streamed so far when the assistant is asked to answer again, and keeps the new one', async () => {
+    script([
+      { type: 'tool_call', name: 'get_occupancy_summary', args: {} },
+      { type: 'tool_result', name: 'get_occupancy_summary', summary: 'Occupancy', error: false },
+      { type: 'token', text: 'The portfolio has ' },
+      { type: 'token', text: '151 units.' },
+      { type: 'revise', reason: 'grounding' },
+      { type: 'token', text: 'The portfolio has 150 units.' },
+      { ...done, guardrailStatus: 'RETRIED_OK' },
+    ])
+    const chat = useChatStore()
+
+    await chat.send('how many units?')
+
+    const answer = chat.messages[1]
+    expect(answer.text).toBe('The portfolio has 150 units.')
+    expect(answer.tools).toHaveLength(1)
+    expect(answer.unverified).toBeUndefined()
+    expect(answer.usage?.guardrailStatus).toBe('RETRIED_OK')
+  })
+
+  it('keeps the values of an answer the guardrail could not match to the data', async () => {
+    script([
+      { type: 'token', text: 'The portfolio has 151 units.' },
+      { type: 'guardrail', status: 'unverified', values: [{ kind: 'NUMBER', value: '151' }] },
+      { ...done, guardrailStatus: 'FLAGGED' },
+    ])
+    const chat = useChatStore()
+
+    await chat.send('how many units?')
+
+    expect(chat.messages[1].text).toBe('The portfolio has 151 units.')
+    expect(chat.messages[1].unverified).toEqual([{ kind: 'NUMBER', value: '151' }])
+    expect(chat.messages[1].usage?.guardrailStatus).toBe('FLAGGED')
   })
 
   it('moves text written before a tool call into the preamble so the answer is only what follows', async () => {

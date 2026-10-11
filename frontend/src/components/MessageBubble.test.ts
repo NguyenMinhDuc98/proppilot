@@ -17,6 +17,7 @@ function render(overrides: Partial<ChatMessage>) {
 
 const usage: DonePayload = {
   runId: 'r1', status: 'OK', provider: 'anthropic', model: 'claude-haiku-4-5-20251001', routedReason: 'DEFAULT',
+  guardrailStatus: 'OK',
   inputTokens: 100, outputTokens: 2048, cacheReadTokens: 0, cacheWriteTokens: 0, toolCalls: 0, iterations: 1,
   latencyMs: 9000, costUsd: 0.01, truncated: false,
 }
@@ -66,6 +67,36 @@ describe('MessageBubble truncated answers', () => {
   it('shows no notice for a complete answer or while streaming', () => {
     expect(render({ text: 'All done', usage }).find('[role="note"]').exists()).toBe(false)
     expect(render({ text: 'Partial', streaming: true }).find('[role="note"]').exists()).toBe(false)
+  })
+})
+
+describe('MessageBubble unverified values', () => {
+  const unverified = [
+    { kind: 'NUMBER', value: '151' },
+    { kind: 'UNIT_CODE', value: 'A-999' },
+    { kind: 'NUMBER', value: '151' },
+  ] as const
+
+  it('lists each value the guardrail could not match to the data once, in both languages', async () => {
+    const wrapper = render({ text: 'The portfolio has 151 units; A-999 is vacant.', unverified: [...unverified], usage })
+
+    const shown = () => wrapper.get('.unverified').text()
+    expect(wrapper.get('.notice').text()).toContain(en.chat.unverified)
+    expect(wrapper.get('.notice').attributes('role')).toBe('note')
+    expect(shown()).toBe('151 and A-999')
+
+    i18n.global.locale.value = 'ar'
+    await nextTick()
+    expect(wrapper.get('.notice').text()).toContain(ar.chat.unverified)
+    expect(shown()).toContain('151')
+    expect(shown()).toContain('A-999')
+    expect(shown().split('151')).toHaveLength(2)
+  })
+
+  it('shows nothing for an answer without such values or while the answer is still streaming', () => {
+    expect(render({ text: 'Answer', usage }).find('.notice').exists()).toBe(false)
+    expect(render({ text: 'Answer', unverified: [], usage }).find('.notice').exists()).toBe(false)
+    expect(render({ text: 'Partial', unverified: [...unverified], streaming: true }).find('.notice').exists()).toBe(false)
   })
 })
 

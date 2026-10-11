@@ -26,6 +26,7 @@ export default {
     thinking: 'Thinking…',
     sources: 'Data from: {sources}',
     truncated: 'This answer was cut off because it reached the length limit.',
+    unverified: 'Some values in this answer could not be matched to the data, so check them before you rely on it:',
     errorNetwork: 'Could not reach the server. Please try again.',
     errorPrefix: 'Something went wrong',
     errors: {

@@ -5,6 +5,7 @@ import { buildTrace } from './trace'
 
 const usage: DonePayload = {
   runId: 'r1', status: 'OK', provider: 'anthropic', model: 'claude-haiku-4-5-20251001', routedReason: 'DEFAULT',
+  guardrailStatus: 'OK',
   inputTokens: 3681, outputTokens: 331, cacheReadTokens: 0, cacheWriteTokens: 0, toolCalls: 1, iterations: 2,
   latencyMs: 4200, costUsd: 0.005859, truncated: false,
 }

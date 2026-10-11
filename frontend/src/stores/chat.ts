@@ -3,7 +3,9 @@ import { computed, ref } from 'vue'
 import { newIdempotencyKey } from '../api/actions'
 import { streamChat, streamConfirmation } from '../api/chat'
 import { ApiError } from '../api/http'
-import type { ActionView, ChatEvent, DonePayload, ErrorCode, HistoryTurn, LeaseSource } from '../api/types'
+import type {
+  ActionView, ChatEvent, DonePayload, ErrorCode, HistoryTurn, LeaseSource, UnverifiedValue,
+} from '../api/types'
 import { useAppInfo } from '../composables/useAppInfo'
 
 export interface ToolChip {
@@ -26,6 +28,8 @@ export interface ChatMessage {
   /** The lease clauses its searches returned, each once. A citation in the answer is a chip only for one of these. */
   sources: LeaseSource[]
   usage?: DonePayload
+  /** The values of the answer that the grounding guardrail could not match to the data, when it found any. */
+  unverified?: UnverifiedValue[]
   error?: string
   /** Set when the server reported the failure; the UI shows localised text for it instead of `error`. */
   errorCode?: ErrorCode
@@ -134,9 +138,16 @@ export const useChatStore = defineStore('chat', () => {
       case 'token':
         message.text += event.text
         break
+      case 'revise':
+        // The assistant was asked to answer again: what was streamed so far is not the answer.
+        message.text = ''
+        break
       case 'error':
         message.error = event.message
         message.errorCode = event.code
+        break
+      case 'guardrail':
+        message.unverified = event.values
         break
       case 'done': {
         const { type: _type, ...usage } = event
