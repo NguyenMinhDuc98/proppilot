@@ -11,5 +11,8 @@ marked.setOptions({ gfm: true, breaks: true })
  */
 export function renderMarkdown(text: string): DocumentFragment {
   const html = marked.parse(text, { async: false })
-  return DOMPurify.sanitize(html, { USE_PROFILES: { html: true }, RETURN_DOM_FRAGMENT: true })
+  const tree = DOMPurify.sanitize(html, { USE_PROFILES: { html: true }, RETURN_DOM_FRAGMENT: true })
+  // A quoted clause is in the language of its lease, which may not be the language of the answer around it.
+  tree.querySelectorAll('blockquote').forEach((quote) => quote.setAttribute('dir', 'auto'))
+  return tree
 }

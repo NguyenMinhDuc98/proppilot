@@ -27,6 +27,12 @@ describe('renderMarkdown', () => {
     expect(htmlOf('line one\nline two')).toContain('<br>')
   })
 
+  it('lets a quoted clause take its own direction, whatever language the answer around it is in', () => {
+    const html = htmlOf('> **5. Late payment**\n> Rent that is late carries a fee.')
+
+    expect(html).toContain('<blockquote dir="auto">')
+  })
+
   it('renders Arabic text unchanged', () => {
     expect(htmlOf('**أحمد الحربي**')).toContain('<strong>أحمد الحربي</strong>')
   })
