@@ -58,7 +58,7 @@ public class GetOccupancySummaryTool implements Tool {
         var buildingCode = args.string("building").map(String::toUpperCase).orElse(null);
         if (buildingCode != null && buildings.findByCodeIgnoreCase(buildingCode).isEmpty()) {
             var valid = buildings.findAllByOrderByCode().stream().map(b -> b.getCode()).toList();
-            return ToolResult.error("Unknown building '" + buildingCode + "'. Valid codes: " + valid);
+            return ToolResult.rejected("Unknown building '" + buildingCode + "'. Valid codes: " + valid);
         }
         var month = args.string("month").map(GetOccupancySummaryTool::parseMonth).orElse(YearMonth.now(clock));
 

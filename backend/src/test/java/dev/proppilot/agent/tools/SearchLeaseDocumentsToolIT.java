@@ -265,6 +265,8 @@ class SearchLeaseDocumentsToolIT extends FakeEmbeddingIntegrationTest {
 
         assertThat(result.error()).isTrue();
         assertThat(result.content()).contains("tenants match 'Ahmed'", "unit_code", "(unit ");
+        // the candidates are data, so the question that asks which one is grounded
+        assertThat(result.evidence()).isEqualTo(result.content());
         assertThat(result.ui()).isNull();
     }
 
@@ -280,6 +282,27 @@ class SearchLeaseDocumentsToolIT extends FakeEmbeddingIntegrationTest {
         assertThat(unit.content()).startsWith("No unit with code 'Z-999'.");
         assertThat(inList.error()).isTrue();
         assertThat(inList.content()).startsWith("No unit with code 'Z-998'.");
+        // they quote what the model sent: none of them states anything about the data
+        assertThat(tenant.evidence()).isEmpty();
+        assertThat(unit.evidence()).isEmpty();
+        assertThat(inList.evidence()).isEmpty();
+    }
+
+    @Test
+    void theQueryTheModelWroteIsNotPartOfWhatTheResultStates() throws Exception {
+        var lease = document("en", 0);
+
+        var result = call("{\"query\":\"zebra 7342198 SAR\",\"unit_code\":\"" + lease.unit() + "\"}");
+
+        var d = data(result);
+        assertThat(d.get("query").asText()).isEqualTo("zebra 7342198 SAR");
+        assertThat(result.evidence()).doesNotContain("7342198", "zebra", "quoted from a lease document");
+        // what the documents say, and what was searched, is
+        var stated = json.readTree(result.evidence());
+        assertThat(stated.get("results")).isEqualTo(d.get("results"));
+        assertThat(stated.at("/scope/units")).isEqualTo(d.at("/scope/units"));
+        assertThat(stated.has("query")).isFalse();
+        assertThat(stated.has("notice")).isFalse();
     }
 
     @Test

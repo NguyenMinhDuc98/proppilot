@@ -55,6 +55,20 @@ class ToolRegistryTest {
 
         assertThat(result.error()).isTrue();
         assertThat(result.content()).isEqualTo("Invalid input: bad city");
+        assertThat(result.evidence()).isEmpty();
+    }
+
+    @Test
+    void anUnknownToolAndAnUnexpectedFailureAreRejectionsThatStateNothing() {
+        var registry = registry(tool("a", i -> { throw new IllegalStateException("boom"); }));
+
+        var unknown = registry.execute("b", EMPTY);
+        var failed = registry.execute("a", EMPTY);
+
+        assertThat(unknown.content()).startsWith("Unknown tool 'b'");
+        assertThat(unknown.evidence()).isEmpty();
+        assertThat(failed.error()).isTrue();
+        assertThat(failed.evidence()).isEmpty();
     }
 
     @Test

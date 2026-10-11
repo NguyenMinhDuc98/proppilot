@@ -80,8 +80,20 @@ class ToolsIT extends PostgresIntegrationTest {
 
     @Test
     void unitDetailsForUnknownUnitIsAnError() throws Exception {
-        assertThat(call("get_unit_details", "{\"unit_code\":\"Z-999\"}").error()).isTrue();
+        var unknown = call("get_unit_details", "{\"unit_code\":\"Z-999\"}");
+
+        assertThat(unknown.error()).isTrue();
+        // the code is the model's own and A-203 is an example: the text states nothing about the data
+        assertThat(unknown.evidence()).isEmpty();
         assertThat(call("get_unit_details", "{}").content()).contains("unit_code is required");
+    }
+
+    @Test
+    void whatAToolReturnsIsWhatItStates() throws Exception {
+        var result = call("get_unit_details", "{\"unit_code\":\"" + chronicUnit() + "\"}");
+
+        assertThat(result.error()).isFalse();
+        assertThat(result.evidence()).isEqualTo(result.content()).contains("Ahmed Al-Harbi");
     }
 
     @Test
@@ -124,6 +136,7 @@ class ToolsIT extends PostgresIntegrationTest {
         var unknown = call("get_occupancy_summary", "{\"building\":\"Q\"}");
         assertThat(unknown.error()).isTrue();
         assertThat(unknown.content()).contains("[A, B, C, D, E, F]");
+        assertThat(unknown.evidence()).isEmpty();
         assertThat(call("get_occupancy_summary", "{\"month\":\"March\"}").error()).isTrue();
     }
 

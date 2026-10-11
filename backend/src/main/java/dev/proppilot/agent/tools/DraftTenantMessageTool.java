@@ -50,7 +50,7 @@ public class DraftTenantMessageTool implements Tool {
 
         var resolution = resolver.resolve(args.string("tenant_name"), args.string("unit_code"));
         if (resolution instanceof TenantResolver.Resolution.Failed failed) {
-            return ToolResult.error(failed.reason());
+            return failed.toolResult();
         }
         var lease = ((TenantResolver.Resolution.Found) resolution).lease();
 

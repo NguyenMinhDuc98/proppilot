@@ -32,6 +32,17 @@ public class TenantResolver {
         }
 
         record Failed(Problem problem, String reason) implements Resolution {
+
+            /**
+             * The error a tool returns. Only the reasons that name tenants state data: the others repeat the unit
+             * or the name the model sent.
+             */
+            public ToolResult toolResult() {
+                return switch (problem) {
+                    case NO_ACTIVE_LEASE, TENANT_NOT_FOUND -> ToolResult.rejected(reason);
+                    case TENANT_MISMATCH, AMBIGUOUS_TENANT -> ToolResult.error(reason);
+                };
+            }
         }
     }
 

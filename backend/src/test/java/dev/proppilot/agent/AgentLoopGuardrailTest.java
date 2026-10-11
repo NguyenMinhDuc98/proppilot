@@ -61,6 +61,7 @@ class AgentLoopGuardrailTest {
     private final ScriptedLlmClient llm = new ScriptedLlmClient().servingAs("anthropic", SMALL);
     private final List<AgentEvent> events = new ArrayList<>();
     private final List<String> lookedUp = new ArrayList<>();
+    private final List<Tool> otherTools = new ArrayList<>();
     private JsonNode sources;
 
     /** Returns the unit with its rent, and a lease clause source when the test gives it one. */
@@ -98,9 +99,15 @@ class AgentLoopGuardrailTest {
             props.largeModel(LARGE);
         }
         var router = new ModelRouter(llm, props.build(), new ComplexityAssessor());
-        var registry = new ToolRegistry(List.of(lookup), mock(PlatformTransactionManager.class));
+        var registry = new ToolRegistry(toolsOfTheRun(), mock(PlatformTransactionManager.class));
         return new AgentLoop(llm, registry, new AgentProperties(maxIterations, 10, 90), clock, router,
                 Guardrails.of(mode, tenants));
+    }
+
+    private List<Tool> toolsOfTheRun() {
+        var all = new ArrayList<Tool>(otherTools);
+        all.add(lookup);
+        return all;
     }
 
     private AgentResult ask(GuardrailMode mode) {
@@ -125,6 +132,16 @@ class AgentLoopGuardrailTest {
         return request.messages().stream().filter(m -> m.role() == Message.Role.USER)
                 .flatMap(m -> m.content().stream()).filter(ContentBlock.Text.class::isInstance)
                 .map(ContentBlock.Text.class::cast).toList();
+    }
+
+    /** A tool that returns what it is given, whatever it is called with. */
+    private static Tool returning(String name, ToolResult result) {
+        return new Tool() {
+            public String name() { return name; }
+            public String description() { return "Returns a result"; }
+            public JsonNode inputSchema() { return ToolSchema.object().build(); }
+            public ToolResult execute(JsonNode input) { return result; }
+        };
     }
 
     private List<String> warnings() {
@@ -207,6 +224,43 @@ class AgentLoopGuardrailTest {
         answers("Ahmed Al-Harbi pays SAR 4,950 for A-203.");
 
         var result = ask(GuardrailMode.WARN);
+
+        assertThat(result.guardrail().status()).isEqualTo(GuardrailStatus.OK);
+    }
+
+    @Test
+    void aValueOnlyTheModelsOwnQueryStatesIsNotGroundedByTheResultThatEchoesIt() {
+        var echoed = Map.of("query", "late fee 150 SAR", "results", List.of());
+        otherTools.add(returning("search", ToolResult.ok(JSON, echoed, "No clause")
+                .withEvidence("{\"results\":[]}")));
+        llm.thenToolCall("t1", "search", "{}").thenText("The late fee is 150 SAR a day.");
+
+        var result = run(loop(GuardrailMode.WARN, 6, true), AgentRequest.question("What is the late fee?", List.of(),
+                UUID.randomUUID()));
+
+        assertThat(result.guardrail().violations()).containsExactly(new Violation(ClaimKind.NUMBER, "150", "150"));
+    }
+
+    @Test
+    void theTextOfARejectedCallGroundsNeitherTheCodeItQuotesNorTheOneItGivesAsAnExample() {
+        otherTools.add(returning("get_unit", ToolResult.rejected("No unit with code 'B-777'. Codes look like A-203 "
+                + "(building letter A-F, then floor and number).")));
+        llm.thenToolCall("t1", "get_unit", "{}").thenText("There is no unit B-777, and A-203 is only an example.");
+
+        var result = run(loop(GuardrailMode.WARN, 6, true), AgentRequest.question("Who rents the penthouse?",
+                List.of(), UUID.randomUUID()));
+
+        assertThat(result.guardrail().violations()).extracting(Violation::value).containsExactly("B-777", "A-203");
+    }
+
+    @Test
+    void anErrorThatNamesTenantsAndUnitsStillGroundsTheQuestionThatAsksWhichOne() {
+        otherTools.add(returning("remind", ToolResult.error("2 tenants match 'Ahmed'. Ask the user which one. First "
+                + "matches: Ahmed Al-Harbi (unit B-203), Ahmed Al-Otaibi (unit A-203)")));
+        llm.thenToolCall("t1", "remind", "{}").thenText("Do you mean Ahmed Al-Harbi in B-203 or the tenant of A-203?");
+
+        var result = run(loop(GuardrailMode.WARN, 6, true, AHMED), AgentRequest.question("Remind Ahmed", List.of(),
+                UUID.randomUUID()));
 
         assertThat(result.guardrail().status()).isEqualTo(GuardrailStatus.OK);
     }

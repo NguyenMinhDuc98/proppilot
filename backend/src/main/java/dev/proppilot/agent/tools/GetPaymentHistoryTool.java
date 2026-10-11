@@ -60,7 +60,7 @@ public class GetPaymentHistoryTool implements Tool {
         boolean allLeases = args.bool("all_leases").orElse(false);
         var resolution = resolver.resolve(args.string("tenant_name"), args.string("unit_code"));
         if (resolution instanceof TenantResolver.Resolution.Failed failed) {
-            return ToolResult.error(failed.reason());
+            return failed.toolResult();
         }
         var lease = ((TenantResolver.Resolution.Found) resolution).lease();
         var today = LocalDate.now(clock);

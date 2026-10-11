@@ -6,7 +6,9 @@ import java.util.Set;
 /**
  * Everything an answer may rest on: what the tools returned, and what the person and the app told the model.
  *
- * @param toolResults the content of every tool result of the run, an error text included, as the model read it
+ * @param toolResults what every tool result of the run stated: its content, an error text included, less what the
+ *                    model wrote into the call and the app's own guidance (an echoed query, an example code), none of
+ *                    which makes a value true
  * @param context the question, the earlier turns of the conversation and any text the app wrote for the turn (a
  *                decision notice, today's date). It is the texts the model was given, never the correction the
  *                guardrail asks for, which would otherwise make every value it lists grounded

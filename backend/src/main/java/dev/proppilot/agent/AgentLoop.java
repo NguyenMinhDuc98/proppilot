@@ -107,7 +107,7 @@ public class AgentLoop {
         private final Map<String, Integer> callsByTool = new HashMap<>();
         private final List<LlmCallRecord> llmCalls = new ArrayList<>();
         private final List<ToolCallRecord> toolCallRecords = new ArrayList<>();
-        /** What the guardrail holds an answer against: what the model was given, and what its tools returned. */
+        /** What the guardrail holds an answer against: what the model was given, and what its tools stated. */
         private final List<String> givenTexts;
         private final List<String> toolResultTexts = new ArrayList<>();
         private final Set<String> retrievedRefs = new LinkedHashSet<>();
@@ -327,7 +327,7 @@ public class AgentLoop {
                 events.accept(new AgentEvent.ToolCall(call.name(), call.input()));
                 var startedAt = clock.instant();
                 var result = execute(call);
-                toolResultTexts.add(result.content());
+                toolResultTexts.add(result.evidence());
                 rememberRefs(result.ui());
                 toolCallRecords.add(new ToolCallRecord(toolCallRecords.size() + 1, call.name(), call.input().toString(),
                         result.summary(), result.error(), millisSince(startedAt), startedAt));
@@ -351,14 +351,14 @@ public class AgentLoop {
          */
         private ToolResult execute(ContentBlock.ToolUse call) {
             if (!toolsOffered) {
-                return ToolResult.error("No tools are available for this reply.");
+                return ToolResult.rejected("No tools are available for this reply.");
             }
             int calls = callsByTool.merge(call.name(), 1, Integer::sum);
             var limit = tools.maxCallsPerRun(call.name());
             if (limit.isPresent() && calls > limit.getAsInt()) {
                 log.warn("Tool {} was called {} times in one run, over its limit of {}", call.name(), calls,
                         limit.getAsInt());
-                return ToolResult.error("This reply may call " + call.name() + " at most " + limit.getAsInt()
+                return ToolResult.rejected("This reply may call " + call.name() + " at most " + limit.getAsInt()
                         + " times and this call was not run. Answer from the results you already have, and say plainly "
                         + "what was left out.");
             }

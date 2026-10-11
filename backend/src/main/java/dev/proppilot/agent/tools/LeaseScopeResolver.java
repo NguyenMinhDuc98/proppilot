@@ -51,8 +51,8 @@ class LeaseScopeResolver {
         record Found(Scope scope) implements Resolution {
         }
 
-        /** @param reason what to tell the model: nothing was searched */
-        record Refused(String reason) implements Resolution {
+        /** @param result what to tell the model: nothing was searched */
+        record Refused(ToolResult result) implements Resolution {
         }
     }
 
@@ -71,8 +71,7 @@ class LeaseScopeResolver {
         for (var code : unitCodes) {
             var unit = units.findByCode(code);
             if (unit.isEmpty()) {
-                return new Resolution.Refused("No unit with code '" + code + "'. Codes look like A-203 "
-                        + "(building letter A-F, then floor and number).");
+                return new Resolution.Refused(UnknownUnit.result(code));
             }
             var unitCode = unit.get().code();
             var leaseId = leases.findActiveByUnitCode(unitCode).map(Lease::getId).orElse(null);
@@ -83,7 +82,7 @@ class LeaseScopeResolver {
             var onlyUnit = unitCodes.size() == 1 ? Optional.of(unitCodes.get(0)) : Optional.<String>empty();
             var resolution = tenants.resolve(tenantName, onlyUnit);
             if (resolution instanceof TenantResolver.Resolution.Failed failed) {
-                return new Resolution.Refused(failed.reason());
+                return new Resolution.Refused(failed.toolResult());
             }
             var lease = ((TenantResolver.Resolution.Found) resolution).lease();
             var unitCode = lease.getUnit().getCode();

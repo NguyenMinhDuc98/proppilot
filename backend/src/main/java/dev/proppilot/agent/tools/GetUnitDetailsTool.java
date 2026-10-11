@@ -50,7 +50,7 @@ public class GetUnitDetailsTool implements Tool {
         var code = new ToolArgs(input).requireString("unit_code");
         var unit = units.findByCode(code);
         if (unit.isEmpty()) {
-            return ToolResult.error("No unit with code '" + code + "'. Codes look like A-203 (building letter A-F, then floor and number).");
+            return UnknownUnit.result(code);
         }
         var lease = leases.findActiveByUnitCode(unit.get().code());
         var tenant = lease.map(l -> {

@@ -91,7 +91,7 @@ public class SearchLeaseDocumentsTool implements OwnTransactionTool {
 
         var resolution = scopes.resolve(unitCodes, tenantName);
         if (resolution instanceof LeaseScopeResolver.Resolution.Refused refused) {
-            return ToolResult.error(refused.reason());
+            return refused.result();
         }
         var scope = ((LeaseScopeResolver.Resolution.Found) resolution).scope();
         var found = search(query, scope, topK);
@@ -116,11 +116,15 @@ public class SearchLeaseDocumentsTool implements OwnTransactionTool {
     private ToolResult result(String query, LeaseScopeResolver.Scope scope, RetrievalMode retrieval,
                               List<RetrievedChunk> chunks) {
         var clauses = chunks.stream().map(SearchLeaseDocumentsTool::clause).toList();
-        var data = new Result(NOTICE, query, retrieval, new ScopeInfo(scope.everything(), scope.unitCodes()), clauses,
-                scope.noDocumentFor(), note(scope, chunks));
+        var searched = new ScopeInfo(scope.everything(), scope.unitCodes());
+        var note = note(scope, chunks);
+        var data = new Result(NOTICE, query, retrieval, searched, clauses, scope.noDocumentFor(), note);
+        // The query is the model's own words: it states what was asked for, not what the documents say
+        var found = new Result(null, null, retrieval, searched, clauses, scope.noDocumentFor(), note);
         var sources = json.createObjectNode().put("type", ToolResult.SOURCES_UI_TYPE);
         sources.set("sources", json.valueToTree(chunks.stream().map(SearchLeaseDocumentsTool::source).toList()));
-        return ToolResult.ok(json, data, summary(chunks)).withUi(sources);
+        return ToolResult.ok(json, data, summary(chunks)).withUi(sources)
+                .withEvidence(json.valueToTree(found).toString());
     }
 
     /** At most {@value #MAX_UNIT_CODES}: the single unit code and the list together, without repeats. */
@@ -177,12 +181,15 @@ public class SearchLeaseDocumentsTool implements OwnTransactionTool {
     }
 
     /**
-     * What the model gets. {@code notice} comes first so it is read before the text it is about.
+     * What the model gets. {@code notice} comes first so it is read before the text it is about. A result that is
+     * read as evidence has neither {@code notice} nor {@code query}, which are left out when null.
      *
      * @param noDocumentFor the named units that have no lease document; left out when there are none
      * @param note what to say about an empty result or a unit without a document; left out when there is nothing
      */
-    record Result(String notice, String query, RetrievalMode retrieval, ScopeInfo scope, List<Clause> results,
+    record Result(@JsonInclude(JsonInclude.Include.NON_NULL) String notice,
+                  @JsonInclude(JsonInclude.Include.NON_NULL) String query, RetrievalMode retrieval, ScopeInfo scope,
+                  List<Clause> results,
                   @JsonInclude(JsonInclude.Include.NON_EMPTY) List<String> noDocumentFor,
                   @JsonInclude(JsonInclude.Include.NON_NULL) String note) {
     }

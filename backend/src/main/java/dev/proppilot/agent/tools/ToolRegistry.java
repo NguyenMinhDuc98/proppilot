@@ -53,7 +53,8 @@ public class ToolRegistry {
     public ToolResult execute(String name, JsonNode input, ToolContext context) {
         var tool = tools.get(name);
         if (tool == null) {
-            return ToolResult.error("Unknown tool '" + name + "'. Available tools: " + String.join(", ", tools.keySet()));
+            return ToolResult.rejected("Unknown tool '" + name + "'. Available tools: "
+                    + String.join(", ", tools.keySet()));
         }
         try {
             return switch (tool) {
@@ -62,10 +63,10 @@ public class ToolRegistry {
                 default -> readOnlyTx.execute(status -> tool.execute(input));
             };
         } catch (ToolInputException e) {
-            return ToolResult.error("Invalid input: " + e.getMessage());
+            return ToolResult.rejected("Invalid input: " + e.getMessage());
         } catch (RuntimeException e) {
             log.error("Tool {} failed", name, e);
-            return ToolResult.error("Tool failed internally. Try again or answer without it.");
+            return ToolResult.rejected("Tool failed internally. Try again or answer without it.");
         }
     }
 }
