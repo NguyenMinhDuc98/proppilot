@@ -26,7 +26,7 @@ export default {
     thinking: 'Thinking…',
     sources: 'Data from: {sources}',
     truncated: 'This answer was cut off because it reached the length limit.',
-    unverified: 'Some values in this answer could not be matched to the data, so check them before you rely on it:',
+    rechecking: 'Re-checking the figures…',
     errorNetwork: 'Could not reach the server. Please try again.',
     errorPrefix: 'Something went wrong',
     errors: {
@@ -102,6 +102,14 @@ export default {
       rounds: 'Model rounds',
       model: 'Model',
     },
+  },
+  guardrail: {
+    flagged: 'Some figures could not be checked against the data',
+    rechecked: 'Checked again',
+    recheckedHint: 'The first answer had figures that could not be checked, so the assistant checked them again.',
+    intro: 'These values are in the answer, but nothing the assistant looked up supports them:',
+    hint: 'Open “How I answered” to see what it looked up.',
+    kinds: { NUMBER: 'Figure', UNIT_CODE: 'Unit code', TENANT_NAME: 'Tenant name', CITATION: 'Lease citation' },
   },
   tools: {
     search_units: { running: 'Searching units…', done: 'Searched units', failed: 'Could not search units', source: 'Unit search' },

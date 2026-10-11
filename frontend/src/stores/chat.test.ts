@@ -80,65 +80,178 @@ describe('chat store', () => {
     expect(chat.busy).toBe(false)
   })
 
-  it('drops the answer streamed so far when the assistant is asked to answer again, and keeps the new one', async () => {
-    script([
-      { type: 'tool_call', name: 'get_occupancy_summary', args: {} },
-      { type: 'tool_result', name: 'get_occupancy_summary', summary: 'Occupancy', error: false },
-      { type: 'token', text: 'The portfolio has ' },
-      { type: 'token', text: '151 units.' },
-      { type: 'revise', reason: 'grounding' },
-      { type: 'token', text: 'The portfolio has 150 units.' },
-      { ...done, guardrailStatus: 'RETRIED_OK' },
-    ])
-    const chat = useChatStore()
+  describe('when the assistant is asked to answer again', () => {
+    const leaseSearch = (ref: string): ChatEvent => ({
+      type: 'tool_result', name: 'search_lease_documents', summary: '1 clause', error: false,
+      sources: [{ ...lateFee, ref }],
+    })
 
-    await chat.send('how many units?')
+    it('drops the answer streamed so far, what it cited and what the model wrote before its tools', async () => {
+      script([
+        { type: 'token', text: 'Let me look at the lease.' },
+        { type: 'tool_call', name: 'search_lease_documents', args: {} },
+        leaseSearch('LSE-A-203#5'),
+        { type: 'token', text: 'The late fee is SAR 90 [LSE-A-203#5].' },
+        { type: 'revise', reason: 'grounding' },
+        { type: 'token', text: 'The late fee is SAR 75 [LSE-A-203#5].' },
+        { ...done, guardrailStatus: 'RETRIED_OK' },
+      ])
+      const chat = useChatStore()
 
-    const answer = chat.messages[1]
-    expect(answer.text).toBe('The portfolio has 150 units.')
-    expect(answer.tools).toHaveLength(1)
-    expect(answer.unverified).toBeUndefined()
-    expect(answer.usage?.guardrailStatus).toBe('RETRIED_OK')
+      await chat.send('what is the late fee?')
+
+      const answer = chat.messages[1]
+      expect(answer.text).toBe('The late fee is SAR 75 [LSE-A-203#5].')
+      expect(answer.preamble).toBeUndefined()
+      expect(answer.sources).toEqual([])
+      expect(answer.tools).toHaveLength(1)
+      expect(answer.guardrail).toEqual({ status: 'RETRIED_OK', values: [] })
+    })
+
+    it('keeps the clauses the new answer found while it is written', async () => {
+      script([
+        { type: 'tool_call', name: 'search_lease_documents', args: {} },
+        leaseSearch('LSE-A-203#5'),
+        { type: 'token', text: 'The late fee is SAR 90 [LSE-A-203#5].' },
+        { type: 'revise', reason: 'grounding' },
+        { type: 'tool_call', name: 'search_lease_documents', args: {} },
+        leaseSearch('LSE-A-203#6'),
+        { type: 'token', text: 'The notice period is 60 days [LSE-A-203#6].' },
+        { ...done, guardrailStatus: 'RETRIED_OK' },
+      ])
+      const chat = useChatStore()
+
+      await chat.send('what does the lease say?')
+
+      expect(chat.messages[1].sources.map((source) => source.ref)).toEqual(['LSE-A-203#6'])
+    })
+
+    it('shows the re-checking state until the new answer starts, and not after the stream ended', async () => {
+      let release: () => void = () => {}
+      const held = new Promise<void>((resolve) => { release = resolve })
+      streamChat.mockImplementationOnce(async function* () {
+        yield { type: 'token', text: 'The portfolio has 151 units.' } as ChatEvent
+        yield { type: 'revise', reason: 'grounding' } as ChatEvent
+        await held
+        yield { type: 'token', text: 'The portfolio has 150 units.' } as ChatEvent
+        yield { ...done, guardrailStatus: 'RETRIED_OK' } as ChatEvent
+      })
+      const chat = useChatStore()
+
+      const sending = chat.send('how many units?')
+      await flushPromises()
+      expect(chat.messages[1]).toMatchObject({ text: '', streaming: true })
+      expect(chat.messages[1].replaced).toBeDefined()
+
+      release()
+      await sending
+      expect(chat.messages[1].text).toBe('The portfolio has 150 units.')
+      expect(chat.messages[1].replaced).toBeUndefined()
+    })
+
+    it('puts the earlier answer back with its clauses and note when the new one never completed', async () => {
+      script([
+        { type: 'token', text: 'Let me look at the lease.' },
+        { type: 'tool_call', name: 'search_lease_documents', args: {} },
+        leaseSearch('LSE-A-203#5'),
+        { type: 'token', text: 'The late fee is SAR 75 [LSE-A-203#5] and the notice is 60 days.' },
+        { type: 'revise', reason: 'grounding' },
+        { type: 'token', text: 'Checking ' },
+        { type: 'tool_call', name: 'search_units', args: {} },
+        { type: 'tool_result', name: 'search_units', summary: '150 units', error: false },
+        { type: 'revise', reason: 'grounding' },
+        { type: 'token', text: 'The late fee is SAR 75 [LSE-A-203#5] and the notice is 60 days.' },
+        { type: 'guardrail', status: 'unverified', values: [{ kind: 'NUMBER', value: '60' }] },
+        { ...done, guardrailStatus: 'FLAGGED' },
+      ])
+      const chat = useChatStore()
+
+      await chat.send('late fee and notice?')
+
+      const answer = chat.messages[1]
+      expect(answer.text).toBe('The late fee is SAR 75 [LSE-A-203#5] and the notice is 60 days.')
+      expect(answer.preamble).toBe('Let me look at the lease.')
+      expect(answer.sources.map((source) => source.ref)).toEqual(['LSE-A-203#5'])
+      expect(answer.error).toBeUndefined()
+      expect(answer.guardrail).toEqual({ status: 'FLAGGED', values: [{ kind: 'NUMBER', value: '60' }] })
+    })
+
+    it('sends only the final answer as history for the next question', async () => {
+      script([
+        { type: 'token', text: 'The portfolio has 151 units.' },
+        { type: 'revise', reason: 'grounding' },
+        { type: 'token', text: 'The portfolio has 150 units.' },
+        { ...done, guardrailStatus: 'RETRIED_OK' },
+      ])
+      script([{ type: 'token', text: 'Yes.' }, done])
+      const chat = useChatStore()
+
+      await chat.send('how many units?')
+      await chat.send('and vacant ones?')
+
+      expect(streamChat.mock.calls[1][1]).toEqual([
+        { role: 'user', text: 'how many units?' },
+        { role: 'assistant', text: 'The portfolio has 150 units.' },
+      ])
+    })
   })
 
-  it('shows the earlier answer again when the answer asked for never completed', async () => {
-    script([
-      { type: 'tool_call', name: 'get_occupancy_summary', args: {} },
-      { type: 'tool_result', name: 'get_occupancy_summary', summary: 'Occupancy', error: false },
-      { type: 'token', text: 'The portfolio has 151 units.' },
-      { type: 'revise', reason: 'grounding' },
-      { type: 'token', text: 'Let me check ' },
-      { type: 'tool_call', name: 'search_units', args: {} },
-      { type: 'tool_result', name: 'search_units', summary: '150 units found', error: false },
-      { type: 'revise', reason: 'grounding' },
-      { type: 'token', text: 'The portfolio has 151 units.' },
-      { type: 'guardrail', status: 'unverified', values: [{ kind: 'NUMBER', value: '151' }] },
-      { ...done, guardrailStatus: 'FLAGGED' },
-    ])
-    const chat = useChatStore()
+  describe('what the guardrail found', () => {
+    it('keeps the values of an answer it could not match to the data with its verdict', async () => {
+      script([
+        { type: 'token', text: 'The portfolio has 151 units.' },
+        { type: 'guardrail', status: 'unverified', values: [{ kind: 'NUMBER', value: '151' }] },
+        { ...done, guardrailStatus: 'FLAGGED' },
+      ])
+      const chat = useChatStore()
 
-    await chat.send('how many units?')
+      await chat.send('how many units?')
 
-    const answer = chat.messages[1]
-    expect(answer.text).toBe('The portfolio has 151 units.')
-    expect(answer.error).toBeUndefined()
-    expect(answer.unverified).toEqual([{ kind: 'NUMBER', value: '151' }])
-    expect(answer.usage?.guardrailStatus).toBe('FLAGGED')
-  })
+      expect(chat.messages[1].text).toBe('The portfolio has 151 units.')
+      expect(chat.messages[1].guardrail).toEqual({ status: 'FLAGGED', values: [{ kind: 'NUMBER', value: '151' }] })
+    })
 
-  it('keeps the values of an answer the guardrail could not match to the data', async () => {
-    script([
-      { type: 'token', text: 'The portfolio has 151 units.' },
-      { type: 'guardrail', status: 'unverified', values: [{ kind: 'NUMBER', value: '151' }] },
-      { ...done, guardrailStatus: 'FLAGGED' },
-    ])
-    const chat = useChatStore()
+    it('takes the verdict of a run that was asked again and is still flagged from the done event', async () => {
+      script([
+        { type: 'token', text: 'The portfolio has 151 units.' },
+        { type: 'guardrail', status: 'unverified', values: [{ kind: 'NUMBER', value: '151' }] },
+        { ...done, guardrailStatus: 'RETRIED_FLAGGED' },
+      ])
+      const chat = useChatStore()
 
-    await chat.send('how many units?')
+      await chat.send('how many units?')
 
-    expect(chat.messages[1].text).toBe('The portfolio has 151 units.')
-    expect(chat.messages[1].unverified).toEqual([{ kind: 'NUMBER', value: '151' }])
-    expect(chat.messages[1].usage?.guardrailStatus).toBe('FLAGGED')
+      expect(chat.messages[1].guardrail?.status).toBe('RETRIED_FLAGGED')
+    })
+
+    it('has a checked answer with no values, and no verdict for an answer that was not checked', async () => {
+      script([{ type: 'token', text: 'Yes.' }, done])
+      script([{ type: 'token', text: 'Yes.' }, { ...done, guardrailStatus: null }])
+      const chat = useChatStore()
+
+      await chat.send('one')
+      await chat.send('two')
+
+      expect(chat.messages[1].guardrail).toEqual({ status: 'OK', values: [] })
+      expect(chat.messages[3].guardrail).toBeUndefined()
+    })
+
+    it('keeps the model, why it was chosen and the cache tokens of the run with its usage', async () => {
+      script([
+        { type: 'token', text: 'Done.' },
+        {
+          ...done, provider: 'anthropic', model: 'claude-sonnet-4-5', routedReason: 'COMPLEX',
+          inputTokens: 12, cacheReadTokens: 3400, cacheWriteTokens: 269,
+        },
+      ])
+      const chat = useChatStore()
+
+      await chat.send('a complex question')
+
+      expect(chat.messages[1].usage).toMatchObject({
+        model: 'claude-sonnet-4-5', routedReason: 'COMPLEX', cacheReadTokens: 3400, cacheWriteTokens: 269,
+      })
+    })
   })
 
   it('moves text written before a tool call into the preamble so the answer is only what follows', async () => {

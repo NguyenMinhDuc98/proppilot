@@ -1,12 +1,15 @@
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { DonePayload, ErrorCode } from '../api/types'
 import { i18n } from '../i18n'
 import ar from '../i18n/ar'
 import en from '../i18n/en'
 import type { ChatMessage, ToolChip } from '../stores/chat'
 import MessageBubble from './MessageBubble.vue'
+
+// The trace drawer asks for the stored trace of a run; these tests are about the bubble, so it is not there.
+vi.mock('../api/runs', () => ({ fetchRunTrace: () => Promise.reject(new Error('no trace in this test')) }))
 
 const errorCodes: ErrorCode[] = ['llm_overloaded', 'llm_timeout', 'llm_auth', 'llm_error', 'run_timeout']
 
@@ -70,33 +73,71 @@ describe('MessageBubble truncated answers', () => {
   })
 })
 
-describe('MessageBubble unverified values', () => {
-  const unverified = [
-    { kind: 'NUMBER', value: '151' },
-    { kind: 'UNIT_CODE', value: 'A-999' },
-    { kind: 'NUMBER', value: '151' },
-  ] as const
+describe('MessageBubble guardrail', () => {
+  const flagged: NonNullable<ChatMessage['guardrail']> = {
+    status: 'FLAGGED',
+    values: [
+      { kind: 'NUMBER', value: '151' },
+      { kind: 'UNIT_CODE', value: 'A-999' },
+      { kind: 'NUMBER', value: '151' },
+    ],
+  }
 
-  it('lists each value the guardrail could not match to the data once, in both languages', async () => {
-    const wrapper = render({ text: 'The portfolio has 151 units; A-999 is vacant.', unverified: [...unverified], usage })
+  it('warns under an answer with values it could not match to the data, and lists each once', async () => {
+    const wrapper = render({ text: 'The portfolio has 151 units; A-999 is vacant.', guardrail: flagged, usage })
 
-    const shown = () => wrapper.get('.unverified').text()
-    expect(wrapper.get('.notice').text()).toContain(en.chat.unverified)
-    expect(wrapper.get('.notice').attributes('role')).toBe('note')
-    expect(shown()).toBe('151 and A-999')
+    expect(wrapper.get('[role="status"]').text()).toBe(en.guardrail.flagged)
+    const listed = wrapper.findAll('.guardrail li').map((item) => item.text())
+    expect(listed).toEqual([`${en.guardrail.kinds.NUMBER}151`, `${en.guardrail.kinds.UNIT_CODE}A-999`])
 
     i18n.global.locale.value = 'ar'
     await nextTick()
-    expect(wrapper.get('.notice').text()).toContain(ar.chat.unverified)
-    expect(shown()).toContain('151')
-    expect(shown()).toContain('A-999')
-    expect(shown().split('151')).toHaveLength(2)
+    expect(wrapper.get('[role="status"]').text()).toBe(ar.guardrail.flagged)
+    expect(wrapper.findAll('.guardrail li').map((item) => item.text())).toEqual([
+      `${ar.guardrail.kinds.NUMBER}151`,
+      `${ar.guardrail.kinds.UNIT_CODE}A-999`,
+    ])
   })
 
-  it('shows nothing for an answer without such values or while the answer is still streaming', () => {
-    expect(render({ text: 'Answer', usage }).find('.notice').exists()).toBe(false)
-    expect(render({ text: 'Answer', unverified: [], usage }).find('.notice').exists()).toBe(false)
-    expect(render({ text: 'Partial', unverified: [...unverified], streaming: true }).find('.notice').exists()).toBe(false)
+  it('notes that an answer was checked again and now matches, without a warning', () => {
+    const wrapper = render({ text: 'Answer', guardrail: { status: 'RETRIED_OK', values: [] }, usage })
+
+    expect(wrapper.get('.rechecked').text()).toBe(en.guardrail.rechecked)
+    expect(wrapper.find('.badge').exists()).toBe(false)
+  })
+
+  it('shows nothing for an answer that was checked and fine, or not checked, or is still streaming', () => {
+    expect(render({ text: 'Answer', guardrail: { status: 'OK', values: [] }, usage }).find('.guardrail, .rechecked').exists()).toBe(false)
+    expect(render({ text: 'Answer', usage }).find('.guardrail, .rechecked').exists()).toBe(false)
+    expect(render({ text: 'Partial', guardrail: flagged, streaming: true }).find('.guardrail, .rechecked').exists()).toBe(false)
+  })
+
+  it('shows the "How I answered" trace for a flagged answer even when no tool was called', () => {
+    const wrapper = render({ text: 'The portfolio has 151 units.', guardrail: flagged, usage })
+
+    expect(wrapper.find('.trace').exists()).toBe(true)
+  })
+
+  it('shows no trace for an answer that called no tool and was not flagged', () => {
+    expect(render({ text: 'Hello', usage }).find('.trace').exists()).toBe(false)
+  })
+
+  it('says the figures are being checked again while the answer to replace has been dropped', async () => {
+    const replaced = { sources: [] }
+    const wrapper = render({ text: '', streaming: true, replaced, tools: [toolChip('get_occupancy_summary')] })
+
+    expect(wrapper.get('[role="status"]').text()).toBe(en.chat.rechecking)
+
+    i18n.global.locale.value = 'ar'
+    await nextTick()
+    expect(wrapper.get('[role="status"]').text()).toBe(ar.chat.rechecking)
+  })
+
+  it('stops saying so once the new answer is streaming, and when nothing was asked again', () => {
+    const replaced = { sources: [] }
+
+    expect(render({ text: 'The portfolio has 150 units.', streaming: true, replaced }).find('[role="status"]').exists()).toBe(false)
+    expect(render({ text: '', streaming: true }).text()).not.toContain(en.chat.rechecking)
   })
 })
 

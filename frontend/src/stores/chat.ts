@@ -4,7 +4,7 @@ import { newIdempotencyKey } from '../api/actions'
 import { streamChat, streamConfirmation } from '../api/chat'
 import { ApiError } from '../api/http'
 import type {
-  ActionView, ChatEvent, DonePayload, ErrorCode, HistoryTurn, LeaseSource, UnverifiedValue,
+  ActionView, ChatEvent, DonePayload, ErrorCode, GuardrailStatus, HistoryTurn, LeaseSource, UnverifiedValue,
 } from '../api/types'
 import { useAppInfo } from '../composables/useAppInfo'
 
@@ -28,8 +28,17 @@ export interface ChatMessage {
   /** The lease clauses its searches returned, each once. A citation in the answer is a chip only for one of these. */
   sources: LeaseSource[]
   usage?: DonePayload
-  /** The values of the answer that the grounding guardrail could not match to the data, when it found any. */
-  unverified?: UnverifiedValue[]
+  /**
+   * What the grounding guardrail found in the answer: the values it could not match to the data, and its verdict.
+   * Absent when it did not check the answer. The verdict is `FLAGGED` from the moment it found values, and the
+   * server's own word (`RETRIED_FLAGGED` for an answer given twice) once the run is done.
+   */
+  guardrail?: { status: GuardrailStatus; values: UnverifiedValue[] }
+  /**
+   * While the assistant answers again: what the answer it replaces had before its text was dropped. It is put back
+   * when the new answer never completes and the earlier one is sent again.
+   */
+  replaced?: { preamble?: string; sources: LeaseSource[] }
   error?: string
   /** Set when the server reported the failure; the UI shows localised text for it instead of `error`. */
   errorCode?: ErrorCode
@@ -139,22 +148,41 @@ export const useChatStore = defineStore('chat', () => {
         message.text += event.text
         break
       case 'revise':
-        // The assistant was asked to answer again: what was streamed so far is not the answer.
-        message.text = ''
+        revise(message)
         break
       case 'error':
         message.error = event.message
         message.errorCode = event.code
         break
       case 'guardrail':
-        message.unverified = event.values
+        message.guardrail = { status: 'FLAGGED', values: event.values }
         break
       case 'done': {
         const { type: _type, ...usage } = event
         message.usage = usage
+        if (usage.guardrailStatus) {
+          message.guardrail = { status: usage.guardrailStatus, values: message.guardrail?.values ?? [] }
+        }
         break
       }
     }
+  }
+
+  /**
+   * The assistant was asked to answer again, so what was streamed so far, the clauses it cited and what the model
+   * wrote before its tools are not the answer. They are kept aside: when the new answer never completes the server
+   * says so with a second revise and sends the earlier answer again, which then has its clauses and note back.
+   */
+  function revise(message: ChatMessage) {
+    if (message.replaced) {
+      message.preamble = message.replaced.preamble
+      message.sources = message.replaced.sources
+    } else {
+      message.replaced = { preamble: message.preamble, sources: message.sources }
+      message.preamble = undefined
+      message.sources = []
+    }
+    message.text = ''
   }
 
   /** A clause that two searches both return is one source. */
@@ -186,6 +214,7 @@ export const useChatStore = defineStore('chat', () => {
       if (!(e instanceof DOMException && e.name === 'AbortError')) onFailure(e)
     } finally {
       answer.streaming = false
+      answer.replaced = undefined
       busy.value = false
       controller = null
     }

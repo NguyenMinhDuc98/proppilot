@@ -73,6 +73,36 @@ describe('streamChat', () => {
     })
   })
 
+  it('yields the revision and the values the guardrail could not ground as events of their own', async () => {
+    const values = [{ kind: 'NUMBER', value: '151' }, { kind: 'UNIT_CODE', value: 'A-999' }]
+    sse(
+      ['token', { text: 'The portfolio has 151 units.' }],
+      ['revise', { reason: 'grounding' }],
+      ['guardrail', { status: 'unverified', values }],
+    )
+
+    const events = await collect(streamChat('how many units?', []))
+
+    expect(events).toEqual([
+      { type: 'token', text: 'The portfolio has 151 units.' },
+      { type: 'revise', reason: 'grounding' },
+      { type: 'guardrail', status: 'unverified', values },
+    ])
+  })
+
+  it('yields the model, why it answered and the cache tokens with the end of the run', async () => {
+    const payload = {
+      runId: 'r1', status: 'OK', provider: 'anthropic', model: 'claude-sonnet-4-5', routedReason: 'GUARDRAIL_RETRY',
+      guardrailStatus: 'RETRIED_OK', inputTokens: 12, outputTokens: 80, cacheReadTokens: 3400, cacheWriteTokens: 269,
+      toolCalls: 1, iterations: 3, latencyMs: 5100, costUsd: 0.011, truncated: false,
+    }
+    sse(['done', payload])
+
+    const events = await collect(streamChat('what is the late fee?', []))
+
+    expect(events).toEqual([{ type: 'done', ...payload }])
+  })
+
   it('throws an ApiError for a refused request', async () => {
     fetchMock.mockResolvedValueOnce(new Response('{}', { status: 429, statusText: 'Too Many Requests' }))
 
