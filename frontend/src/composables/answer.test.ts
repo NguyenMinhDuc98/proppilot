@@ -181,10 +181,19 @@ describe('buildAnswer', () => {
       expect(JSON.stringify(nodes)).not.toMatch(/onerror|javascript:/)
     })
 
-    it('does not read an escaped marker or one in an HTML comment as a citation of another clause', () => {
-      const { nodes } = buildAnswer('<!-- [LSE-A-504#5] -->\\[LSE-A-504#4a\\]', sources)
+    it('does not read a marker in an HTML comment as a citation, as a block or inside a sentence', () => {
+      const { nodes, cited } = buildAnswer('<!-- [LSE-A-504#5] -->\n\nFee <!-- [LSE-A-504#4a] --> is due.', sources)
 
       expect(citations(nodes)).toEqual([])
+      expect(written(nodes)).toBe('Fee  is due.')
+      expect(cited).toEqual([])
+    })
+
+    it('reads a marker with escaped brackets as the citation it names, because an escape only keeps Markdown from reading it as a link', () => {
+      const { nodes, cited } = buildAnswer('Notice \\[LSE-A-504#4a\\] applies.', sources)
+
+      expect(written(nodes)).toBe('Notice {LSE-A-504#4a} applies.')
+      expect(cited).toEqual([noticePart])
     })
 
     it('keeps markup that is written inside the value of an attribute as the text of that attribute', () => {
