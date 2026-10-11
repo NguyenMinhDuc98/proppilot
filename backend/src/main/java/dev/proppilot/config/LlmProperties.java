@@ -2,10 +2,16 @@ package dev.proppilot.config;
 
 import java.math.BigDecimal;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.boot.context.properties.bind.DefaultValue;
 
 /**
  * LLM settings. Provider "offline" uses the built-in rule-based assistant (no key, no cost);
  * provider "anthropic" calls the Claude Messages API.
+ *
+ * <p>A host may pass a variable on empty, which binds as no value. The prompt caching switch, the cache multipliers, the
+ * larger model's prices and the complexity threshold therefore have their default here as well as in application.yml,
+ * and are boxed where a primitive could not hold "no value". A blank one then means its default: it neither stops the
+ * backend nor leaves a price null for a question to fail on later.
  *
  * @param priceInputPerMtok USD per million input tokens that were neither read from nor written to the prompt cache
  * @param cacheWriteMultiplier the price of a token written to the prompt cache, as a multiple of the input price
@@ -29,13 +35,13 @@ public record LlmProperties(
         int retryBaseDelayMs,
         BigDecimal priceInputPerMtok,
         BigDecimal priceOutputPerMtok,
-        BigDecimal cacheWriteMultiplier,
-        BigDecimal cacheReadMultiplier,
-        boolean promptCaching,
+        @DefaultValue("1.25") BigDecimal cacheWriteMultiplier,
+        @DefaultValue("0.10") BigDecimal cacheReadMultiplier,
+        @DefaultValue("true") Boolean promptCaching,
         String largeModel,
-        BigDecimal largePriceInputPerMtok,
-        BigDecimal largePriceOutputPerMtok,
-        int complexityThreshold) {
+        @DefaultValue("3.00") BigDecimal largePriceInputPerMtok,
+        @DefaultValue("15.00") BigDecimal largePriceOutputPerMtok,
+        @DefaultValue("3") Integer complexityThreshold) {
 
     public LlmProperties {
         largeModel = largeModel == null ? "" : largeModel.strip();
