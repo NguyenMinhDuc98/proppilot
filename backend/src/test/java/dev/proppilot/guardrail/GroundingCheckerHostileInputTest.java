@@ -17,9 +17,9 @@ import org.junit.jupiter.params.provider.ValueSource;
 /**
  * The answer, the tool results and the question that the guardrail reads are whatever a model or a visitor made them,
  * and java.util.regex recurses once for each round of a repeated group. These read hostile texts of a million
- * characters on a thread with a 256 KB stack (the production JVM runs with -Xss256k), a quarter of what a test thread
- * has: a recursion that needs more fails here whatever the size of the text, and a scan that is not linear fails by
- * the clock.
+ * characters on a thread with a deliberately small 256 KB stack, a quarter of what a test thread has and stricter than
+ * the default stack of the production JVM: a recursion that needs more fails here whatever the size of the text, and a
+ * scan that is not linear fails by the clock.
  */
 class GroundingCheckerHostileInputTest {
 
@@ -41,7 +41,7 @@ class GroundingCheckerHostileInputTest {
     @ParameterizedTest
     @ValueSource(strings = {"[LSE-", "[LSE-A-203#5] ", "[LSE-A-203#5,", "A-", "A-203 ", "A-203", "1,", "1,234,", "1.",
             "٤", "٬٤", "9", "(((", "Ahmed Al-Harbi ", "أحمد الحربي ", "Ahmed ", "\u0000", "😀", "\n1. ", "> ", " ",
-            "[", "]", "(a|b)", "ـ", "LSE-"})
+            "[", "]", "(a|b)", "ـ", "LSE-", "101,102,", "100,", "100.200.", "1.2.", ".9", "٫٩"})
     void aHostileAnswerIsCheckedInBoundedTime(String unit) {
         var answer = hostile(unit);
 
@@ -49,6 +49,19 @@ class GroundingCheckerHostileInputTest {
 
         assertThat(violations).hasSizeLessThanOrEqualTo(GroundingChecker.MAX_VIOLATIONS);
         violations.forEach(v -> assertThat(v.value().length()).isLessThanOrEqualTo(Violation.MAX_LENGTH));
+    }
+
+    @Test
+    void aChainOfAMillionCharactersOfGroupsAndOneOfPointsAreEachReadInBoundedTime() {
+        var groups = "100" + ",100".repeat(MILLION / 4);
+        var points = "100" + ".100".repeat(MILLION / 4);
+
+        var ofGroups = onSmallStack(() -> checker.check(groups, given(List.of(), List.of("q"))));
+        var ofPoints = onSmallStack(() -> checker.check(points, given(List.of(), List.of("q"))));
+
+        assertThat(ofGroups).hasSize(1);
+        assertThat(ofPoints).hasSize(1);
+        assertThat(ofPoints.get(0).value()).isEqualTo("100");
     }
 
     @Test
@@ -61,7 +74,7 @@ class GroundingCheckerHostileInputTest {
 
     @ParameterizedTest
     @ValueSource(strings = {"[", "{\"a\":", "[[],", "[1,", "\"", "9", "A-203 ", "{\"a\":[", "[\"A-203\",", "\\u0041",
-            "1,234,", "Ahmed Al-Harbi ", "]", "}", ","})
+            "1,234,", "Ahmed Al-Harbi ", "]", "}", ",", "\"101,102,", "\"1.2."})
     void hostileToolResultsOfAMillionCharactersAreReadInBoundedTime(String unit) {
         var result = hostile(unit);
         var answer = "Ahmed Al-Harbi owes 4,950 SAR for A-203 [LSE-A-203#5] and 12 units.";

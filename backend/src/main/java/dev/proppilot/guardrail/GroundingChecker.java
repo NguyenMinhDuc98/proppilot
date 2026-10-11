@@ -14,9 +14,11 @@ import java.util.List;
  *   <li>{@link ClaimKind#NUMBER}: every figure must be one of the figures of the evidence, which are those in the tool
  *       results (in their strings too: a date, a unit code), the lengths of their arrays, and those in the question,
  *       the conversation and the text the app wrote. {@code 4,950}, {@code 4950.00} and {@code ٤٩٥٠} are one figure; a
- *       rounded one is another. A whole number up to {@value #SMALL_NUMBER} is never reported (a list is numbered, a
- *       question asks for the top 3), and neither is the number of an item of a list. The digits of a unit code or of
- *       a citation are not figures of their own</li>
+ *       rounded one is another. {@code 101,102,103} is one number, and is grounded too when the evidence states each
+ *       of 101, 102 and 103; a date written {@code 31.12.2025} is read as the figures 31, 12 and 2025. A whole number
+ *       up to {@value #SMALL_NUMBER} is never reported (a list is numbered, a question asks for the top 3), and
+ *       neither is the number of an item of a list. The digits of a unit code or of a citation are not figures of
+ *       their own</li>
  *   <li>{@link ClaimKind#UNIT_CODE}: every code such as A-203 must be in the evidence</li>
  *   <li>{@link ClaimKind#TENANT_NAME}: a tenant that the answer names must be named in the evidence, in either
  *       language</li>
@@ -42,8 +44,8 @@ public final class GroundingChecker {
     public List<Violation> check(String answer, Evidence evidence) {
         var known = KnownValues.of(evidence);
         var found = new ArrayList<Claim>();
-        ClaimScanner.ofAnswer(answer, (kind, written, normalised, at) -> {
-            if (!isGrounded(known, kind, normalised)) {
+        ClaimScanner.ofAnswer(answer, (kind, written, normalised, separately, at) -> {
+            if (!isGrounded(known, kind, normalised, separately)) {
                 found.add(new Claim(at, new Violation(kind, written, normalised)));
             }
         });
@@ -52,13 +54,19 @@ public final class GroundingChecker {
         return distinct(found);
     }
 
-    private static boolean isGrounded(KnownValues known, ClaimKind kind, String normalised) {
+    private static boolean isGrounded(KnownValues known, ClaimKind kind, String normalised, List<String> separately) {
         return switch (kind) {
-            case NUMBER -> isSmallWholeNumber(normalised) || known.hasFigure(normalised);
+            case NUMBER -> isSmallWholeNumber(normalised) || known.hasFigure(normalised)
+                    || isListOfFiguresOf(known, separately);
             case UNIT_CODE -> known.hasUnitCode(normalised);
             // A citation; tenant names are not found by the scan but looked for in the text.
             default -> known.hasRef(normalised);
         };
+    }
+
+    /** {@code 101,102,103} is grounded as a list when the evidence states each of its numbers. */
+    private static boolean isListOfFiguresOf(KnownValues known, List<String> separately) {
+        return !separately.isEmpty() && separately.stream().allMatch(known::hasFigure);
     }
 
     private static boolean isSmallWholeNumber(String normalised) {

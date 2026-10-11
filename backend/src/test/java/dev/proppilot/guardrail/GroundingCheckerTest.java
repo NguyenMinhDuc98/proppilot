@@ -169,6 +169,54 @@ class GroundingCheckerTest {
     }
 
     @Test
+    void numbersThatAreWrittenWithoutSpacesAreGroundedAsOneNumberOrAsAList() {
+        var listed = "{\"units\":[101,102,103]}";
+
+        assertThat(check("Units 101,102,103 are late.", listed)).isEmpty();
+        assertThat(check("Units 101, 102 and 103 are late.", listed)).isEmpty();
+        assertThat(check("The roll is 101,102,103 SAR.", "{\"rentRoll\":101102103}")).isEmpty();
+        assertThat(check("The roll is 150,000 SAR.", "{\"rentRoll\":150000}")).isEmpty();
+    }
+
+    @Test
+    void aListWithANumberThatNothingStatesIsReportedAsWritten() {
+        var violations = check("Units 101,102,109 are late.", "{\"units\":[101,102,103]}");
+
+        assertThat(violations).containsExactly(new Violation(ClaimKind.NUMBER, "101,102,109", "101102109"));
+    }
+
+    @Test
+    void aFigureWithAThousandsGroupIsNeverGroundedByItsPieces() {
+        var result = "{\"graceDays\":5,\"fee\":200}";
+
+        assertThat(values(check("The late fee is 5,200 SAR.", result))).containsExactly("5,200");
+        assertThat(values(check("The late fee is 105,200 SAR.", result))).containsExactly("105,200");
+    }
+
+    @Test
+    void aDateWrittenWithPointsIsGroundedByTheNumbersOfTheDate() {
+        var result = "{\"endDate\":\"2025-12-31\"}";
+
+        assertThat(check("The lease ends on 31.12.2025.", result)).isEmpty();
+        assertThat(check("The lease is version 1.2.3.", result)).isEmpty();
+        assertThat(values(check("The lease ends on 30.12.2025.", result))).containsExactly("30");
+        assertThat(values(check("The lease ends on 31.12.2026.", result))).containsExactly("2026");
+    }
+
+    @Test
+    void theTimeOfADayIsGroundedByItsHourAndItsMinutes() {
+        assertThat(check("The visit is at 10:30.", "{\"visit\":\"10:30\"}")).isEmpty();
+    }
+
+    @Test
+    void aSingleDecimalMarkIsStillADecimalNumber() {
+        var result = "{\"endDate\":\"2025-12-31\",\"fee\":4,\"deposit\":95}";
+
+        assertThat(values(check("The fee is 4.95 SAR.", result))).containsExactly("4.95");
+        assertThat(values(check("The fee is 31.12 SAR.", result))).containsExactly("31.12");
+    }
+
+    @Test
     void aNumberThatIsPartOfAnUnitCodeIsNotReportedBesideTheCode() {
         var violations = check("Unit A-204 is vacant.", "{\"units\":[\"A-203\"]}");
 

@@ -2,6 +2,7 @@ package dev.proppilot.guardrail;
 
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 /**
@@ -34,7 +35,7 @@ final class KnownValues {
         return new KnownValues(evidence);
     }
 
-    private void learn(ClaimKind kind, String written, String normalised, int at) {
+    private void learn(ClaimKind kind, String written, String normalised, List<String> separately, int at) {
         if (kind == ClaimKind.NUMBER) {
             figures.add(normalised);
         } else {

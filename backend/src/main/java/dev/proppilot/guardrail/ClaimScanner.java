@@ -1,5 +1,8 @@
 package dev.proppilot.guardrail;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * Reads the figures, unit codes and citations out of a text in one pass. It is written by hand, with no regular
  * expression over the text: a pattern with a repeated group recurses once for each repetition, and an answer, a tool
@@ -9,7 +12,10 @@ package dev.proppilot.guardrail;
  * <p>A figure is a run of digits of any script, with thousands separators (a comma, or the Arabic one) and a decimal
  * mark (a point, or the Arabic one); what stands around it (a currency word, a percent sign, a sign) is not part of it.
  * Its normal form has ASCII digits, no separators, no leading zeros and no trailing zeros of the decimals, so that
- * {@code 4,950}, {@code 4950.00} and {@code ٤٩٥٠} are one figure.
+ * {@code 4,950}, {@code 4950.00} and {@code ٤٩٥٠} are one figure. A number has one decimal mark, so what has more
+ * ({@code 31.12.2025}, {@code 1.2.3}) is read as the figures between the marks. A chain of groups of three digits
+ * ({@code 101,102,103}) is one number, and also the list of its groups: the claim carries both readings, and
+ * which one the writer meant is for the check to settle against the evidence.
  *
  * <p>Two modes: the text of an answer, in which a citation marker is a claim of its own and the digits of a unit code
  * or a marker are not read as a figure; and evidence, in which every digit run is a figure and there are no markers,
@@ -19,7 +25,11 @@ final class ClaimScanner {
 
     /** Receives each claim found: what was written, its normal form, and where it starts. */
     interface Claims {
-        void found(ClaimKind kind, String written, String normalised, int at);
+        /**
+         * @param separately the figures that a number written as a chain of thousands groups, every group of three
+         *                   digits, is also read as when it is a list ({@code 101,102,103}); empty for any other claim
+         */
+        void found(ClaimKind kind, String written, String normalised, List<String> separately, int at);
     }
 
     private static final String REF_START = "LSE-";
@@ -27,6 +37,8 @@ final class ClaimScanner {
     private static final int MAX_MARKER_LENGTH = 64;
     private static final int CODE_DIGITS = 3;
     private static final int GROUP_DIGITS = 3;
+    /** A chain of more numbers than this is no list of them; it is only the one number it also is. */
+    private static final int MAX_LISTED_FIGURES = 20;
     /** A list item is numbered with at most this many digits; a longer number at the start of a line is a figure. */
     private static final int MAX_LIST_NUMBER_DIGITS = 3;
     private static final char ARABIC_DECIMAL_MARK = '٫';
@@ -106,7 +118,7 @@ final class ClaimScanner {
             if (i == close || c == ',' || c == ';' || c == ' ') {
                 if (i > tokenStart && text.startsWith(REF_START, tokenStart)) {
                     var ref = text.substring(tokenStart, i);
-                    claims.found(ClaimKind.CITATION, ref, ref, tokenStart);
+                    claims.found(ClaimKind.CITATION, ref, ref, List.of(), tokenStart);
                 }
                 tokenStart = i + 1;
             }
@@ -139,7 +151,7 @@ final class ClaimScanner {
         if (end < text.length() && Character.digit(text.charAt(end), 10) >= 0) {
             return false;
         }
-        claims.found(ClaimKind.UNIT_CODE, text.substring(at, end), code.toString(), at);
+        claims.found(ClaimKind.UNIT_CODE, text.substring(at, end), code.toString(), List.of(), at);
         at = answer ? end : at + 1;
         return true;
     }
@@ -147,22 +159,63 @@ final class ClaimScanner {
     private void figure(boolean startsLine) {
         int start = at;
         var whole = new StringBuilder();
-        int end = digits(start, whole);
-        boolean plain = true;
+        int firstGroupEnd = digits(start, whole);
+        int end = firstGroupEnd;
+        int groups = 0;
         while (isGroupAt(end)) {
-            plain = false;
+            groups++;
             end = digits(end + 1, whole);
         }
+        int wholeEnd = end;
         var decimals = new StringBuilder();
         if (isDecimalPointAt(end)) {
-            plain = false;
             end = digits(end + 1, decimals);
+            if (isDecimalPointAt(end)) {
+                figuresBetweenMarks(start, whole, wholeEnd);
+                return;
+            }
         }
         at = end;
+        boolean plain = groups == 0 && decimals.length() == 0;
         if (answer && startsLine && plain && whole.length() <= MAX_LIST_NUMBER_DIGITS && isListMarkerEnd(end)) {
             return;
         }
-        claims.found(ClaimKind.NUMBER, text.substring(start, end), normal(whole, decimals), start);
+        var separately = decimals.length() == 0 ? groupsAsFigures(start, firstGroupEnd, groups) : List.<String>of();
+        claims.found(ClaimKind.NUMBER, text.substring(start, end), normal(whole, decimals), separately, start);
+    }
+
+    /**
+     * {@code 31.12.2025}, {@code 1.2.3}: a number has one decimal mark, so the digits between the marks are figures of
+     * their own, as the numbers of a date or a version are.
+     */
+    private void figuresBetweenMarks(int start, StringBuilder whole, int wholeEnd) {
+        claims.found(ClaimKind.NUMBER, text.substring(start, wholeEnd), normal(whole, ""), List.of(), start);
+        int end = wholeEnd;
+        while (isDecimalPointAt(end)) {
+            int from = end + 1;
+            var figure = new StringBuilder();
+            end = digits(from, figure);
+            claims.found(ClaimKind.NUMBER, text.substring(from, end), normal(figure, ""), List.of(), from);
+        }
+        at = end;
+    }
+
+    /**
+     * The groups of a chain read as figures of their own, when every group has three digits: {@code 101,102,103} is
+     * the number 101,102,103 and also three unit numbers. A chain that starts with fewer digits ({@code 4,950}) can
+     * only be one number.
+     */
+    private List<String> groupsAsFigures(int start, int firstGroupEnd, int groups) {
+        if (groups == 0 || groups + 1 > MAX_LISTED_FIGURES || firstGroupEnd - start != GROUP_DIGITS) {
+            return List.of();
+        }
+        var figures = new ArrayList<String>(groups + 1);
+        for (int group = 0; group <= groups; group++) {
+            var digits = new StringBuilder(GROUP_DIGITS);
+            digits(start + group * (GROUP_DIGITS + 1), digits);
+            figures.add(normal(digits, ""));
+        }
+        return figures;
     }
 
     /** Appends the digits that run from {@code from} as ASCII digits and returns where the run ends. */
@@ -204,7 +257,7 @@ final class ClaimScanner {
                 && text.charAt(end + 1) == ' ';
     }
 
-    private static String normal(StringBuilder whole, StringBuilder decimals) {
+    private static String normal(StringBuilder whole, CharSequence decimals) {
         int first = 0;
         while (first < whole.length() - 1 && whole.charAt(first) == '0') {
             first++;
@@ -214,7 +267,7 @@ final class ClaimScanner {
             last--;
         }
         var normal = whole.substring(first);
-        return last == 0 ? normal : normal + "." + decimals.substring(0, last);
+        return last == 0 ? normal : normal + "." + decimals.subSequence(0, last);
     }
 
     private static boolean isThousandsSeparator(char c) {
