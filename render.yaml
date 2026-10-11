@@ -27,6 +27,14 @@ services:
         sync: false
       - key: ANTHROPIC_API_KEY
         sync: false
+      # Set in the Render dashboard: "none" (lease search by keywords, free) or "voyage" (also by meaning; needs
+      # VOYAGE_API_KEY). Deliberately not given a value here, for the same reason as LLM_PROVIDER. Never leave it
+      # blank: an empty value stops the backend from starting. EMBEDDING_MODEL is optional and is added in the
+      # dashboard when wanted.
+      - key: EMBEDDING_PROVIDER
+        sync: false
+      - key: VOYAGE_API_KEY
+        sync: false
       # Enables GET /api/admin/runs and POST /api/admin/reset (the nightly demo reset sends this value from the
       # ADMIN_TOKEN repository secret). 24+ characters (openssl rand -hex 24). Leave unset to switch the admin endpoints off.
       - key: ADMIN_TOKEN
@@ -45,3 +53,6 @@ services:
         value: "3"
       - key: ACTION_MAX_PROPOSALS_PER_DAY
         value: "200"
+      # How many leases get a generated lease document (the first 30 active leases by id).
+      - key: RAG_DOCUMENT_COUNT
+        value: "30"
