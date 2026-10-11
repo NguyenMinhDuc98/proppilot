@@ -32,4 +32,11 @@ class AdminDisabledIT extends PostgresIntegrationTest {
         mvc.perform(post("/api/admin/reset").header("X-Admin-Token", "any-token-any-token-any-token"))
                 .andExpect(status().isNotFound());
     }
+
+    @Test
+    void theLeaseCorpusReindexDoesNotExistEither() throws Exception {
+        mvc.perform(post("/api/admin/rag/reindex")).andExpect(status().isNotFound());
+        mvc.perform(post("/api/admin/rag/reindex").header("X-Admin-Token", "any-token-any-token-any-token"))
+                .andExpect(status().isNotFound());
+    }
 }
