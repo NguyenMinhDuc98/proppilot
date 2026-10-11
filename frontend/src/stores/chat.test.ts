@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
 import { ApiError } from '../api/http'
 import type { ActionView, AppInfo, ChatEvent, LeaseSource } from '../api/types'
+import { buildAnswer } from '../composables/answer'
 import { paymentAction } from '../test/actionFixtures'
 import { lateFee, noticePart } from '../test/leaseFixtures'
 import { useChatStore } from './chat'
@@ -86,7 +87,7 @@ describe('chat store', () => {
       sources: [{ ...lateFee, ref }],
     })
 
-    it('drops the answer streamed so far, what it cited and what the model wrote before its tools', async () => {
+    it('drops the answer streamed so far and keeps the tools, the clauses they returned and the note before them', async () => {
       script([
         { type: 'token', text: 'Let me look at the lease.' },
         { type: 'tool_call', name: 'search_lease_documents', args: {} },
@@ -102,13 +103,30 @@ describe('chat store', () => {
 
       const answer = chat.messages[1]
       expect(answer.text).toBe('The late fee is SAR 75 [LSE-A-203#5].')
-      expect(answer.preamble).toBeUndefined()
-      expect(answer.sources).toEqual([])
+      expect(answer.preamble).toBe('Let me look at the lease.')
+      expect(answer.sources.map((source) => source.ref)).toEqual(['LSE-A-203#5'])
       expect(answer.tools).toHaveLength(1)
       expect(answer.guardrail).toEqual({ status: 'RETRIED_OK', values: [] })
     })
 
-    it('keeps the clauses the new answer found while it is written', async () => {
+    it('lets the new answer cite a clause the search of the dropped one returned, without searching again', async () => {
+      script([
+        { type: 'tool_call', name: 'search_lease_documents', args: {} },
+        leaseSearch('LSE-A-203#5'),
+        { type: 'token', text: 'The late fee is SAR 90 [LSE-A-203#5].' },
+        { type: 'revise', reason: 'grounding' },
+        { type: 'token', text: 'The late fee is SAR 75 [LSE-A-203#5].' },
+        { ...done, guardrailStatus: 'RETRIED_OK' },
+      ])
+      const chat = useChatStore()
+
+      await chat.send('what is the late fee?')
+
+      const { text, sources } = chat.messages[1]
+      expect(buildAnswer(text, sources).cited.map((source) => source.ref)).toEqual(['LSE-A-203#5'])
+    })
+
+    it('keeps the clauses of both answers, which the text of the new one cites as it wishes', async () => {
       script([
         { type: 'tool_call', name: 'search_lease_documents', args: {} },
         leaseSearch('LSE-A-203#5'),
@@ -123,7 +141,10 @@ describe('chat store', () => {
 
       await chat.send('what does the lease say?')
 
-      expect(chat.messages[1].sources.map((source) => source.ref)).toEqual(['LSE-A-203#6'])
+      const { text, sources } = chat.messages[1]
+      expect(sources.map((source) => source.ref)).toEqual(['LSE-A-203#5', 'LSE-A-203#6'])
+      // Only a clause the text cites is shown as a chip, so the first answer's clause is not.
+      expect(buildAnswer(text, sources).cited.map((source) => source.ref)).toEqual(['LSE-A-203#6'])
     })
 
     it('shows the re-checking state until the new answer starts, and not after the stream ended', async () => {
@@ -149,7 +170,7 @@ describe('chat store', () => {
       expect(chat.messages[1].replaced).toBeUndefined()
     })
 
-    it('puts the earlier answer back with its clauses and note when the new one never completed', async () => {
+    it('puts the earlier answer back with its note, without what the new one wrote, when it never completed', async () => {
       script([
         { type: 'token', text: 'Let me look at the lease.' },
         { type: 'tool_call', name: 'search_lease_documents', args: {} },

@@ -35,10 +35,10 @@ export interface ChatMessage {
    */
   guardrail?: { status: GuardrailStatus; values: UnverifiedValue[] }
   /**
-   * While the assistant answers again: what the answer it replaces had before its text was dropped. It is put back
-   * when the new answer never completes and the earlier one is sent again.
+   * While the assistant answers again: the note the answer it replaces had before its tools, as it was when the text
+   * was dropped. It is put back when the new answer never completes and the earlier one is sent again.
    */
-  replaced?: { preamble?: string; sources: LeaseSource[] }
+  replaced?: { preamble?: string }
   error?: string
   /** Set when the server reported the failure; the UI shows localised text for it instead of `error`. */
   errorCode?: ErrorCode
@@ -169,18 +169,17 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   /**
-   * The assistant was asked to answer again, so what was streamed so far, the clauses it cited and what the model
-   * wrote before its tools are not the answer. They are kept aside: when the new answer never completes the server
-   * says so with a second revise and sends the earlier answer again, which then has its clauses and note back.
+   * The assistant was asked to answer again, so what was streamed so far is not the answer. Its tools, the clauses
+   * they returned and the note before them are what the run did, and the new answer may cite those clauses without
+   * searching again, so they stay. When the new answer never completes the server says so with a second revise and
+   * sends the earlier answer again, which then has the note it had: what the dropped attempt wrote before its own
+   * tools is dropped with it.
    */
   function revise(message: ChatMessage) {
     if (message.replaced) {
       message.preamble = message.replaced.preamble
-      message.sources = message.replaced.sources
     } else {
-      message.replaced = { preamble: message.preamble, sources: message.sources }
-      message.preamble = undefined
-      message.sources = []
+      message.replaced = { preamble: message.preamble }
     }
     message.text = ''
   }
