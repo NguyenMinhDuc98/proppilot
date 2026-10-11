@@ -379,6 +379,29 @@ describe('the clause drawer', () => {
     }
   })
 
+  it('stays open, and does not open again by itself, when a later model round empties the answer it was opened from', async () => {
+    const wrapper = render('The fee is 3% [LSE-A-504#5]. Let me check A-203.', [lateFee])
+    const message = wrapper.props('message') as ChatMessage
+    await inline(wrapper)[0].trigger('click')
+    expect(drawer()).not.toBeNull()
+
+    await wrapper.setProps({ message: { ...message, text: '', streaming: true } })
+
+    expect(inline(wrapper)).toHaveLength(0)
+    expect(drawer()).not.toBeNull()
+    expect(facts(drawer() as HTMLElement).Clause).toBe('5 · Late payment')
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }))
+    await nextTick()
+    await nextTick()
+    expect(drawer()).toBeNull()
+
+    await wrapper.setProps({ message: { ...message, text: 'Both leases charge 3% [LSE-A-504#5].' } })
+
+    expect(inline(wrapper)).toHaveLength(1)
+    expect(drawer()).toBeNull()
+  })
+
   it('is not mounted for an answer that cites nothing', () => {
     render('There are 6 units.')
 

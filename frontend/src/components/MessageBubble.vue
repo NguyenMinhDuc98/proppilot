@@ -87,10 +87,9 @@ const errorText = computed(() => {
           <AnswerNodes :nodes="answer.nodes" @open="openClause" />
         </div>
         <div v-else-if="message.streaming && !message.tools.length" class="thinking">{{ t('chat.thinking') }}</div>
-        <template v-if="answer.cited.length">
-          <CitationSources :sources="answer.cited" @open="openClause" />
-          <ClauseDrawer v-model="clauseOpen" :source="clause" />
-        </template>
+        <CitationSources v-if="answer.cited.length" :sources="answer.cited" @open="openClause" />
+        <!-- A later model round empties the answer, and its citations with it, while the clause may still be read. -->
+        <ClauseDrawer v-if="answer.cited.length || clauseOpen" v-model="clauseOpen" :source="clause" />
         <ApprovalCard v-for="action in message.actions" :key="action.id" :action="action" />
         <div v-if="dataSources" class="sources">{{ dataSources }}</div>
         <div v-if="usage?.truncated" class="notice" role="note">{{ t('chat.truncated') }}</div>
