@@ -38,8 +38,10 @@ import org.springframework.stereotype.Service;
  * result, whatever became of the run.
  *
  * <p>The router picks the model of the run before it starts. A call that fails because that model is overloaded or too
- * slow is made again, once per run, on the other model, when there is one and the call had streamed nothing. The
- * result names the model of the last call that was answered, not the one the loop was about to try.
+ * slow is made again, once per run, on the other model, when there is one and the call had streamed nothing. While that
+ * is still possible, the client is told not to retry a call that timed out on the same model, which would use the
+ * time the other model needs. The result names the model of the last call that was answered, not the one the loop was
+ * about to try.
  */
 @Service
 public class AgentLoop {
@@ -128,10 +130,13 @@ public class AgentLoop {
             iterations++;
             var startedAt = clock.instant();
             var streamedText = new AtomicBoolean();
+            // A model that timed out is not asked again when the other one can take the call: that would use its time.
+            boolean retryTimeouts = fallbackRoute().isEmpty();
             LlmResponse response;
             try {
                 response = llm.complete(
-                        new LlmRequest(system, List.copyOf(messages), toolSpecs, timeLeft(), route.model()),
+                        new LlmRequest(system, List.copyOf(messages), toolSpecs, timeLeft(), route.model(),
+                                retryTimeouts),
                         text -> {
                             if (!text.isEmpty()) {
                                 streamedText.set(true);
@@ -186,8 +191,15 @@ public class AgentLoop {
 
         private Optional<ModelRoute> fallbackAfter(ErrorCode code, boolean streamedText) {
             boolean transientFailure = code == ErrorCode.LLM_OVERLOADED || code == ErrorCode.LLM_TIMEOUT;
-            boolean callsLeft = iterations < props.maxIterations() && timeLeft().isPositive();
-            if (fellBackFrom != null || !transientFailure || streamedText || !callsLeft) {
+            if (!transientFailure || streamedText || !timeLeft().isPositive()) {
+                return Optional.empty();
+            }
+            return fallbackRoute();
+        }
+
+        /** Where a call that fails now would be made again: the run has not fallen back yet and has an iteration left. */
+        private Optional<ModelRoute> fallbackRoute() {
+            if (fellBackFrom != null || iterations >= props.maxIterations()) {
                 return Optional.empty();
             }
             return router.fallbackFrom(route);

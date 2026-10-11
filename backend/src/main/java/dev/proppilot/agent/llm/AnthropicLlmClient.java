@@ -57,7 +57,19 @@ public class AnthropicLlmClient implements LlmClient {
     public LlmResponse complete(LlmRequest request, Consumer<String> onTextDelta) {
         long startedAt = System.nanoTime();
         Supplier<Duration> timeLeft = () -> request.timeout().minus(Duration.ofNanos(System.nanoTime() - startedAt));
-        return retries.execute(timeLeft, onTextDelta, sink -> attempt(request, attemptTimeout(timeLeft.get()), sink));
+        return retries.execute(timeLeft, onTextDelta, sink -> tryOnce(request, timeLeft, sink));
+    }
+
+    /** One try, whose timeout is final when the request says another model takes the call next. */
+    private LlmResponse tryOnce(LlmRequest request, Supplier<Duration> timeLeft, Consumer<String> onTextDelta) {
+        try {
+            return attempt(request, attemptTimeout(timeLeft.get()), onTextDelta);
+        } catch (LlmException e) {
+            if (request.retryTimeouts() || e.code() != ErrorCode.LLM_TIMEOUT) {
+                throw e;
+            }
+            throw new LlmException(e.getMessage(), e.code(), e.getCause());
+        }
     }
 
     /** The configured limit, or less when the caller's time budget (shared by all retries) is nearly used up. */

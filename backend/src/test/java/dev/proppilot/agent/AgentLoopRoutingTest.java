@@ -73,6 +73,10 @@ class AgentLoopRoutingTest {
         return llm.requests.stream().map(LlmRequest::model).toList();
     }
 
+    private List<Boolean> timeoutRetriesAllowed() {
+        return llm.requests.stream().map(LlmRequest::retryTimeouts).toList();
+    }
+
     @Test
     void aComplexQuestionIsAnsweredByTheLargerModel() {
         llm.thenText("Two leases.");
@@ -350,6 +354,27 @@ class AgentLoopRoutingTest {
 
         assertThat(result.errorCode()).isEqualTo(ErrorCode.LLM_OVERLOADED);
         assertThat(llm.requests).hasSize(1);
+    }
+
+    @Test
+    void theClientIsToldNotToRetryATimeoutWhileTheOtherModelCanTakeTheCall() {
+        llm.thenFail(ErrorCode.LLM_OVERLOADED, "busy").thenText("Three tenants.");
+
+        ask(SIMPLE);
+
+        assertThat(timeoutRetriesAllowed()).containsExactly(false, true);
+    }
+
+    @Test
+    void timeoutsAreRetriedWithoutASecondModelAndOnTheLastIteration() {
+        llm.thenText("Three tenants.");
+        ask(SIMPLE, 6, false, List.of());
+        assertThat(timeoutRetriesAllowed()).containsExactly(true);
+
+        llm.reset();
+        llm.thenText("Three tenants.");
+        ask(SIMPLE, 1, true, List.of());
+        assertThat(timeoutRetriesAllowed()).containsExactly(true);
     }
 
     @Test

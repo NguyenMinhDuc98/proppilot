@@ -468,6 +468,37 @@ class AnthropicLlmClientTest {
     }
 
     @Test
+    void aTimeoutIsNotRetriedWhenTheRequestSaysAnotherModelTakesTheCallNext() {
+        var onlyMessageStart = ANSWER_STREAM.substring(0, ANSWER_STREAM.indexOf("event: content_block_start"));
+        replies.add(Reply.streamThatStallsAfter(onlyMessageStart, Duration.ofSeconds(10)));
+        replies.add(Reply.stream(ANSWER_STREAM));
+        var request = new LlmRequest("system", List.of(Message.user("hi")), List.of(), Duration.ofSeconds(60), null,
+                false);
+
+        assertThatThrownBy(() -> client(server.getAddress().getPort(), 1, 3).complete(request, deltas::add))
+                .isInstanceOfSatisfying(LlmException.class, e -> {
+                    assertThat(e.code()).isEqualTo(ErrorCode.LLM_TIMEOUT);
+                    assertThat(e.retryable()).isFalse();
+                });
+
+        assertThat(requests).hasValue(1);
+        assertThat(sleeps).isEmpty();
+    }
+
+    @Test
+    void anOverloadIsStillRetriedWhenTheRequestSaysAnotherModelTakesTheCallNext() {
+        replies.add(Reply.status(529));
+        replies.add(Reply.stream(ANSWER_STREAM));
+        var request = new LlmRequest("system", List.of(Message.user("hi")), List.of(), Duration.ofSeconds(60), null,
+                false);
+
+        var response = client(server.getAddress().getPort()).complete(request, deltas::add);
+
+        assertThat(response.text()).isEqualTo("Hello there");
+        assertThat(requests).hasValue(2);
+    }
+
+    @Test
     void theConfiguredTimeoutCapsTheCallEvenWhenTheRequestsTimeBudgetIsLonger() {
         replies.add(Reply.stream(ANSWER_STREAM).after(Duration.ofSeconds(4)));
         long startedAt = System.nanoTime();
