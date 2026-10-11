@@ -1,13 +1,13 @@
-package dev.proppilot.agent.llm.offline;
+package dev.proppilot.text;
 
 import java.util.regex.Pattern;
 
 /**
- * Spells a question the way the keyword patterns are written: lower case, one spelling for each Arabic letter and ASCII
- * digits. The folded text is as long as the text it came from, so a position found in it is a position in what the
- * visitor wrote.
+ * Spells text one way for matching: lower case, one spelling for each Arabic letter and ASCII digits. The offline
+ * assistant matches its keyword patterns on a folded question and the lease corpus searches folded clauses. The folded
+ * text is as long as the text it came from, so a position found in it is a position in what was written.
  */
-final class Folding {
+public final class Folding {
 
     private static final Pattern DIACRITICS = Pattern.compile("[\\u064B-\\u0652\\u0640]");
 
@@ -15,11 +15,11 @@ final class Folding {
     }
 
     /** Arabic vowel marks and the tatweel carry no meaning for matching. Take them out before folding. */
-    static String withoutDiacritics(String text) {
+    public static String withoutDiacritics(String text) {
         return DIACRITICS.matcher(text).replaceAll("");
     }
 
-    static String fold(String text) {
+    public static String fold(String text) {
         var out = new StringBuilder(text.length());
         for (int i = 0; i < text.length(); i++) {
             out.append(foldChar(text.charAt(i)));

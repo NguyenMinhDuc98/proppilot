@@ -1,6 +1,7 @@
 package dev.proppilot.agent.llm.offline;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.proppilot.text.Folding;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;

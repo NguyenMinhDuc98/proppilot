@@ -1,5 +1,6 @@
 package dev.proppilot.agent.llm.offline;
 
+import dev.proppilot.text.Folding;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
