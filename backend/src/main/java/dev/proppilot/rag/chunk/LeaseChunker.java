@@ -1,5 +1,6 @@
 package dev.proppilot.rag.chunk;
 
+import dev.proppilot.rag.CitationRefs;
 import dev.proppilot.text.Folding;
 import java.util.ArrayList;
 import java.util.List;
@@ -44,8 +45,10 @@ public class LeaseChunker {
             for (int part = 0; part < bodies.size(); part++) {
                 var content = section.headingLine() == null ? bodies.get(part)
                         : (section.headingLine() + "\n" + bodies.get(part)).strip();
-                var suffix = bodies.size() > 1 ? letters(part) : "";
-                chunks.add(new LeaseChunk(documentCode + "#" + section.number() + suffix, chunks.size(),
+                var ref = bodies.size() > 1
+                        ? CitationRefs.format(documentCode, section.number(), part)
+                        : CitationRefs.format(documentCode, section.number());
+                chunks.add(new LeaseChunk(ref, chunks.size(),
                         section.number() == PREAMBLE ? null : section.number(), section.title(), section.page(),
                         content, Folding.fold(Folding.withoutDiacritics(content)), TokenEstimate.of(content)));
             }
@@ -300,15 +303,5 @@ public class LeaseChunker {
             text.append(pieces.get(i).text());
         }
         return text.toString();
-    }
-
-    /** a, b, ... z, aa, ab, ...: a part letter that never runs out. */
-    static String letters(int index) {
-        var letters = new StringBuilder();
-        for (int n = index + 1; n > 0; n /= 26) {
-            n--;
-            letters.insert(0, (char) ('a' + n % 26));
-        }
-        return letters.toString();
     }
 }

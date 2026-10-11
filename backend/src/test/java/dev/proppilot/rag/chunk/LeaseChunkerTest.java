@@ -265,16 +265,6 @@ class LeaseChunkerTest {
     }
 
     @Test
-    void partLettersGoOnAfterZ() {
-        assertThat(LeaseChunker.letters(0)).isEqualTo("a");
-        assertThat(LeaseChunker.letters(25)).isEqualTo("z");
-        assertThat(LeaseChunker.letters(26)).isEqualTo("aa");
-        assertThat(LeaseChunker.letters(27)).isEqualTo("ab");
-        assertThat(LeaseChunker.letters(701)).isEqualTo("zz");
-        assertThat(LeaseChunker.letters(702)).isEqualTo("aaa");
-    }
-
-    @Test
     void refsAreUniqueWithinADocument() {
         var pages = List.of("Preamble.\n1. A\n" + String.join(" ", numberedSentences(70)) + "\n2. B\nText.\n3. C\n"
                 + String.join(" ", numberedSentences(70)) + "\n");

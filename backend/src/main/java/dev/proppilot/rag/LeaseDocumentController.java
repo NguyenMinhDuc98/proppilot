@@ -20,8 +20,6 @@ import org.springframework.web.bind.annotation.RestController;
 @Validated
 public class LeaseDocumentController {
 
-    private static final String CODE = "LSE-[A-Z]{1,8}-[0-9]{1,5}";
-
     private final LeaseDocumentCatalog catalog;
 
     public LeaseDocumentController(LeaseDocumentCatalog catalog) {
@@ -34,7 +32,7 @@ public class LeaseDocumentController {
     }
 
     @GetMapping("/{code}/pdf")
-    public ResponseEntity<byte[]> pdf(@PathVariable @Pattern(regexp = CODE) String code) {
+    public ResponseEntity<byte[]> pdf(@PathVariable @Pattern(regexp = CitationRefs.DOCUMENT_CODE) String code) {
         return catalog.pdf(code)
                 .map(pdf -> ResponseEntity.ok()
                         .contentType(MediaType.APPLICATION_PDF)
