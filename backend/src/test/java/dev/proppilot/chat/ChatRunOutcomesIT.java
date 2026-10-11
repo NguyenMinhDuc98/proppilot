@@ -34,6 +34,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -42,6 +43,7 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 
@@ -70,6 +72,8 @@ class ChatRunOutcomesIT extends PostgresIntegrationTest {
         }
     }
 
+    private static final AtomicInteger CLIENTS = new AtomicInteger();
+
     @Autowired
     MockMvc mvc;
 
@@ -88,14 +92,22 @@ class ChatRunOutcomesIT extends PostgresIntegrationTest {
     @Autowired
     InMemorySpanExporter exportedSpans;
 
+    @Autowired
+    JdbcTemplate jdbc;
+
     @BeforeEach
     void resetScript() {
         llm.reset();
     }
 
+    /** Each question comes from its own address, so the per-client rate limit never decides a test. */
     private String chat(String question) throws Exception {
         var started = mvc.perform(post("/api/chat").contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"message\":\"" + question + "\"}"))
+                        .content("{\"message\":\"" + question + "\"}")
+                        .with(http -> {
+                            http.setRemoteAddr("10.8.0." + CLIENTS.incrementAndGet());
+                            return http;
+                        }))
                 .andExpect(request().asyncStarted()).andReturn();
         started.getAsyncResult(10_000);
         return mvc.perform(asyncDispatch(started)).andExpect(status().isOk()).andReturn()
@@ -312,6 +324,34 @@ class ChatRunOutcomesIT extends PostgresIntegrationTest {
                 .andExpect(jsonPath("$.toolCalls[0].name").value("no_such_tool"))
                 .andExpect(jsonPath("$.toolCalls[0].args").value("{\"a\":1}"))
                 .andExpect(jsonPath("$.toolCalls[0].error").value(true));
+    }
+
+    private List<String> storedToolNames(String question) {
+        return jdbc.queryForList("select tool_name from chat_run_tools where run_id = ?", String.class,
+                recordedRun(question).getId());
+    }
+
+    @Test
+    void aToolNameLongerThanTheColumnIsCutOffAndTheRunIsStillRecorded() throws Exception {
+        llm.thenToolCall("t1", "t".repeat(100), "{}").thenText("sorry");
+
+        var sse = chat("trace: long tool name");
+
+        assertThat(sse).contains("event:done").doesNotContain("event:error");
+        assertThat(recordedRun("trace: long tool name").getStatus()).isEqualTo(AgentResult.Status.OK);
+        var name = "t".repeat(63) + "\u2026";
+        assertThat(storedToolNames("trace: long tool name")).containsExactly(name);
+        traceOf("trace: long tool name").andExpect(jsonPath("$.toolCalls[0].name").value(name));
+    }
+
+    @Test
+    void aToolNameWithAControlCharacterIsStoredWithASpaceInsteadAndTheRunIsStillRecorded() throws Exception {
+        llm.thenToolCall("t1", "bad\u0000name", "{}").thenText("sorry");
+
+        var sse = chat("trace: control character in a tool name");
+
+        assertThat(sse).contains("event:done").doesNotContain("event:error");
+        assertThat(storedToolNames("trace: control character in a tool name")).containsExactly("bad name");
     }
 
     private List<SpanData> spansOf(ChatRun run) {

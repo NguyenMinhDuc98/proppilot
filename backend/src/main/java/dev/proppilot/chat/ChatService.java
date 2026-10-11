@@ -8,6 +8,7 @@ import dev.proppilot.agent.AgentLoop;
 import dev.proppilot.agent.AgentRequest;
 import dev.proppilot.agent.AgentResult;
 import dev.proppilot.agent.ErrorCode;
+import dev.proppilot.agent.ToolCallRecord;
 import dev.proppilot.agent.llm.LlmClient;
 import dev.proppilot.agent.tools.ToolResult;
 import dev.proppilot.config.AgentProperties;
@@ -18,8 +19,6 @@ import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -106,11 +105,10 @@ public class ChatService {
     private void runAndStream(AgentRequest turn, UUID confirming, ClientStream client) {
         var startedAt = Instant.now(clock);
         var started = System.nanoTime();
-        var toolNames = new ArrayList<String>();
         try {
-            var result = runAgent(turn, confirming, client, toolNames);
+            var result = runAgent(turn, confirming, client);
             long latencyMs = Duration.ofNanos(System.nanoTime() - started).toMillis();
-            var run = record(turn, result, toolNames, latencyMs);
+            var run = record(turn, result, latencyMs);
             tracer.record(traced(run, result, startedAt));
             if (!client.isGone()) {
                 finish(client, result, run);
@@ -125,15 +123,10 @@ public class ChatService {
      * Runs the agent. A confirmation the run did not deliver is given back before anyone hears how the run ended, so a
      * retry sent on seeing the error finds it free.
      */
-    private AgentResult runAgent(AgentRequest turn, UUID confirming, ClientStream client, List<String> toolNames) {
+    private AgentResult runAgent(AgentRequest turn, UUID confirming, ClientStream client) {
         AgentResult result;
         try {
-            result = agent.run(turn, event -> {
-                if (event instanceof AgentEvent.ToolCall call) {
-                    toolNames.add(call.name());
-                }
-                send(client, event);
-            }, client::isGone);
+            result = agent.run(turn, event -> send(client, event), client::isGone);
         } catch (RuntimeException failed) {
             giveBack(confirming);
             throw failed;
@@ -158,8 +151,10 @@ public class ChatService {
         client.complete();
     }
 
-    private ChatRun record(AgentRequest turn, AgentResult result, List<String> toolNames, long latencyMs) {
+    /** The tool names are those of the trace, which fit their column whatever name the model chose. */
+    private ChatRun record(AgentRequest turn, AgentResult result, long latencyMs) {
         var cost = costs.cost(result.usage(), llm.billable());
+        var toolNames = result.toolCallRecords().stream().map(ToolCallRecord::toolName).toList();
         var run = new ChatRun(turn.runId(), Instant.now(clock), truncate(turn.message()), llm.provider(), llm.model(),
                 result, toolNames, latencyMs, cost);
         return runs.save(run);
