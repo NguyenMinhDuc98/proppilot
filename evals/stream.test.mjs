@@ -65,3 +65,47 @@ test('an error event is kept', () => {
 
   assert.equal(run.error, 'The assistant is busy')
 })
+
+test('a tool call keeps its arguments and the text before it is the preamble, not the answer', () => {
+  const run = play(
+    ['token', { text: 'Let me look that up. ' }],
+    ['tool_call', { name: 'search_units', args: { city: 'Riyadh', bedrooms: 3 } }],
+    ['tool_result', { name: 'search_units', summary: '1 unit', error: false }],
+    ['token', { text: 'Only B-205.' }],
+    ['done', { status: 'OK' }],
+  )
+
+  assert.equal(run.answer, 'Only B-205.')
+  assert.equal(run.preamble, 'Let me look that up.')
+  assert.deepEqual(run.calls, [{ name: 'search_units', args: { city: 'Riyadh', bedrooms: 3 } }])
+  assert.deepEqual(run.tools, ['search_units'])
+  assert.deepEqual(run.results, [{ name: 'search_units', summary: '1 unit', error: false }])
+})
+
+test('a tool call without arguments has an empty object for them', () => {
+  assert.deepEqual(play(['tool_call', { name: 'find_overdue_tenants' }]).calls, [{ name: 'find_overdue_tenants', args: {} }])
+})
+
+test('the clauses a lease search returned are kept, and only a lease search has any', () => {
+  const run = play(
+    ['tool_call', { name: 'search_lease_documents', args: {} }],
+    ['tool_result', { name: 'search_lease_documents', summary: '2 clauses', error: false,
+      sources: [{ ref: 'LSE-A-203#5', text: '5. Late payment' }, { ref: 'LSE-A-203#4', text: '4. Notice' }] }],
+    ['tool_call', { name: 'get_unit_details', args: { unit_code: 'A-203' } }],
+    ['tool_result', { name: 'get_unit_details', summary: 'Unit A-203', error: false }],
+  )
+
+  assert.deepEqual(run.sources.map((source) => source.ref), ['LSE-A-203#5', 'LSE-A-203#4'])
+})
+
+test('a proposed action is kept with its kind and the status it was announced with', () => {
+  const run = play(['action_proposed', { id: 'a1', kind: 'RECORD_PAYMENT', status: 'PROPOSED', args: { amount: 4950 } }])
+
+  assert.deepEqual(run.proposals, [{ id: 'a1', kind: 'RECORD_PAYMENT', status: 'PROPOSED' }])
+})
+
+test('an error event keeps its code', () => {
+  const run = play(['error', { message: 'busy', code: 'llm_overloaded' }])
+
+  assert.equal(run.errorCode, 'llm_overloaded')
+})
