@@ -13,6 +13,9 @@ public record ToolResult(String content, String summary, boolean error, JsonNode
     /** The {@code type} of a {@code ui} that carries a proposed action under {@code action}. */
     public static final String ACTION_UI_TYPE = "action";
 
+    /** The {@code type} of a {@code ui} that carries the lease clauses an answer rests on under {@code sources}. */
+    public static final String SOURCES_UI_TYPE = "sources";
+
     public ToolResult(String content, String summary, boolean error) {
         this(content, summary, error, null);
     }

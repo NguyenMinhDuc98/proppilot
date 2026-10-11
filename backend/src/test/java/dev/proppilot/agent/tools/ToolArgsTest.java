@@ -129,4 +129,82 @@ class ToolArgsTest {
                 .isInstanceOf(ToolInputException.class)
                 .hasMessageStartingWith("payment_date must be");
     }
+
+    @Test
+    void stringsReadsAnArrayOfStringsAndLeavesOutBlankOnes() throws Exception {
+        assertThat(args("{\"codes\":[\" A-203 \",\"B-101\",\"\",\"  \"]}").strings("codes", 10))
+                .containsExactly("A-203", "B-101");
+    }
+
+    @Test
+    void stringsIsEmptyWhenMissingOrNullOrAnEmptyArray() throws Exception {
+        assertThat(args("{}").strings("codes", 10)).isEmpty();
+        assertThat(args("{\"codes\":null}").strings("codes", 10)).isEmpty();
+        assertThat(args("{\"codes\":[]}").strings("codes", 10)).isEmpty();
+        assertThat(new ToolArgs(null).strings("codes", 10)).isEmpty();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"\"A-203\"", "7", "true", "{\"a\":\"A-203\"}"})
+    void stringsRejectsWhatIsNotAnArray(String value) {
+        assertThatThrownBy(() -> args("{\"codes\":" + value + "}").strings("codes", 10))
+                .isInstanceOf(ToolInputException.class)
+                .hasMessage("codes must be an array of strings");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"[1]", "[\"A-203\", 7]", "[null]", "[[\"A-203\"]]", "[{\"code\":\"A-203\"}]", "[true]"})
+    void stringsRejectsAnEntryThatIsNotAString(String value) {
+        assertThatThrownBy(() -> args("{\"codes\":" + value + "}").strings("codes", 10))
+                .isInstanceOf(ToolInputException.class)
+                .hasMessage("codes must be an array of strings");
+    }
+
+    @Test
+    void stringsRejectsMoreEntriesThanTheLimitAndAcceptsExactlyTheLimit() throws Exception {
+        assertThat(args("{\"codes\":[\"a\",\"b\",\"c\"]}").strings("codes", 3)).hasSize(3);
+        assertThatThrownBy(() -> args("{\"codes\":[\"a\",\"b\",\"c\",\"d\"]}").strings("codes", 3))
+                .isInstanceOf(ToolInputException.class)
+                .hasMessage("codes must have at most 3 items");
+    }
+
+    @Test
+    void aBoundedStringIsReturnedWhenItFits() throws Exception {
+        assertThat(args("{\"q\":\"  late fee \"}").string("q", 10)).contains("late fee");
+        assertThat(args("{\"q\":\"1234567890\"}").string("q", 10)).contains("1234567890");
+        assertThat(args("{\"q\":\"line one\\nline\\ttwo\"}").string("q", 100)).contains("line one\nline\ttwo");
+        assertThat(args("{}").string("q", 10)).isEmpty();
+        assertThat(args("{\"q\":\"  \"}").string("q", 10)).isEmpty();
+    }
+
+    @Test
+    void aBoundedStringRefusesMoreCharactersThanTheLimit() {
+        assertThatThrownBy(() -> args("{\"q\":\"12345678901\"}").string("q", 10))
+                .isInstanceOf(ToolInputException.class)
+                .hasMessage("q must be at most 10 characters");
+        assertThatThrownBy(() -> args("{\"q\":\"" + "x".repeat(100_000) + "\"}").requireString("q", 500))
+                .isInstanceOf(ToolInputException.class)
+                .hasMessage("q must be at most 500 characters");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"\\u0000", "a\\u0000b", "\\u001b[31m", "\\u007f", "\\ud800", "x\\udc00", "\\ud800a",
+            "\\udc00\\ud800"})
+    void aBoundedStringRefusesControlCharactersAndHalvesOfSurrogatePairs(String escaped) {
+        assertThatThrownBy(() -> args("{\"q\":\"" + escaped + "\"}").string("q", 50))
+                .isInstanceOf(ToolInputException.class)
+                .hasMessage("q must be plain text");
+    }
+
+    @Test
+    void aBoundedStringKeepsCompletePairsAndArabic() throws Exception {
+        assertThat(args("{\"q\":\"fee \\ud83d\\ude00 غرامة\"}").string("q", 50)).contains("fee \uD83D\uDE00 غرامة");
+    }
+
+    @Test
+    void requireStringWithALimitNamesTheMissingArgument() {
+        assertThatThrownBy(() -> new ToolArgs(null).requireString("query", 500))
+                .isInstanceOf(ToolInputException.class)
+                .hasMessage("query is required");
+    }
 }

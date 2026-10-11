@@ -36,6 +36,14 @@ public final class ToolSchema {
         return property(name, "boolean", description);
     }
 
+    /** An array of strings with at most {@code maxItems} entries. */
+    public ToolSchema stringArray(String name, String description, int maxItems) {
+        var prop = f.objectNode().put("type", "array").put("description", description).put("maxItems", maxItems);
+        prop.set("items", f.objectNode().put("type", "string"));
+        properties.set(name, prop);
+        return this;
+    }
+
     public ToolSchema enumeration(String name, String description, String... values) {
         var prop = f.objectNode().put("type", "string").put("description", description);
         var allowed = prop.putArray("enum");
