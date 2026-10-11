@@ -19,6 +19,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.autoconfigure.web.servlet.MockMvcPrint;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
@@ -31,7 +32,7 @@ import org.springframework.test.web.servlet.ResultActions;
  * A run with a larger model configured, end to end: which model answered and why, in the stream, the stored run and its
  * public trace, and what each model was paid for.
  */
-@AutoConfigureMockMvc
+@AutoConfigureMockMvc(print = MockMvcPrint.NONE)
 @TestPropertySource(properties = "proppilot.llm.large-model=" + ModelRoutingIT.LARGE)
 class ModelRoutingIT extends PostgresIntegrationTest {
 

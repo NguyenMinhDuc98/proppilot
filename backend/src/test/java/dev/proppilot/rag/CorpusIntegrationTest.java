@@ -4,6 +4,7 @@ import dev.proppilot.PostgresIntegrationTest;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.autoconfigure.web.servlet.MockMvcPrint;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 
@@ -13,7 +14,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
  * the whole test run, so the first test to need the corpus is the one that pays for writing it.
  */
 @SpringBootTest(properties = "proppilot.rag.seed-on-startup=false")
-@AutoConfigureMockMvc
+@AutoConfigureMockMvc(print = MockMvcPrint.NONE)
 public abstract class CorpusIntegrationTest extends PostgresIntegrationTest {
 
     @Autowired

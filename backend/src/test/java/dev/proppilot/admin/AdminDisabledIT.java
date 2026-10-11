@@ -8,11 +8,12 @@ import dev.proppilot.PostgresIntegrationTest;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.autoconfigure.web.servlet.MockMvcPrint;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.web.servlet.MockMvc;
 
 /** Without ADMIN_TOKEN the admin endpoints must look like they do not exist, whatever the caller sends. */
-@AutoConfigureMockMvc
+@AutoConfigureMockMvc(print = MockMvcPrint.NONE)
 @SpringBootTest(properties = "proppilot.admin.token=")
 class AdminDisabledIT extends PostgresIntegrationTest {
 

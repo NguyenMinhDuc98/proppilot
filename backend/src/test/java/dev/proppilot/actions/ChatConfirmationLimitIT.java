@@ -10,13 +10,14 @@ import java.nio.charset.StandardCharsets;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.autoconfigure.web.servlet.MockMvcPrint;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 /** A confirmation goes through the chat rate limit, and a refused one has not used up the decision's one confirmation. */
-@AutoConfigureMockMvc
+@AutoConfigureMockMvc(print = MockMvcPrint.NONE)
 @SpringBootTest(properties = {"proppilot.chat.rate-limit-per-minute=1", "proppilot.actions.decisions-per-minute=1000",
         "proppilot.actions.max-approvals-per-day=1000", "proppilot.actions.max-proposals-per-day=100000"})
 class ChatConfirmationLimitIT extends ActionIntegrationTest {

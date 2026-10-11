@@ -17,6 +17,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.autoconfigure.web.servlet.MockMvcPrint;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
@@ -25,7 +26,7 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
  * The assistant confirming a decision in the chat, end to end: a person decides through the actions API, then the chat
  * is asked about that action. The offline assistant writes the answer.
  */
-@AutoConfigureMockMvc
+@AutoConfigureMockMvc(print = MockMvcPrint.NONE)
 class ChatConfirmationIT extends ActionIntegrationTest {
 
     private static final AtomicInteger NEXT_CLIENT = new AtomicInteger();

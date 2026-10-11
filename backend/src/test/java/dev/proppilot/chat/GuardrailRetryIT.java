@@ -18,6 +18,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.autoconfigure.web.servlet.MockMvcPrint;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -25,7 +26,7 @@ import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
 /** The grounding guardrail in retry mode with a larger model configured, through the whole stack. */
-@AutoConfigureMockMvc
+@AutoConfigureMockMvc(print = MockMvcPrint.NONE)
 @Import(ScriptedAnthropic.class)
 @TestPropertySource(properties = {"proppilot.guardrail.mode=retry", "proppilot.llm.large-model=" + GuardrailRetryIT.LARGE})
 class GuardrailRetryIT extends PostgresIntegrationTest {
