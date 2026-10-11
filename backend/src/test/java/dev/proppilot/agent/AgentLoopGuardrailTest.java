@@ -27,7 +27,9 @@ import dev.proppilot.agent.tools.ToolSchema;
 import dev.proppilot.config.AgentProperties;
 import dev.proppilot.config.TestLlmProperties;
 import dev.proppilot.guardrail.ClaimKind;
+import dev.proppilot.guardrail.GroundingChecker;
 import dev.proppilot.guardrail.GroundingCorrection;
+import dev.proppilot.guardrail.Guardrail;
 import dev.proppilot.guardrail.GuardrailMode;
 import dev.proppilot.guardrail.GuardrailStatus;
 import dev.proppilot.guardrail.Guardrails;
@@ -86,16 +88,19 @@ class AgentLoopGuardrailTest {
 
     private final ListAppender<ILoggingEvent> log = new ListAppender<>();
     private final Logger loopLogger = (Logger) LoggerFactory.getLogger(AgentLoop.class);
+    private final Logger guardrailLogger = (Logger) LoggerFactory.getLogger(Guardrail.class);
 
     @BeforeEach
     void captureTheLog() {
         log.start();
         loopLogger.addAppender(log);
+        guardrailLogger.addAppender(log);
     }
 
     @AfterEach
     void releaseTheLog() {
         loopLogger.detachAppender(log);
+        guardrailLogger.detachAppender(log);
     }
 
     private AgentLoop loop(GuardrailMode mode, int maxIterations, boolean largerModel, TenantNames.Name... tenants) {
@@ -347,8 +352,7 @@ class AgentLoopGuardrailTest {
         });
         var router = new ModelRouter(llm, TestLlmProperties.defaults().model(SMALL).build(), new ComplexityAssessor());
         var registry = new ToolRegistry(List.of(lookup), mock(PlatformTransactionManager.class));
-        var guardrail = new dev.proppilot.guardrail.Guardrail(GuardrailMode.RETRY,
-                new dev.proppilot.guardrail.GroundingChecker(throwing));
+        var guardrail = new Guardrail(GuardrailMode.RETRY, new GroundingChecker(throwing));
         var loop = new AgentLoop(llm, registry, new AgentProperties(6, 10, 90), clock, router, guardrail);
         llm.thenText("Ahmed Al-Harbi pays 5,200.");
 
@@ -358,6 +362,9 @@ class AgentLoopGuardrailTest {
         assertThat(result.answer()).isEqualTo("Ahmed Al-Harbi pays 5,200.");
         assertThat(result.guardrail()).isNull();
         assertThat(llm.requests).hasSize(1);
+        // the exception class and nothing of its message, which here quotes a tenant
+        assertThat(warnings()).singleElement().satisfies(line -> assertThat(line)
+                .contains("IllegalStateException").doesNotContain("Ahmed").doesNotContain("unreadable"));
         assertThat(log.list).extracting(ILoggingEvent::getFormattedMessage).noneMatch(m -> m.contains("Ahmed"));
     }
 

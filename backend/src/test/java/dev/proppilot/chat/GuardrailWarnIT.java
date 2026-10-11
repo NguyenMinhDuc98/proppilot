@@ -152,14 +152,17 @@ class GuardrailWarnIT extends PostgresIntegrationTest {
 
     @Test
     void thePublicTraceHoldsTheStatusAndTheCountButNeverTheValues() throws Exception {
-        var sse = ask(QUESTION + " (public trace)", "The portfolio has 151 units; unit A-999 is vacant.");
+        // a figure that no run id, timestamp or duration of the trace can hold by chance
+        var sse = ask(QUESTION + " (public trace)", "The portfolio has 8675309 units; unit A-999 is vacant.");
 
         mvc.perform(get("/api/runs/{id}/trace", runOf(sse)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.guardrail.status").value("FLAGGED"))
                 .andExpect(jsonPath("$.guardrail.violations").value(2))
+                .andExpect(jsonPath("$.guardrail.*", hasSize(2)))
+                .andExpect(jsonPath("$.guardrailFindings").doesNotExist())
                 .andExpect(content().string(not(containsString("A-999"))))
-                .andExpect(content().string(not(containsString("151"))));
+                .andExpect(content().string(not(containsString("8675309"))));
     }
 
     @Test
