@@ -3,6 +3,7 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import MessageBubble from '../components/MessageBubble.vue'
 import ModeBadge from '../components/ModeBadge.vue'
+import { splitUnitCodes } from '../composables/unitCodes'
 import { useChatStore } from '../stores/chat'
 
 const MAX_LENGTH = 500
@@ -64,7 +65,10 @@ watch(
           <p class="eyebrow">{{ t('chat.examplesTitle') }}</p>
           <div class="examples">
             <button v-for="example in examples" :key="example" type="button" class="example" @click="submit(example)">
-              {{ example }}
+              <template v-for="(part, index) in splitUnitCodes(example)" :key="index">
+                <bdi v-if="part.code" class="unit-code">{{ part.text }}</bdi>
+                <template v-else>{{ part.text }}</template>
+              </template>
             </button>
           </div>
         </div>
@@ -157,6 +161,7 @@ watch(
   cursor: pointer;
   transition: border-color 0.15s, transform 0.15s;
 }
+.unit-code { white-space: nowrap; }
 .example:hover { border-color: var(--pp-primary); transform: translateY(-1px); }
 
 .composer-wrap { flex: none; max-width: 800px; width: 100%; margin-inline: auto; padding: 8px 24px 24px; }
