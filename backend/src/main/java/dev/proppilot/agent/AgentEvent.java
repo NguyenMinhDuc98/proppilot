@@ -17,7 +17,8 @@ public sealed interface AgentEvent {
 
     /**
      * The answer streamed so far is replaced by one that is coming: the grounding guardrail found values in it that
-     * nothing supports and the model was asked again.
+     * nothing supports and the model was asked again. When the new answer does not come, this is sent again and the
+     * earlier answer follows.
      *
      * @param reason why, as the browser sees it: {@value #GROUNDING}
      */

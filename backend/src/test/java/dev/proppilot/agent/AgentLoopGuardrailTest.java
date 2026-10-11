@@ -13,7 +13,10 @@ import dev.proppilot.actions.ActionKind;
 import dev.proppilot.actions.ActionStatus;
 import dev.proppilot.agent.llm.ContentBlock;
 import dev.proppilot.agent.llm.LlmRequest;
+import dev.proppilot.agent.llm.LlmResponse;
 import dev.proppilot.agent.llm.Message;
+import dev.proppilot.agent.llm.StopReason;
+import dev.proppilot.agent.llm.Usage;
 import dev.proppilot.agent.routing.ComplexityAssessor;
 import dev.proppilot.agent.routing.ModelRouter;
 import dev.proppilot.agent.routing.RoutedReason;
@@ -63,6 +66,7 @@ class AgentLoopGuardrailTest {
     private final List<String> lookedUp = new ArrayList<>();
     private final List<Tool> otherTools = new ArrayList<>();
     private JsonNode sources;
+    private Runnable whenLookedUp = () -> { };
 
     /** Returns the unit with its rent, and a lease clause source when the test gives it one. */
     private final Tool lookup = new Tool() {
@@ -71,6 +75,7 @@ class AgentLoopGuardrailTest {
         public JsonNode inputSchema() { return ToolSchema.object().build(); }
         public ToolResult execute(JsonNode input) {
             lookedUp.add(input.toString());
+            whenLookedUp.run();
             var result = ToolResult.ok(JSON, Map.of("unit", "A-203", "monthlyRent", 4950.00,
                     "tenant", "Ahmed Al-Harbi"), "found");
             return sources == null ? result : result.withUi(sources);
@@ -142,6 +147,12 @@ class AgentLoopGuardrailTest {
             public JsonNode inputSchema() { return ToolSchema.object().build(); }
             public ToolResult execute(JsonNode input) { return result; }
         };
+    }
+
+    /** What was sent from the first answer on, the answer itself excluded. */
+    private List<AgentEvent> eventsAfterTheFirstAnswer() {
+        var first = events.stream().filter(AgentEvent.Token.class::isInstance).findFirst().orElseThrow();
+        return events.subList(events.indexOf(first) + 1, events.size());
     }
 
     private List<String> warnings() {
@@ -310,8 +321,8 @@ class AgentLoopGuardrailTest {
 
     @Test
     void aTruncatedAnswerIsNotChecked() {
-        llm.then(new dev.proppilot.agent.llm.LlmResponse(List.of(new ContentBlock.Text("The rent is 5,200")),
-                dev.proppilot.agent.llm.StopReason.MAX_TOKENS, new dev.proppilot.agent.llm.Usage(10, 2048)));
+        llm.then(new LlmResponse(List.of(new ContentBlock.Text("The rent is 5,200")), StopReason.MAX_TOKENS,
+                new Usage(10, 2048)));
 
         var result = ask(GuardrailMode.WARN);
 
@@ -519,16 +530,101 @@ class AgentLoopGuardrailTest {
     }
 
     @Test
-    void aRetryThatFailsAfterItStreamedEndsTheRunWithTheError() {
+    void aRetryThatFailsAfterItStreamedLeavesTheFirstAnswerStandingAndSendsItAgain() {
         answers(UNGROUNDED);
         llm.thenStreamAndFail("The rent is ", ErrorCode.LLM_ERROR, "cut short");
 
         var result = ask(GuardrailMode.RETRY);
 
-        assertThat(result.status()).isEqualTo(AgentResult.Status.ERROR);
-        assertThat(result.errorCode()).isEqualTo(ErrorCode.LLM_ERROR);
+        assertThat(result.status()).isEqualTo(AgentResult.Status.OK);
+        assertThat(result.errorCode()).isNull();
+        assertThat(result.answer()).isEqualTo(UNGROUNDED);
+        assertThat(result.guardrail().status()).isEqualTo(GuardrailStatus.FLAGGED);
+        assertThat(result.route().model()).isEqualTo(SMALL);
+        assertThat(result.llmCallRecords()).extracting(LlmCallRecord::outcome).containsExactly(
+                LlmCallRecord.Outcome.OK, LlmCallRecord.Outcome.OK, LlmCallRecord.Outcome.ERROR);
+        // what the client holds after these: the first answer, dropped, a part of the new one, dropped, the first again
+        assertThat(eventsAfterTheFirstAnswer()).containsExactly(new AgentEvent.Revise("grounding"),
+                new AgentEvent.Token("The rent is "), new AgentEvent.Revise("grounding"),
+                new AgentEvent.Token(UNGROUNDED));
+    }
+
+    @Test
+    void aRetryThatAsksForToolsUntilTheRunHasNoIterationLeftLeavesTheFirstAnswerStandingFlagged() {
+        answers(UNGROUNDED);
+        llm.thenToolCall("t2", "lookup", "{}");
+
+        var result = ask(GuardrailMode.RETRY, 3, true);
+
+        assertThat(result.status()).isEqualTo(AgentResult.Status.OK);
+        assertThat(result.answer()).isEqualTo(UNGROUNDED);
+        assertThat(result.guardrail().status()).isEqualTo(GuardrailStatus.FLAGGED);
+        assertThat(result.guardrail().violations()).extracting(Violation::value).containsExactly("5,200");
+        assertThat(llm.requests).extracting(LlmRequest::model).containsExactly(SMALL, SMALL, LARGE);
+        assertThat(eventsAfterTheFirstAnswer()).extracting(e -> e.getClass().getSimpleName())
+                .containsExactly("Revise", "ToolCall", "ToolResultEvent", "Revise", "Token");
+        assertThat(events).noneMatch(e -> e instanceof AgentEvent.Token token && token.text().equals(AgentLoop.GAVE_UP));
+        // the model that wrote the answer that was delivered answered, not the one whose tools were run for nothing
+        assertThat(result.route().model()).isEqualTo(SMALL);
+        assertThat(result.route().reason()).isEqualTo(RoutedReason.DEFAULT);
+        assertThat(result.llmCallRecords()).extracting(LlmCallRecord::model).containsExactly(SMALL, SMALL, LARGE);
+        assertThat(warnings()).hasSize(1);
+    }
+
+    @Test
+    void aRetryThatRunsOutOfTimeBetweenItsToolCallsLeavesTheFirstAnswerStandingFlagged() {
+        answers(UNGROUNDED);
+        llm.thenToolCall("t2", "lookup", "{}");
+        whenLookedUp = () -> {
+            if (lookedUp.size() == 2) {
+                clock.advance(Duration.ofSeconds(100));
+            }
+        };
+
+        var result = ask(GuardrailMode.RETRY);
+
+        assertThat(result.status()).isEqualTo(AgentResult.Status.OK);
+        assertThat(result.errorCode()).isNull();
+        assertThat(result.answer()).isEqualTo(UNGROUNDED);
+        assertThat(result.guardrail().status()).isEqualTo(GuardrailStatus.FLAGGED);
+        assertThat(events.get(events.size() - 1)).isEqualTo(new AgentEvent.Token(UNGROUNDED));
+    }
+
+    @Test
+    void aRetryThatAnswersNothingAfterItsToolsLeavesTheFirstAnswerStandingFlagged() {
+        answers(UNGROUNDED);
+        llm.thenToolCall("t2", "lookup", "{}").thenText("");
+
+        var result = ask(GuardrailMode.RETRY);
+
+        assertThat(result.answer()).isEqualTo(UNGROUNDED);
+        assertThat(result.guardrail().status()).isEqualTo(GuardrailStatus.FLAGGED);
+        assertThat(events.get(events.size() - 1)).isEqualTo(new AgentEvent.Token(UNGROUNDED));
+        assertThat(events.get(events.size() - 2)).isEqualTo(new AgentEvent.Revise("grounding"));
+    }
+
+    @Test
+    void aRetryCutOffBeforeItWroteAnythingLeavesTheFirstAnswerStandingFlagged() {
+        answers(UNGROUNDED);
+        llm.then(new LlmResponse(List.of(), StopReason.MAX_TOKENS, new Usage(10, 2048)));
+
+        var result = ask(GuardrailMode.RETRY);
+
+        assertThat(result.status()).isEqualTo(AgentResult.Status.OK);
+        assertThat(result.answer()).isEqualTo(UNGROUNDED);
+        assertThat(result.guardrail().status()).isEqualTo(GuardrailStatus.FLAGGED);
+        assertThat(events).noneMatch(AgentEvent.Revise.class::isInstance);
+    }
+
+    @Test
+    void aRunThatNeverRetriedStillEndsWithTheStepLimitAnswerWhenItHasNoIterationLeft() {
+        llm.thenToolCall("t1", "lookup", "{}").thenToolCall("t2", "lookup", "{}");
+
+        var result = ask(GuardrailMode.RETRY, 2, true);
+
+        assertThat(result.status()).isEqualTo(AgentResult.Status.MAX_ITERATIONS);
+        assertThat(result.answer()).isEqualTo(AgentLoop.GAVE_UP);
         assertThat(result.guardrail()).isNull();
-        assertThat(events).filteredOn(AgentEvent.Revise.class::isInstance).hasSize(1);
     }
 
     @Test

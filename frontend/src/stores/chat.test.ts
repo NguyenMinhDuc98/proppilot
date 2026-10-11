@@ -101,6 +101,31 @@ describe('chat store', () => {
     expect(answer.usage?.guardrailStatus).toBe('RETRIED_OK')
   })
 
+  it('shows the earlier answer again when the answer asked for never completed', async () => {
+    script([
+      { type: 'tool_call', name: 'get_occupancy_summary', args: {} },
+      { type: 'tool_result', name: 'get_occupancy_summary', summary: 'Occupancy', error: false },
+      { type: 'token', text: 'The portfolio has 151 units.' },
+      { type: 'revise', reason: 'grounding' },
+      { type: 'token', text: 'Let me check ' },
+      { type: 'tool_call', name: 'search_units', args: {} },
+      { type: 'tool_result', name: 'search_units', summary: '150 units found', error: false },
+      { type: 'revise', reason: 'grounding' },
+      { type: 'token', text: 'The portfolio has 151 units.' },
+      { type: 'guardrail', status: 'unverified', values: [{ kind: 'NUMBER', value: '151' }] },
+      { ...done, guardrailStatus: 'FLAGGED' },
+    ])
+    const chat = useChatStore()
+
+    await chat.send('how many units?')
+
+    const answer = chat.messages[1]
+    expect(answer.text).toBe('The portfolio has 151 units.')
+    expect(answer.error).toBeUndefined()
+    expect(answer.unverified).toEqual([{ kind: 'NUMBER', value: '151' }])
+    expect(answer.usage?.guardrailStatus).toBe('FLAGGED')
+  })
+
   it('keeps the values of an answer the guardrail could not match to the data', async () => {
     script([
       { type: 'token', text: 'The portfolio has 151 units.' },

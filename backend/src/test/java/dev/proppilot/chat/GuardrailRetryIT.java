@@ -117,6 +117,31 @@ class GuardrailRetryIT extends PostgresIntegrationTest {
     }
 
     @Test
+    void aRetryThatOnlyAsksForToolsLeavesTheFirstAnswerStandingFlaggedInsteadOfTheStepLimitText() throws Exception {
+        llm.thenToolCall("t1", "get_occupancy_summary", "{}").thenText("The portfolio has 151 units.");
+        // the run has six iterations: the retry asks for tools in each of the four that are left
+        for (int round = 2; round <= 5; round++) {
+            llm.thenToolCall("t" + round, "get_occupancy_summary", "{}");
+        }
+
+        var sse = ask("How many units are there? (retry without an answer)");
+
+        assertThat(sse.has("error")).isFalse();
+        assertThat(sse.answer()).isEqualTo("The portfolio has 151 units.");
+        assertThat(sse.order()).endsWith("revise", "token", "guardrail", "done");
+        assertThat(sse.first("guardrail").at("/values/0/value").asText()).isEqualTo("151");
+        var done = sse.first("done");
+        assertThat(done.get("status").asText()).isEqualTo("OK");
+        assertThat(done.get("guardrailStatus").asText()).isEqualTo("FLAGGED");
+        assertThat(done.get("model").asText()).isEqualTo(ScriptedAnthropic.SMALL);
+        var id = runOf(sse);
+        assertThat(jdbc.queryForObject("select guardrail_status from chat_runs where id = ?", String.class, id))
+                .isEqualTo("FLAGGED");
+        assertThat(jdbc.queryForObject("select count(*) from run_llm_calls where run_id = ?", Integer.class, id))
+                .isEqualTo(6);
+    }
+
+    @Test
     void aGroundedAnswerIsNotAskedForAgain() throws Exception {
         llm.thenToolCall("t1", "get_occupancy_summary", "{}").thenText("The portfolio has 150 units.");
 

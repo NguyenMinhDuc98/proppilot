@@ -44,7 +44,9 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
  *   <li>{@code token}: {@code {text}}, a piece of the answer</li>
  *   <li>{@code revise}: {@code {reason}}, where {@code reason} is {@code grounding}. The answer streamed so far is
  *       to be dropped: the grounding guardrail found values in it that nothing the run was given supports, and a
- *       new answer follows (guardrail mode {@code retry}). It comes once at most, as the new answer begins</li>
+ *       new answer follows (guardrail mode {@code retry}). It comes as the new answer begins. If that answer never
+ *       completes, it comes once more, followed by the earlier answer again as {@code token}, and the run ends
+ *       with {@code guardrail} and {@code done} as if it had not been asked again</li>
  *   <li>{@code error}: {@code {message, code}}</li>
  *   <li>{@code guardrail}: {@code {status, values}}, only for an answer that states values the run cannot ground
  *       ({@code status} is always {@code unverified}; {@code values} are {@code {kind, value}} with {@code kind}

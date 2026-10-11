@@ -55,8 +55,10 @@ import org.springframework.stereotype.Service;
  *
  * <p>The grounding guardrail checks the final answer. In {@code retry} mode an answer that states values nothing in the
  * run supports is asked for once more, on the larger model when there is one, with the values named; the client is
- * told to drop the earlier answer when the new one begins. If that second call fails before it began, the earlier
- * answer stands, flagged: the guardrail never turns an answer into an error.
+ * told to drop the earlier answer when the new one begins. If that second call gives no answer of its own (it fails,
+ * it is empty, or it asks for tools until the run is out of iterations or time) the earlier answer stands, flagged,
+ * and is sent to the client again, and the result names the model that wrote it: the guardrail never turns an answer
+ * into an error.
  */
 @Service
 public class AgentLoop {
@@ -115,7 +117,10 @@ public class AgentLoop {
         private int iterations;
         /** Where the next call goes. */
         private ModelRoute route;
-        /** Where the last call that was answered went, or where the run was sent while none was: what the result reports. */
+        /**
+         * Where the last call that was answered went, or where the run was sent while none was: what the result
+         * reports. Where the answer that is delivered came from, when the answer asked for again did not come.
+         */
         private ModelRoute answeredBy;
         /** The code of the failure that sent the run to the other model. Set once: a run falls back only once. */
         private ErrorCode fellBackFrom;
@@ -162,6 +167,10 @@ public class AgentLoop {
                     return finished.get();
                 }
             }
+            if (retry != null && !cancelled.getAsBoolean()) {
+                // The tools of the retry used the last iteration
+                return keepEarlierAnswer();
+            }
             events.accept(new AgentEvent.Token(GAVE_UP));
             return cancelled.getAsBoolean() ? aborted() : result(AgentResult.Status.MAX_ITERATIONS, GAVE_UP);
         }
@@ -202,6 +211,9 @@ public class AgentLoop {
             }
             if (response.stopReason() == StopReason.MAX_TOKENS) {
                 // Tool calls in a reply that hit the token limit may be incomplete, so none are run.
+                if (retry != null && response.text().isBlank()) {
+                    return Optional.of(keepEarlierAnswer());
+                }
                 return Optional.of(result(AgentResult.Status.TRUNCATED, response.text()));
             }
             messages.add(new Message(Message.Role.ASSISTANT, response.content()));
@@ -218,7 +230,7 @@ public class AgentLoop {
          * with what was found, or, in {@code retry} mode, the model is asked for it again, once.
          */
         private Optional<AgentResult> afterAnswer(String answer) {
-            if (retry != null && !retry.revised && answer.isBlank()) {
+            if (retry != null && answer.isBlank()) {
                 return Optional.of(keepEarlierAnswer());
             }
             var checked = guardrail.check(answer, evidence());
@@ -250,7 +262,7 @@ public class AgentLoop {
         private void askAgain(String answer, List<Violation> violations) {
             log.info("Grounding guardrail asks run {} to answer again: {} value(s) not found in the data ({})", runId,
                     violations.size(), Violation.describe(violations));
-            retry = new Retry(answer, violations);
+            retry = new Retry(answer, violations, answeredBy);
             route = router.retryFrom(route);
             messages.add(Message.user(GroundingCorrection.message(violations)));
         }
@@ -272,8 +284,17 @@ public class AgentLoop {
             return result(AgentResult.Status.OK, answer, outcome);
         }
 
-        /** The answer asked for again never came, and the first one is what the client has: it stands, flagged. */
+        /**
+         * The answer asked for again never came: the first one stands, flagged, and the model that wrote it is the one
+         * that answered. A client that was told to drop it, and may have been sent a part of the new one, is told to
+         * drop that and is sent the first one again.
+         */
         private AgentResult keepEarlierAnswer() {
+            if (retry.revised) {
+                events.accept(new AgentEvent.Revise(AgentEvent.Revise.GROUNDING));
+                events.accept(new AgentEvent.Token(retry.answer));
+            }
+            answeredBy = retry.answeredBy;
             return delivered(retry.answer, retry.violations, false);
         }
 
@@ -405,7 +426,7 @@ public class AgentLoop {
         }
 
         private AgentResult failed(ErrorCode code) {
-            if (retry != null && !retry.revised) {
+            if (retry != null) {
                 return keepEarlierAnswer();
             }
             return AgentResult.failed(code, usage, toolCallRecords.size(), iterations, llmCalls, toolCallRecords,
@@ -414,17 +435,19 @@ public class AgentLoop {
     }
 
     /**
-     * The answer the guardrail asked to have again: what it was and what was wrong with it, and whether the client has
-     * been told to drop it yet.
+     * The answer the guardrail asked to have again: what it was, what was wrong with it and where it came from, and
+     * whether the client has been told to drop it yet.
      */
     private static final class Retry {
         private final String answer;
         private final List<Violation> violations;
+        private final ModelRoute answeredBy;
         private boolean revised;
 
-        Retry(String answer, List<Violation> violations) {
+        Retry(String answer, List<Violation> violations, ModelRoute answeredBy) {
             this.answer = answer;
             this.violations = violations;
+            this.answeredBy = answeredBy;
         }
     }
 

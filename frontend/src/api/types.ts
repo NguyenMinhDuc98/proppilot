@@ -61,7 +61,10 @@ export type ChatEvent =
   | { type: 'tool_result'; name: string; summary: string; error: boolean; sources?: LeaseSource[] }
   | ({ type: 'action_proposed' } & ActionView)
   | { type: 'token'; text: string }
-  /** The answer streamed so far is to be dropped: the assistant was asked to answer again, and a new answer follows. */
+  /**
+   * The answer streamed so far is to be dropped: the assistant was asked to answer again, and a new answer follows.
+   * When it never completes, this comes once more and the earlier answer follows again.
+   */
   | { type: 'revise'; reason: 'grounding' }
   | { type: 'error'; message: string; code: ErrorCode }
   /** Sent before `done`, only for an answer that states values nothing supports. */
