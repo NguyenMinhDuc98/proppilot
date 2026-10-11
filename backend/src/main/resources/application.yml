@@ -38,6 +38,15 @@ proppilot:
     retry-base-delay-ms: 1000
     price-input-per-mtok: ${LLM_PRICE_INPUT_PER_MTOK:1.00}
     price-output-per-mtok: ${LLM_PRICE_OUTPUT_PER_MTOK:5.00}
+  embedding:
+    provider: ${EMBEDDING_PROVIDER:none}
+    api-key: ${VOYAGE_API_KEY:}
+    model: ${EMBEDDING_MODEL:voyage-4-lite}
+    dimensions: ${EMBEDDING_DIMENSIONS:1024}
+    api-url: https://api.voyageai.com/v1/embeddings
+    timeout-seconds: 20
+    max-retries: 3
+    retry-base-delay-ms: 1000
   agent:
     max-iterations: 6
     max-history-turns: 10
