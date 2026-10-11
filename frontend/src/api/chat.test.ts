@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ChatEvent } from './types'
+import type { ChatEvent, LeaseSource } from './types'
 import { streamChat, streamConfirmation } from './chat'
 
 const fetchMock = vi.fn()
@@ -43,6 +43,34 @@ describe('streamChat', () => {
     const events = await collect(streamChat('record 100', []))
 
     expect(events[1]).toEqual({ type: 'action_proposed', ...action })
+  })
+
+  it('yields the clauses a lease search found next to its result', async () => {
+    const source: LeaseSource = {
+      ref: 'LSE-A-504#5',
+      documentCode: 'LSE-A-504',
+      documentTitle: 'Residential lease agreement, unit A-504',
+      unitCode: 'A-504',
+      tenantNameEn: 'Khalid Al-Qahtani',
+      tenantNameAr: 'خالد القحطاني',
+      language: 'en',
+      sectionNo: 5,
+      sectionTitle: 'Late payment',
+      page: 2,
+      text: '5. Late payment\nRent not received 5 days after its due date carries a late fee of 3%.',
+      pdfPath: '/api/lease-documents/LSE-A-504/pdf',
+    }
+    sse(['tool_result', { name: 'search_lease_documents', summary: '1 clause from 1 lease document', error: false, sources: [source] }])
+
+    const events = await collect(streamChat('What is the late fee for A-504?', []))
+
+    expect(events[0]).toEqual({
+      type: 'tool_result',
+      name: 'search_lease_documents',
+      summary: '1 clause from 1 lease document',
+      error: false,
+      sources: [source],
+    })
   })
 
   it('throws an ApiError for a refused request', async () => {

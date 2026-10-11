@@ -16,9 +16,30 @@ export interface DonePayload {
 /** Why a run failed; the UI shows its own localised text for each, never the server's message. */
 export type ErrorCode = 'llm_overloaded' | 'llm_timeout' | 'llm_auth' | 'llm_error' | 'run_timeout'
 
+/** A lease clause an answer rests on. The server sends the clauses a lease search found with its result. */
+export interface LeaseSource {
+  /** What a citation in the answer is written as without its brackets, such as `LSE-A-504#7`. */
+  ref: string
+  documentCode: string
+  documentTitle: string
+  unitCode: string
+  tenantNameEn: string
+  tenantNameAr: string
+  /** The language the lease document is written in. */
+  language: 'en' | 'ar'
+  /** Null for the preamble, which has no numbered clause. */
+  sectionNo: number | null
+  sectionTitle: string | null
+  page: number
+  text: string
+  /** Where the PDF of the document is served, on the API's own origin. */
+  pdfPath: string
+}
+
 export type ChatEvent =
   | { type: 'tool_call'; name: string; args: Record<string, unknown> }
-  | { type: 'tool_result'; name: string; summary: string; error: boolean }
+  /** `sources` is there for the result of a lease search only. */
+  | { type: 'tool_result'; name: string; summary: string; error: boolean; sources?: LeaseSource[] }
   | ({ type: 'action_proposed' } & ActionView)
   | { type: 'token'; text: string }
   | { type: 'error'; message: string; code: ErrorCode }

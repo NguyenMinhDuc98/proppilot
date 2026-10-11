@@ -65,6 +65,8 @@ export default {
     record_payment: { running: 'جارٍ تجهيز الدفعة…', done: 'تم تجهيز الدفعة', failed: 'تعذّر تجهيز الدفعة', source: 'اقتراح دفعة' },
     create_maintenance_request: { running: 'جارٍ تجهيز طلب الصيانة…', done: 'تم تجهيز طلب الصيانة', failed: 'تعذّر تجهيز طلب الصيانة', source: 'طلب صيانة مقترح' },
     send_tenant_reminder: { running: 'جارٍ تجهيز التذكير…', done: 'تم تجهيز التذكير', failed: 'تعذّر تجهيز التذكير', source: 'اقتراح تذكير' },
+    search_lease_documents: { running: 'جارٍ البحث في وثائق العقود…', done: 'تم البحث في وثائق العقود', failed: 'تعذّر البحث في وثائق العقود', source: 'وثائق العقود' },
+    find_expiring_leases: { running: 'جارٍ فحص العقود التي تنتهي قريبًا…', done: 'تم فحص العقود التي تنتهي قريبًا', failed: 'تعذّر فحص العقود التي تنتهي قريبًا', source: 'العقود التي تنتهي قريبًا' },
     unknown: { running: 'جارٍ العمل…', done: 'تم', failed: 'تعذّر الإكمال' },
   },
   units: {

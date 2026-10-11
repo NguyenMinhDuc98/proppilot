@@ -74,6 +74,7 @@ describe('MessageBubble data sources', () => {
     'search_units', 'get_unit_details', 'find_overdue_tenants',
     'get_occupancy_summary', 'get_payment_history', 'draft_tenant_message',
     'record_payment', 'create_maintenance_request', 'send_tenant_reminder',
+    'search_lease_documents', 'find_expiring_leases',
   ] as const
 
   it.each(toolNames)('names %s with a friendly label in both languages instead of the tool name', async (name) => {
@@ -129,6 +130,26 @@ describe('MessageBubble tool chips', () => {
     await nextTick()
     expect(chips(running)).toEqual([ar.tools[name].running])
     expect(chips(finished)).toEqual([ar.tools[name].done])
+  })
+
+  const leaseTools = ['search_lease_documents', 'find_expiring_leases'] as const
+
+  it.each(leaseTools)('labels %s while it runs, when it is done and when it failed, in both languages', async (name) => {
+    const running = render({ streaming: true, tools: [toolChip(name, 'running')] })
+    const finished = render({ text: 'Found.', tools: [toolChip(name)], usage })
+    const failed = render({ text: 'It could not be searched.', tools: [toolChip(name, 'failed')], usage })
+
+    expect(chips(running)).toEqual([en.tools[name].running])
+    expect(chips(finished)).toEqual([en.tools[name].done])
+    expect(chips(failed)).toEqual([en.tools[name].failed])
+    expect(en.tools[name].running).not.toBe(en.tools.unknown.running)
+
+    i18n.global.locale.value = 'ar'
+    await nextTick()
+    expect(chips(running)).toEqual([ar.tools[name].running])
+    expect(chips(finished)).toEqual([ar.tools[name].done])
+    expect(chips(failed)).toEqual([ar.tools[name].failed])
+    expect(ar.tools[name].running).not.toBe(ar.tools.unknown.running)
   })
 
   it.each(proposingTools)('does not call a refused %s a prepared change, in either language', async (name) => {
