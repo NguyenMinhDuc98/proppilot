@@ -17,11 +17,14 @@ const models = computed(() => stats.value?.byModel ?? [])
 const maxModelRuns = computed(() => Math.max(1, ...models.value.map((m) => m.runs)))
 const cache = computed(() => stats.value?.cache ?? { readTokens: 0, writeTokens: 0 })
 const flaggedRuns = computed(() => stats.value?.guardrail?.flaggedRuns ?? 0)
+/** Everything the models read: `totalInputTokens` leaves out what the prompt cache served and took in. */
+const inputTokens = computed(
+  () => (stats.value?.totalInputTokens ?? 0) + cache.value.readTokens + cache.value.writeTokens,
+)
 /** Of everything the models read, the part the prompt cache served; absent when it served nothing. */
 const cacheShare = computed(() => {
   const read = cache.value.readTokens
-  const all = (stats.value?.totalInputTokens ?? 0) + read + cache.value.writeTokens
-  return read > 0 && all > 0 ? `${Math.round((read / all) * 100)}%` : ''
+  return read > 0 && inputTokens.value > 0 ? `${Math.round((read / inputTokens.value) * 100)}%` : ''
 })
 
 onMounted(async () => {
@@ -50,7 +53,7 @@ onMounted(async () => {
         <div class="card tile"><span>{{ t('stats.totalCost') }}</span><strong>{{ formatCost(stats.totalCostUsd) }}</strong></div>
         <div class="card tile">
           <span>{{ t('stats.tokens') }}</span>
-          <strong><bdi>{{ stats.totalInputTokens }} / {{ stats.totalOutputTokens }}</bdi></strong>
+          <strong><bdi>{{ formatCount(inputTokens) }} / {{ formatCount(stats.totalOutputTokens) }}</bdi></strong>
         </div>
       </div>
 

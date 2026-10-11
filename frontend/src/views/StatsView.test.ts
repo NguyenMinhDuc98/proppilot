@@ -56,6 +56,27 @@ describe('StatsView', () => {
     expect(wrapper.text()).toContain(en.tools.search_units.done)
   })
 
+  describe('tokens in and out', () => {
+    const tile = (wrapper: Awaited<ReturnType<typeof render>>) =>
+      wrapper.findAll('.tile').find((candidate) => candidate.text().startsWith(en.stats.tokens))
+
+    it('counts what the prompt cache served and took in with the input, as the cache section below does', async () => {
+      const wrapper = await render()
+
+      // 9,000 uncached, 5,000 read from the cache and 4,000 written to it
+      expect(tile(wrapper)?.text()).toBe(`${en.stats.tokens}18,000 / 1,500`)
+    })
+
+    it('shows the uncached input alone when the server reports no cache', async () => {
+      const { cache: _cache, ...older } = stats
+      fetchStats.mockResolvedValue(older)
+      const wrapper = mount(StatsView, { global: { plugins: [i18n] } })
+      await flushPromises()
+
+      expect(tile(wrapper)?.text()).toBe(`${en.stats.tokens}9,000 / 1,500`)
+    })
+  })
+
   it('never lists what visitors asked, even when the server sends the questions', async () => {
     fetchStats.mockResolvedValue({
       ...stats,
