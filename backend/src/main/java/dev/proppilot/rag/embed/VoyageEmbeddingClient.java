@@ -203,7 +203,9 @@ public class VoyageEmbeddingClient implements EmbeddingClient {
         return new LlmException("Voyage reply is not usable: " + reason, ErrorCode.LLM_ERROR);
     }
 
-    private static String excerpt(byte[] body) {
-        return new String(body, 0, Math.min(body.length, LOGGED_ERROR_BODY_BYTES), StandardCharsets.UTF_8);
+    /** What the API said, for the log: cut short, and without the key should it ever be echoed. */
+    private String excerpt(byte[] body) {
+        var text = new String(body, 0, Math.min(body.length, LOGGED_ERROR_BODY_BYTES), StandardCharsets.UTF_8);
+        return text.replace(props.apiKey(), "[key]");
     }
 }

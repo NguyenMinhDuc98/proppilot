@@ -3,6 +3,9 @@ package dev.proppilot.rag.embed;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpServer;
@@ -28,6 +31,7 @@ import java.util.stream.IntStream;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 
 /** The real HTTP client against an in-process server that plays back scripted Voyage responses. */
 class VoyageEmbeddingClientTest {
@@ -302,6 +306,24 @@ class VoyageEmbeddingClientTest {
                             .doesNotContain(UPSTREAM_DETAIL).doesNotContain(API_KEY));
             replies.clear();
         }
+    }
+
+    @Test
+    void theLogNeverHoldsTheKeyEvenWhenTheApiEchoesIt() {
+        var appender = new ListAppender<ILoggingEvent>();
+        appender.start();
+        var logger = (Logger) LoggerFactory.getLogger(VoyageEmbeddingClient.class);
+        logger.addAppender(appender);
+        try {
+            replies.add(new Reply(401, Map.of(), "{\"detail\":\"Bearer " + API_KEY + " is invalid\"}", Duration.ZERO));
+
+            assertThatThrownBy(() -> client().embedQuery("question")).isInstanceOf(LlmException.class);
+        } finally {
+            logger.detachAppender(appender);
+        }
+
+        assertThat(appender.list).isNotEmpty()
+                .allSatisfy(event -> assertThat(event.getFormattedMessage()).doesNotContain(API_KEY));
     }
 
     @Test
