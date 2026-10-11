@@ -12,4 +12,14 @@ public interface TenantRepository extends JpaRepository<Tenant, Long> {
             where lower(t.nameEn) like lower(concat('%', :q, '%')) or t.nameAr like concat('%', :q, '%')
             order by t.id""")
     List<Tenant> searchByName(@Param("q") String query);
+
+    /** Only the two names of every tenant: what the grounding guardrail looks for in an answer. */
+    @Query("select t.nameEn as nameEn, t.nameAr as nameAr from Tenant t order by t.id")
+    List<TenantNameView> allNames();
+
+    interface TenantNameView {
+        String getNameEn();
+
+        String getNameAr();
+    }
 }

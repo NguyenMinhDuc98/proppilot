@@ -63,6 +63,10 @@ proppilot:
     max-iterations: 6
     max-history-turns: 10
     run-timeout-seconds: ${AGENT_RUN_TIMEOUT_SECONDS:90}
+  # off | warn | retry. warn flags an answer that states a figure, a code, a name or a citation that nothing in the run
+  # supports; retry also asks for such an answer once more. Anything else stops the backend from starting
+  guardrail:
+    mode: ${GUARDRAIL_MODE:warn}
   admin:
     token: ${ADMIN_TOKEN:}
   otel:
