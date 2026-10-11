@@ -43,7 +43,7 @@ public class CorpusIndexer {
         }
     }
 
-    public void indexInBackground() {
+    private void indexInBackground() {
         worker = Thread.ofVirtual().name("lease-corpus-indexer").start(() -> {
             try {
                 reindex();
