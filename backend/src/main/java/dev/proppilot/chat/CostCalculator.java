@@ -35,8 +35,11 @@ public class CostCalculator {
         if (!billable) {
             return BigDecimal.ZERO.setScale(SCALE);
         }
-        return calls.stream().map(call -> perMillion(call.model(), call.usage())).reduce(BigDecimal.ZERO, BigDecimal::add)
-                .divide(MILLION, SCALE, RoundingMode.HALF_UP);
+        var total = BigDecimal.ZERO;
+        for (var call : calls) {
+            total = total.add(perMillion(call.model(), call.usage()));
+        }
+        return total.divide(MILLION, SCALE, RoundingMode.HALF_UP);
     }
 
     /** The price of the call in USD per million, that is, before it is divided by the million tokens. */

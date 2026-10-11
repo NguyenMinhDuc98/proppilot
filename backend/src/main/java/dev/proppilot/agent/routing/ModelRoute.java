@@ -4,6 +4,7 @@ package dev.proppilot.agent.routing;
  * Where a run goes and why.
  *
  * @param model the model that takes the next call of the run
+ * @param reason why it was chosen
  * @param complexity how the question scored, or null when it was not scored (routing is off, or the turn needed no
  *                   choice)
  */

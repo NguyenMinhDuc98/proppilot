@@ -64,7 +64,8 @@ public record RunTraceView(
         if (run.getComplexityScore() == null) {
             return null;
         }
-        var rules = run.getComplexityRules().isEmpty() ? List.<String>of() : List.of(run.getComplexityRules().split(","));
+        var stored = run.getComplexityRules();
+        var rules = stored.isEmpty() ? List.<String>of() : List.of(stored.split(","));
         return new Complexity(run.getComplexityScore(), rules);
     }
 
