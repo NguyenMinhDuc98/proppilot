@@ -226,7 +226,7 @@ class LeaseChunkerTest {
     void whenTheLastSentenceOfAPartIsLongerThanTheOverlapTheNextPartStartsWithItsLastWords() {
         var sentences = longSentences(20);
         var chunks = chunker.chunk(CODE, List.of("1. House rules\n" + String.join(" ", sentences) + "\n"));
-        var bodies = chunks.stream().map(chunk -> chunk.content().substring(chunk.content().indexOf('\n') + 1)).toList();
+        var bodies = chunks.stream().map(chunk -> body(chunk.content())).toList();
 
         assertThat(TokenEstimate.of(sentences.get(0))).isGreaterThan(LeaseChunker.OVERLAP_TOKENS);
         assertThat(bodies).hasSizeGreaterThanOrEqualTo(2);
@@ -312,8 +312,12 @@ class LeaseChunkerTest {
     }
 
     private static List<String> sentencesOf(String content) {
-        var body = content.substring(content.indexOf('\n') + 1);
-        return List.of(body.split("(?<=\\.) "));
+        return List.of(body(content).split("(?<=\\.) "));
+    }
+
+    /** What a chunk says, without its heading line. */
+    private static String body(String content) {
+        return content.substring(content.indexOf('\n') + 1);
     }
 
     /** How many sentences at the start of {@code current} are the last sentences of {@code previous}. */

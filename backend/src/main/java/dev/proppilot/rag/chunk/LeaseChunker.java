@@ -226,7 +226,7 @@ public class LeaseChunker {
 
     /**
      * Packs pieces into parts of at most {@code budget}. Each part starts with the end of the one before it: the last
-     * pieces that fit the overlap, or the last words of the last piece when that piece alone is longer than the overlap.
+     * pieces that fit the overlap, or the last words of the last piece when that piece alone is longer than that.
      */
     private static List<String> pack(List<Piece> pieces, long budget) {
         long overlapBudget = TokenEstimate.weightOf(OVERLAP_TOKENS);
