@@ -1,120 +1,117 @@
 #!/usr/bin/env node
-// Runs evals/questions.json against a running PropPilot backend and prints pass rate, avg cost and avg latency.
+// Runs evals/questions.json against a running PropPilot backend, grades every answer and writes the results.
 //
-//   node evals/run.mjs [--url http://localhost:8080] [--delay-ms 0] [--only en-,ar-]
+//   node evals/run.mjs [--url http://localhost:8080] [--runs 3] [--only en-,ar-] [--offline-only] [--judge]
+//                      [--out evals/results/latest.json] [--summary evals/results/latest.md]
+//                      [--delay-ms 0] [--compare evals/results/latest.json]
 //
-// A question passes when every `expect` entry appears in the streamed answer, no `absent` entry does, and every tool
-// in `tools` was called. An entry is a string, or an array of alternative wordings of which any one counts. Matching
-// is case-insensitive and ignores number formatting (4,800 = 4800 = ٤٨٠٠), because models format numbers freely.
-// An answer the server revised (GUARDRAIL_MODE=retry) is graded as the one that was delivered; each result keeps the
-// guardrail status of its run, and the values that it could not match to the data.
-// Two optional fields are for the lease search: `mustCite` (a document code such as LSE-A-203, or an array of them)
-// needs a citation marker of that document in the answer, and `absentTools` lists tools that must not be called.
-// Grading is in grade.mjs. Start the backend with CHAT_RATE_LIMIT_PER_MINUTE=1000 to run without throttling.
+// Run `node evals/run.mjs --help` for what each option does, and see evals/README.md for the fields of a case and what
+// each one checks. Start the backend with CHAT_RATE_LIMIT_PER_MINUTE=1000 and CHAT_DAILY_LIMIT=100000 to run without
+// throttling. The write cases only propose: nothing is approved, and a run fails if any proposal was executed.
 //
-// --only runs the cases whose id starts with one of the comma-separated prefixes: en-,ar- for the read questions,
-// rag- for the lease search, write- for the write actions. The write cases leave proposals on the backend they run
-// against and expect its seeded data, so run them against a local stack, or on a shared deployment right after its
-// reset. The rag cases only read, and expect the 30 lease documents the application writes by default.
+// Exit code: 0 when every case passed every run, 1 when one failed, 2 for a command line or a case selection that
+// cannot be run.
 
-import { readFile, writeFile } from 'node:fs/promises'
-import { fileURLToPath } from 'node:url'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import { grade } from './grade.mjs'
-import { apply, newRun } from './stream.mjs'
-import { summarize, summarizeByModel, summarizeGuardrail } from './summary.mjs'
+import { fileURLToPath } from 'node:url'
+import { parseArgs, USAGE } from './args.mjs'
+import { selectCases } from './cases.mjs'
+import { createClient } from './client.mjs'
+import { compareResults, describeComparison } from './compare.mjs'
+import { limitsFrom } from './history.mjs'
+import { judgeAnswer, judgeConfig } from './judge.mjs'
+import { renderSummary } from './report.mjs'
+import { buildResults, readPrevious } from './results.mjs'
+import { runCases } from './runner.mjs'
 
-const args = new Map()
-for (let i = 2; i < process.argv.length; i++) {
-  const key = process.argv[i]
-  if (!key.startsWith('--')) continue
-  const next = process.argv[i + 1]
-  args.set(key.slice(2), next && !next.startsWith('--') ? next : 'true')
-}
-const baseUrl = (args.get('url') ?? 'http://localhost:8080').replace(/\/$/, '')
-const delayMs = Number(args.get('delay-ms') ?? 0)
-const only = (args.get('only') ?? '').split(',').filter(Boolean)
 const dir = dirname(fileURLToPath(import.meta.url))
-
-/** Minimal SSE reader: yields { event, data } for each blank-line terminated block. */
-async function* sse(response) {
-  const decoder = new TextDecoder()
-  let buffer = ''
-  for await (const chunk of response.body) {
-    buffer += decoder.decode(chunk, { stream: true }).replace(/\r\n?/g, '\n')
-    let boundary
-    while ((boundary = buffer.indexOf('\n\n')) !== -1) {
-      const block = buffer.slice(0, boundary)
-      buffer = buffer.slice(boundary + 2)
-      const event = /^event:\s*(.*)$/m.exec(block)?.[1]
-      const data = [...block.matchAll(/^data:\s?(.*)$/gm)].map((m) => m[1]).join('\n')
-      if (event && data) yield { event, data: JSON.parse(data) }
-    }
-  }
-}
-
-async function ask(question) {
-  const response = await fetch(`${baseUrl}/api/chat`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
-    body: JSON.stringify({ message: question, history: [] }),
-  })
-  if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`)
-  const run = newRun()
-  for await (const { event, data } of sse(response)) apply(run, event, data)
-  return run
-}
-
-const cases = JSON.parse(await readFile(join(dir, 'questions.json'), 'utf8'))
-const questions = only.length ? cases.filter((item) => only.some((prefix) => item.id.startsWith(prefix))) : cases
-if (questions.length === 0) {
-  console.error(`No case has an id starting with ${only.join(' or ')}.`)
+const options = parseArgs(process.argv.slice(2), join(dir, 'results'))
+if (options.error) {
+  console.error(`${options.error}\n\n${USAGE}`)
   process.exit(2)
 }
-const results = []
-for (const item of questions) {
+if (options.help) {
+  console.log(USAGE)
+  process.exit(0)
+}
+
+const allCases = JSON.parse(await readFile(join(dir, 'questions.json'), 'utf8'))
+const { selected, skipped } = selectCases(allCases, { only: options.only, offlineOnly: options.offlineOnly })
+if (selected.length === 0) {
+  console.error(`No case has an id starting with ${options.only.join(' or ')}.`)
+  process.exit(2)
+}
+
+let previous = null
+if (options.compare) {
   try {
-    const started = Date.now()
-    const run = await ask(item.question)
-    const verdict = grade(item, run)
-    results.push({
-      id: item.id, lang: item.lang, question: item.question, ...verdict,
-      latencyMs: run.done?.latencyMs ?? Date.now() - started,
-      costUsd: run.done?.costUsd ?? 0,
-      provider: run.done?.provider, model: run.done?.model,
-      guardrailStatus: run.done?.guardrailStatus, unverified: run.unverified,
-      answer: run.answer, tools: run.tools,
-    })
+    previous = readPrevious(JSON.parse(await readFile(options.compare, 'utf8')))
   } catch (error) {
-    results.push({ id: item.id, lang: item.lang, question: item.question, pass: false, error: String(error), missingFacts: [], unwantedFacts: [], missingTools: [], forbiddenToolsCalled: [], missingCitations: [], latencyMs: 0, costUsd: 0 })
+    console.error(`--compare ${options.compare}: ${error.message}`)
+    process.exit(2)
   }
-  const last = results.at(-1)
-  console.log(`${last.pass ? 'PASS' : 'FAIL'}  ${last.id}  ${last.question}`)
-  if (!last.pass) {
-    console.log(`      missing facts: ${JSON.stringify(last.missingFacts)} unwanted facts: ${JSON.stringify(last.unwantedFacts)}`
-      + ` tools: ${JSON.stringify(last.missingTools)} forbidden tools: ${JSON.stringify(last.forbiddenToolsCalled)}`
-      + ` citations: ${JSON.stringify(last.missingCitations)} ${last.error ?? ''}`)
-  }
-  if (delayMs) await new Promise((resolve) => setTimeout(resolve, delayMs))
 }
 
-const overall = summarize(results)
-const provider = results.find((r) => r.provider)?.provider
-const models = summarizeByModel(results)
-const guardrail = summarizeGuardrail(results)
-const rows = [['All', overall], ['English', summarize(results.filter((r) => r.lang === 'en'))], ['Arabic', summarize(results.filter((r) => r.lang === 'ar'))]]
-// With more than one model answering, each one's averages are shown: the rows above mix them.
-if (Object.keys(models).length > 1) rows.push(...Object.entries(models))
+const client = createClient({ baseUrl: options.url })
+const info = await client.info()
+if (!info) console.warn(`Warning: ${options.url}/api/info did not answer; using the default history limits.`)
 
-console.log(`\nProvider: ${provider ?? '?'} (${Object.keys(models).join(', ') || '?'})`)
-if (Object.keys(guardrail).length) {
-  console.log(`Guardrail: ${Object.entries(guardrail).map(([status, count]) => `${status} ${count}`).join(', ')}`)
+const configured = judgeConfig(process.env)
+if (options.judge && !configured.enabled) {
+  console.warn(`--judge: ${configured.reason}. Running without judge scores.`)
 }
-console.log('| Set | Passed | Pass rate | Avg cost / question | Avg latency |')
-console.log('|---|---|---|---|---|')
-for (const [name, s] of rows) {
-  console.log(`| ${name} | ${s.passed}/${s.total} | ${(s.passRate * 100).toFixed(0)}% | $${s.avgCostUsd.toFixed(5)} | ${Math.round(s.avgLatencyMs)} ms |`)
-}
+const judge = options.judge && configured.enabled ? (input) => judgeAnswer(configured, input) : null
 
-await writeFile(join(dir, 'results.json'), JSON.stringify({ ranAt: new Date().toISOString(), provider, models, guardrail, overall, results }, null, 2))
-process.exit(overall.passed === overall.total ? 0 : 1)
+const followUps = selected.reduce((n, item) => n + (item.priorQuestions?.length ?? 0), 0)
+const requests = (selected.length + followUps) * options.runs
+console.log(`${selected.length} cases x ${options.runs} run(s) = ${requests} chat requests`
+  + (skipped.length ? `; ${skipped.length} case(s) skipped (offline: false)` : '')
+  + `, against ${new URL(options.url).host}`)
+
+const ranAt = new Date().toISOString()
+const cases = await runCases({
+  cases: selected,
+  runs: options.runs,
+  client,
+  limits: limitsFrom(info),
+  judge,
+  delayMs: options.delayMs,
+  onTrial: (item, trial, run) => {
+    console.log(`${trial.pass ? 'PASS' : 'FAIL'}  ${item.id}  run ${run}/${options.runs}  ${item.question}`)
+    if (!trial.pass) console.log(`      ${trial.reasons.join('; ')}`)
+  },
+})
+
+const results = buildResults({
+  ranAt,
+  options: {
+    runs: options.runs, only: options.only, offlineOnly: options.offlineOnly, judge: options.judge, delayMs: options.delayMs,
+  },
+  url: options.url,
+  info,
+  judge: {
+    requested: options.judge,
+    enabled: judge !== null,
+    model: judge ? configured.model : null,
+    reason: options.judge ? configured.reason ?? null : null,
+  },
+  cases,
+  skipped,
+})
+const comparison = previous ? compareResults(results, previous) : null
+const summary = renderSummary(results, comparison)
+
+for (const file of [options.out, options.summary]) await mkdir(dirname(file), { recursive: true })
+await writeFile(options.out, `${JSON.stringify(results, null, 2)}\n`)
+await writeFile(options.summary, summary)
+
+const a = results.aggregate
+console.log(`\nPass rate ${(a.passRate * 100).toFixed(1)}% over ${a.runs} run(s), `
+  + `${a.casesPassingEveryRun}/${a.cases} cases passed every run, ${a.flakyCases.length} flaky, `
+  + `${a.failingCases.length} failing every run`)
+console.log(`Latency ${Math.round(a.avgLatencyMs)} ms average, ${Math.round(a.p95LatencyMs)} ms p95; `
+  + `cost $${a.avgCostUsd.toFixed(5)} per question`)
+if (comparison) console.log(`\n${describeComparison(comparison).join('\n')}`)
+console.log(`\nResults: ${options.out}\nSummary: ${options.summary}`)
+process.exit(a.passedTrials === a.trials ? 0 : 1)
