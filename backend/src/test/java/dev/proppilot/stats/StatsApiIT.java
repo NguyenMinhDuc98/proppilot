@@ -6,7 +6,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import dev.proppilot.PostgresIntegrationTest;
-import dev.proppilot.agent.AgentResult;
+import dev.proppilot.agent.AgentResults;
 import dev.proppilot.agent.llm.Usage;
 import dev.proppilot.chat.ChatRun;
 import dev.proppilot.chat.ChatRunRepository;
@@ -40,8 +40,8 @@ class StatsApiIT extends PostgresIntegrationTest {
 
     private UUID save(String model, String cost, Usage usage, List<String> tools) {
         var id = UUID.randomUUID();
-        var result = new AgentResult("answer", usage, tools.size(), 2, AgentResult.Status.OK);
-        runs.save(new ChatRun(id, NOW, "a question", "anthropic", model, result, tools, 1000, new BigDecimal(cost)));
+        var result = AgentResults.answered(model, usage, tools.size(), 2);
+        runs.save(new ChatRun(id, NOW, "a question", "anthropic", result, tools, 1000, new BigDecimal(cost)));
         return id;
     }
 

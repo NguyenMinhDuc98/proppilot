@@ -12,10 +12,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import dev.proppilot.PostgresIntegrationTest;
 import dev.proppilot.SqlStatementCounter;
 import dev.proppilot.agent.AgentResult;
+import dev.proppilot.agent.AgentResults;
 import dev.proppilot.agent.LlmCallRecord;
 import dev.proppilot.agent.ToolCallRecord;
 import dev.proppilot.agent.llm.StopReason;
 import dev.proppilot.agent.llm.Usage;
+import dev.proppilot.agent.routing.ModelRoute;
 import dev.proppilot.chat.ChatRun;
 import dev.proppilot.chat.ChatRunRepository;
 import jakarta.persistence.EntityManagerFactory;
@@ -55,15 +57,15 @@ class AdminRunsApiIT extends PostgresIntegrationTest {
     }
 
     private void saveRun(String question, Instant at, List<String> tools) {
-        var result = new AgentResult("answer", new Usage(120, 45), tools.size(), 2, AgentResult.Status.OK);
-        runs.save(new ChatRun(UUID.randomUUID(), at, question, "anthropic", "claude-haiku-4-5-20251001", result, tools, 850,
+        var result = AgentResults.answered("claude-haiku-4-5-20251001", new Usage(120, 45), tools.size(), 2);
+        runs.save(new ChatRun(UUID.randomUUID(), at, question, "anthropic", result, tools, 850,
                 new BigDecimal("0.000345")));
     }
 
     private UUID saveRun(String question, Instant at, String model, AgentResult.Status status, int guardrailViolations) {
         var id = UUID.randomUUID();
-        var result = new AgentResult("answer", new Usage(120, 45), 0, 1, status);
-        runs.save(new ChatRun(id, at, question, "anthropic", model, result, List.of(), 850, new BigDecimal("0.000345")));
+        var result = AgentResults.ended(model, new Usage(120, 45), 0, 1, status);
+        runs.save(new ChatRun(id, at, question, "anthropic", result, List.of(), 850, new BigDecimal("0.000345")));
         if (guardrailViolations > 0) {
             jdbc.update("update chat_runs set guardrail_status = 'FLAGGED', guardrail_violations = ? where id = ?",
                     guardrailViolations, id);
@@ -164,9 +166,9 @@ class AdminRunsApiIT extends PostgresIntegrationTest {
 
     @Test
     void listsTheIdAndWhatTheTraceFiguresSay() throws Exception {
-        var result = new AgentResult("answer", new Usage(120, 45, 3000, 400), 2, 3, AgentResult.Status.OK);
+        var result = AgentResults.answered(HAIKU, new Usage(120, 45, 3000, 400), 2, 3);
         var id = UUID.randomUUID();
-        runs.save(new ChatRun(id, T0, "a question", "anthropic", HAIKU, result, List.of("search_units", "get_unit_details"),
+        runs.save(new ChatRun(id, T0, "a question", "anthropic", result, List.of("search_units", "get_unit_details"),
                 850, new BigDecimal("0.000345")));
         jdbc.update("update chat_runs set routed_reason = 'complex', guardrail_status = 'FLAGGED', "
                 + "guardrail_violations = 1 where id = ?", id);
@@ -267,9 +269,9 @@ class AdminRunsApiIT extends PostgresIntegrationTest {
                 T0);
         var toolCall = new ToolCallRecord(1, "search_units", "{\"city\":\"Riyadh\"}", "3 units", false, 25, T0);
         var result = new AgentResult("answer", new Usage(120, 45), 1, 1, AgentResult.Status.OK, null, List.of(llmCall),
-                List.of(toolCall));
+                List.of(toolCall), ModelRoute.byDefault(HAIKU));
         var id = UUID.randomUUID();
-        runs.save(new ChatRun(id, T0, "who is late on rent?", "anthropic", HAIKU, result, List.of("search_units"), 850,
+        runs.save(new ChatRun(id, T0, "who is late on rent?", "anthropic", result, List.of("search_units"), 850,
                 new BigDecimal("0.000345")));
 
         mvc.perform(get("/api/admin/runs/{id}", id).header("X-Admin-Token", TOKEN))

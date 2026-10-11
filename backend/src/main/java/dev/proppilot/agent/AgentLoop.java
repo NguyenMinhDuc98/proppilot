@@ -9,6 +9,8 @@ import dev.proppilot.agent.llm.Message;
 import dev.proppilot.agent.llm.StopReason;
 import dev.proppilot.agent.llm.ToolSpec;
 import dev.proppilot.agent.llm.Usage;
+import dev.proppilot.agent.routing.ModelRoute;
+import dev.proppilot.agent.routing.ModelRouter;
 import dev.proppilot.agent.tools.ToolContext;
 import dev.proppilot.agent.tools.ToolRegistry;
 import dev.proppilot.agent.tools.ToolResult;
@@ -33,6 +35,8 @@ import org.springframework.stereotype.Service;
  * append the results and ask again; stop on a final answer, a reply cut off by the token limit, the iteration limit or
  * the run deadline. Every model call and tool execution is measured with the injected clock and returned in the
  * result, whatever became of the run.
+ *
+ * <p>The router picks the model of the run before it starts, and every call of the run goes to it.
  */
 @Service
 public class AgentLoop {
@@ -44,12 +48,14 @@ public class AgentLoop {
     private final ToolRegistry tools;
     private final AgentProperties props;
     private final Clock clock;
+    private final ModelRouter router;
 
-    public AgentLoop(LlmClient llm, ToolRegistry tools, AgentProperties props, Clock clock) {
+    public AgentLoop(LlmClient llm, ToolRegistry tools, AgentProperties props, Clock clock, ModelRouter router) {
         this.llm = llm;
         this.tools = tools;
         this.props = props;
         this.clock = clock;
+        this.router = router;
     }
 
     /**
@@ -73,6 +79,7 @@ public class AgentLoop {
         private final boolean toolsOffered;
         private final List<ToolSpec> toolSpecs;
         private final ToolContext context;
+        private final ModelRoute route;
         private final Instant deadline = clock.instant().plus(props.runTimeout());
         private final Map<String, Integer> callsByTool = new HashMap<>();
         private final List<LlmCallRecord> llmCalls = new ArrayList<>();
@@ -87,6 +94,8 @@ public class AgentLoop {
             this.toolSpecs = toolsOffered ? tools.specs() : List.of();
             this.context = new ToolContext(request.runId());
             messages.addAll(conversationSoFar(request.history()));
+            // A confirmation only words an outcome that is settled, so it has no question to score.
+            this.route = toolsOffered ? router.route(request.message(), messages.size()) : router.defaultRoute();
             messages.add(Message.user(request.message()));
         }
 
@@ -111,15 +120,17 @@ public class AgentLoop {
             var startedAt = clock.instant();
             LlmResponse response;
             try {
-                response = llm.complete(new LlmRequest(system, List.copyOf(messages), toolSpecs, timeLeft()),
+                response = llm.complete(
+                        new LlmRequest(system, List.copyOf(messages), toolSpecs, timeLeft(), route.model()),
                         text -> events.accept(new AgentEvent.Token(text)));
             } catch (LlmException e) {
                 log.warn("LLM call failed on iteration {} ({}): {}", iterations, e.code(), e.getMessage());
                 var code = failureCode(e);
-                llmCalls.add(LlmCallRecord.failed(llmCalls.size() + 1, llm.model(), startedAt, millisSince(startedAt), code));
+                llmCalls.add(LlmCallRecord.failed(llmCalls.size() + 1, route.model(), startedAt,
+                        millisSince(startedAt), code));
                 return Optional.of(failed(code));
             }
-            llmCalls.add(LlmCallRecord.succeeded(llmCalls.size() + 1, llm.model(), startedAt, millisSince(startedAt),
+            llmCalls.add(LlmCallRecord.succeeded(llmCalls.size() + 1, route.model(), startedAt, millisSince(startedAt),
                     response));
             usage = usage.plus(response.usage());
             if (cancelled.getAsBoolean()) {
@@ -211,11 +222,12 @@ public class AgentLoop {
 
         private AgentResult result(AgentResult.Status status, String answer) {
             return new AgentResult(answer, usage, toolCallRecords.size(), iterations, status, null, llmCalls,
-                    toolCallRecords);
+                    toolCallRecords, route);
         }
 
         private AgentResult failed(ErrorCode code) {
-            return AgentResult.failed(code, usage, toolCallRecords.size(), iterations, llmCalls, toolCallRecords);
+            return AgentResult.failed(code, usage, toolCallRecords.size(), iterations, llmCalls, toolCallRecords,
+                    route);
         }
     }
 

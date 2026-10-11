@@ -184,6 +184,21 @@ class AnthropicLlmClientTest {
     }
 
     @Test
+    void asksTheModelTheRequestNamesAndOtherwiseItsOwn() throws Exception {
+        replies.add(Reply.stream(ANSWER_STREAM));
+        replies.add(Reply.stream(ANSWER_STREAM));
+        var client = client(server.getAddress().getPort());
+        var named = new LlmRequest("system", List.of(Message.user("hi")), List.of(), Duration.ofSeconds(60),
+                "claude-sonnet-4-5");
+
+        client.complete(named, deltas::add);
+        client.complete(REQUEST, deltas::add);
+
+        assertThat(JSON.readTree(bodies.get(0)).get("model").asText()).isEqualTo("claude-sonnet-4-5");
+        assertThat(JSON.readTree(bodies.get(1)).get("model").asText()).isEqualTo("test-model");
+    }
+
+    @Test
     void marksTheLastToolTheSystemPromptAndTheLastMessageBlockForCachingByDefault() throws Exception {
         replies.add(Reply.stream(ANSWER_STREAM));
 

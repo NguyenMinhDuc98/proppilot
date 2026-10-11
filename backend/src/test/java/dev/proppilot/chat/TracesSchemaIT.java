@@ -14,7 +14,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
 
-/** What V7 added: the columns of a run and the tables of its calls. Rolled back after each test. */
+/** What V7 and V8 added: the columns of a run and the tables of its calls. Rolled back after each test. */
 @Transactional
 class TracesSchemaIT extends PostgresIntegrationTest {
 
@@ -70,7 +70,8 @@ class TracesSchemaIT extends PostgresIntegrationTest {
 
         assertThat(run).containsEntry("input_tokens", 100).containsEntry("cache_read_tokens", 0)
                 .containsEntry("cache_write_tokens", 0).containsEntry("guardrail_violations", 0)
-                .containsEntry("routed_reason", null).containsEntry("guardrail_status", null);
+                .containsEntry("routed_reason", null).containsEntry("guardrail_status", null)
+                .containsEntry("complexity_score", null).containsEntry("complexity_rules", null);
     }
 
     @Test
@@ -83,6 +84,13 @@ class TracesSchemaIT extends PostgresIntegrationTest {
                 .containsEntry("routed_reason", "character varying(24), null")
                 .containsEntry("guardrail_status", "character varying(24), null")
                 .containsEntry("guardrail_violations", "integer, not null, default 0");
+    }
+
+    @Test
+    void chatRunsGainsTheScoreOfTheQuestionAndTheRulesItMet() {
+        assertThat(columns("chat_runs"))
+                .containsEntry("complexity_score", "integer, null")
+                .containsEntry("complexity_rules", "character varying(255), null");
     }
 
     @Test

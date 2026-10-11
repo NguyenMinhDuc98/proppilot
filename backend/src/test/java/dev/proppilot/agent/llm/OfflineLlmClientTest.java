@@ -22,6 +22,19 @@ class OfflineLlmClientTest {
         return response.toolUses().get(0);
     }
 
+    @Test
+    void ignoresTheModelARequestNamesBecauseItHasOnlyOne() {
+        var messages = List.of(Message.user("Show me unit B-101"));
+
+        var plain = client.complete(new LlmRequest("", messages, List.of(), TIMEOUT), s -> { });
+        var named = client.complete(new LlmRequest("", messages, List.of(), TIMEOUT, "claude-sonnet-4-5"), s -> { });
+
+        assertThat(named.toolUses()).hasSize(1);
+        assertThat(named.toolUses().get(0).name()).isEqualTo(plain.toolUses().get(0).name());
+        assertThat(named.toolUses().get(0).input()).isEqualTo(plain.toolUses().get(0).input());
+        assertThat(client.model()).isEqualTo("rule-based");
+    }
+
     @ParameterizedTest
     @CsvSource(delimiter = '|', textBlock = """
             Which units in Riyadh are vacant right now? | search_units

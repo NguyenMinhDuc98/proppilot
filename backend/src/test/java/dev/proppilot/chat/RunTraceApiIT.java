@@ -21,6 +21,10 @@ import dev.proppilot.agent.LlmCallRecord;
 import dev.proppilot.agent.ToolCallRecord;
 import dev.proppilot.agent.llm.StopReason;
 import dev.proppilot.agent.llm.Usage;
+import dev.proppilot.agent.routing.Complexity;
+import dev.proppilot.agent.routing.ComplexityRule;
+import dev.proppilot.agent.routing.ModelRoute;
+import dev.proppilot.agent.routing.RoutedReason;
 import dev.proppilot.rag.CorpusIntegrationTest;
 import dev.proppilot.trace.NoopRunTracer;
 import dev.proppilot.trace.RunTracer;
@@ -57,7 +61,7 @@ class RunTraceApiIT extends CorpusIntegrationTest {
 
     private UUID save(AgentResult result) {
         var id = UUID.randomUUID();
-        runs.save(new ChatRun(id, T0.plusSeconds(2), QUESTION, "anthropic", MODEL, result, List.of("search_units"), 1400,
+        runs.save(new ChatRun(id, T0.plusSeconds(2), QUESTION, "anthropic", result, List.of("search_units"), 1400,
                 new BigDecimal("0.001234")));
         return id;
     }
@@ -70,7 +74,7 @@ class RunTraceApiIT extends CorpusIntegrationTest {
         var tool = new ToolCallRecord(1, "search_units", "{\"city\":\"Riyadh\"}", "3 units found", false, 25,
                 T0.plusMillis(650));
         return new AgentResult(ANSWER, new Usage(1240, 205, 3000, 3000), 1, 2, AgentResult.Status.OK, null,
-                List.of(first, second), List.of(tool));
+                List.of(first, second), List.of(tool), ModelRoute.byDefault(MODEL));
     }
 
     @Test
@@ -85,7 +89,8 @@ class RunTraceApiIT extends CorpusIntegrationTest {
                 .andExpect(jsonPath("$.status").value("OK"))
                 .andExpect(jsonPath("$.provider").value("anthropic"))
                 .andExpect(jsonPath("$.model").value(MODEL))
-                .andExpect(jsonPath("$.routedReason").value(nullValue()))
+                .andExpect(jsonPath("$.routedReason").value("DEFAULT"))
+                .andExpect(jsonPath("$.complexity").value(nullValue()))
                 .andExpect(jsonPath("$.guardrail.status").value(nullValue()))
                 .andExpect(jsonPath("$.guardrail.violations").value(0))
                 .andExpect(jsonPath("$.totals.inputTokens").value(1240))
@@ -148,12 +153,39 @@ class RunTraceApiIT extends CorpusIntegrationTest {
     }
 
     @Test
+    void aRunStoredBeforeRoutingHasNoReasonAndNoScore() throws Exception {
+        var id = save(aRunThatSearchedOnceWithTheCache());
+        jdbc.update("update chat_runs set routed_reason = null where id = ?", id);
+
+        mvc.perform(get("/api/runs/{id}/trace", id))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.routedReason").value(nullValue()))
+                .andExpect(jsonPath("$.complexity").value(nullValue()));
+    }
+
+    @Test
+    void showsTheScoreOfTheQuestionAndTheRulesItMetWithoutTheQuestion() throws Exception {
+        var route = new ModelRoute(MODEL, RoutedReason.COMPLEX, new Complexity(
+                List.of(ComplexityRule.SEVERAL_DATA_AREAS, ComplexityRule.SEQUENCING_WORD)));
+        var id = save(new AgentResult(ANSWER, new Usage(100, 20), 0, 1, AgentResult.Status.OK, null, List.of(), List.of(),
+                route));
+
+        mvc.perform(get("/api/runs/{id}/trace", id))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.routedReason").value("COMPLEX"))
+                .andExpect(jsonPath("$.complexity.score").value(3))
+                .andExpect(jsonPath("$.complexity.rules[0]").value("SEVERAL_DATA_AREAS"))
+                .andExpect(jsonPath("$.complexity.rules[1]").value("SEQUENCING_WORD"))
+                .andExpect(content().string(not(containsString("private question marker"))));
+    }
+
+    @Test
     void neverCarriesTheWordsOfTheQuestionThatTheToolsWereAsked() throws Exception {
         var tool = new ToolCallRecord(1, "search_lease_documents",
                 "{\"query\":\"private question marker: who owes rent in B-12?\",\"unit_code\":\"B-12\"}",
                 "No tenant matches 'private question marker'", true, 25, T0.plusMillis(650));
         var id = save(new AgentResult(ANSWER, new Usage(100, 20), 1, 1, AgentResult.Status.OK, null, List.of(),
-                List.of(tool)));
+                List.of(tool), ModelRoute.byDefault(MODEL)));
 
         mvc.perform(get("/api/runs/{id}/trace", id))
                 .andExpect(status().isOk())
@@ -167,7 +199,7 @@ class RunTraceApiIT extends CorpusIntegrationTest {
         var failed = new LlmCallRecord(1, MODEL, 0, 0, 0, 0, 5200, null, LlmCallRecord.Outcome.ERROR,
                 ErrorCode.LLM_OVERLOADED, T0);
         var id = save(AgentResult.failed(ErrorCode.LLM_OVERLOADED, Usage.ZERO, 0, 1, List.of(failed),
-                List.of()));
+                List.of(), ModelRoute.byDefault(MODEL)));
 
         mvc.perform(get("/api/runs/{id}/trace", id))
                 .andExpect(status().isOk())

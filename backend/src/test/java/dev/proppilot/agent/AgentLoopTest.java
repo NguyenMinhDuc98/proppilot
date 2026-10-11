@@ -11,6 +11,8 @@ import dev.proppilot.agent.llm.LlmResponse;
 import dev.proppilot.agent.llm.Message;
 import dev.proppilot.agent.llm.StopReason;
 import dev.proppilot.agent.llm.Usage;
+import dev.proppilot.agent.routing.ComplexityAssessor;
+import dev.proppilot.agent.routing.ModelRouter;
 import dev.proppilot.agent.tools.ProposalTool;
 import dev.proppilot.agent.tools.Tool;
 import dev.proppilot.agent.tools.ToolContext;
@@ -19,6 +21,7 @@ import dev.proppilot.agent.tools.ToolRegistry;
 import dev.proppilot.agent.tools.ToolResult;
 import dev.proppilot.agent.tools.ToolSchema;
 import dev.proppilot.config.AgentProperties;
+import dev.proppilot.config.TestLlmProperties;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -88,7 +91,9 @@ class AgentLoopTest {
         var tools = new ArrayList<Tool>(List.of(echo));
         tools.addAll(List.of(more));
         var registry = new ToolRegistry(tools, mock(PlatformTransactionManager.class));
-        return new AgentLoop(llm, registry, new AgentProperties(maxIterations, 10, (int) RUN_TIMEOUT.toSeconds()), clock);
+        var router = new ModelRouter(llm, TestLlmProperties.defaults().build(), new ComplexityAssessor());
+        return new AgentLoop(llm, registry, new AgentProperties(maxIterations, 10, (int) RUN_TIMEOUT.toSeconds()), clock,
+                router);
     }
 
     @Test

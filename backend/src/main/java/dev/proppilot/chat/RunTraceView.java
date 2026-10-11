@@ -12,6 +12,9 @@ import java.util.UUID;
  * public. What the tools were asked and said is in the admin's detail of the run.
  *
  * @param model the model that gave the final answer
+ * @param routedReason why it was chosen: {@code DEFAULT}, {@code COMPLEX}, {@code GUARDRAIL_RETRY} or
+ *                     {@code FALLBACK}; null for a run recorded before routing
+ * @param complexity how the question scored, or null when it was not scored
  */
 public record RunTraceView(
         UUID runId,
@@ -20,10 +23,15 @@ public record RunTraceView(
         String provider,
         String model,
         String routedReason,
+        Complexity complexity,
         Guardrail guardrail,
         Totals totals,
         List<LlmCall> llmCalls,
         List<ToolCall> toolCalls) {
+
+    /** {@code rules} are the names of the {@code ComplexityRule}s the question met. */
+    public record Complexity(int score, List<String> rules) {
+    }
 
     public record Guardrail(String status, int violations) {
     }
@@ -48,8 +56,16 @@ public record RunTraceView(
         var totals = new Totals(run.getInputTokens(), run.getOutputTokens(), run.getCacheReadTokens(),
                 run.getCacheWriteTokens(), run.getCostUsd(), run.getLatencyMs(), run.getIterations(), run.getToolCalls());
         return new RunTraceView(run.getId(), run.getCreatedAt(), run.getStatus().name(), run.getProvider(),
-                run.getModel(), run.getRoutedReason(),
+                run.getModel(), run.getRoutedReason(), complexity(run),
                 new Guardrail(run.getGuardrailStatus(), run.getGuardrailViolations()), totals, llmCalls, toolCalls);
+    }
+
+    private static Complexity complexity(ChatRun run) {
+        if (run.getComplexityScore() == null) {
+            return null;
+        }
+        var rules = run.getComplexityRules().isEmpty() ? List.<String>of() : List.of(run.getComplexityRules().split(","));
+        return new Complexity(run.getComplexityScore(), rules);
     }
 
     private static LlmCall llmCall(RunLlmCall call) {

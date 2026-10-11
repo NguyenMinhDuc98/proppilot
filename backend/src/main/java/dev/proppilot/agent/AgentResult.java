@@ -1,6 +1,7 @@
 package dev.proppilot.agent;
 
 import dev.proppilot.agent.llm.Usage;
+import dev.proppilot.agent.routing.ModelRoute;
 import java.util.List;
 
 /**
@@ -9,9 +10,11 @@ import java.util.List;
  *
  * @param llmCallRecords every model call the run made, in order, whatever became of the run
  * @param toolCallRecords every tool execution of the run, in order
+ * @param route the model of the run's last call (or the one it was sent to, when it made none), why it went there and
+ *              how the question scored
  */
 public record AgentResult(String answer, Usage usage, int toolCalls, int iterations, Status status, ErrorCode errorCode,
-                          List<LlmCallRecord> llmCallRecords, List<ToolCallRecord> toolCallRecords) {
+                          List<LlmCallRecord> llmCallRecords, List<ToolCallRecord> toolCallRecords, ModelRoute route) {
 
     public enum Status { OK, ERROR, MAX_ITERATIONS, TRUNCATED, ABORTED }
 
@@ -20,18 +23,11 @@ public record AgentResult(String answer, Usage usage, int toolCalls, int iterati
         toolCallRecords = List.copyOf(toolCallRecords);
     }
 
-    public AgentResult(String answer, Usage usage, int toolCalls, int iterations, Status status, ErrorCode errorCode) {
-        this(answer, usage, toolCalls, iterations, status, errorCode, List.of(), List.of());
-    }
-
-    public AgentResult(String answer, Usage usage, int toolCalls, int iterations, Status status) {
-        this(answer, usage, toolCalls, iterations, status, null);
-    }
-
     /** A failed run; the answer is the generic message for the code, never provider text. */
     public static AgentResult failed(ErrorCode code, Usage usage, int toolCalls, int iterations,
-                                     List<LlmCallRecord> llmCallRecords, List<ToolCallRecord> toolCallRecords) {
+                                     List<LlmCallRecord> llmCallRecords, List<ToolCallRecord> toolCallRecords,
+                                     ModelRoute route) {
         return new AgentResult(code.message(), usage, toolCalls, iterations, Status.ERROR, code, llmCallRecords,
-                toolCallRecords);
+                toolCallRecords, route);
     }
 }

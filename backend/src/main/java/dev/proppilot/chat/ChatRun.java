@@ -15,13 +15,15 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.BatchSize;
 
 /**
  * Usage record of one question: tokens, tool calls, latency and estimated cost, with the trace of the model calls and
- * tool executions it took. Saving a run saves its trace in the same transaction.
+ * tool executions it took and the model that answered, and why it was chosen. Saving a run saves its trace in the same
+ * transaction.
  */
 @Entity
 @Table(name = "chat_runs")
@@ -44,8 +46,12 @@ public class ChatRun {
     private int iterations;
     private long latencyMs;
     private BigDecimal costUsd;
-    /** Why the question went to the model it did, or null. */
+    /** Why the question went to the model it did, or null for a run recorded before routing. */
     private String routedReason;
+    /** How the question scored when its model was chosen, or null when it was not scored. */
+    private Integer complexityScore;
+    /** The names of the rules the question met, comma separated; null with the score. */
+    private String complexityRules;
     /** What the grounding guardrail concluded about the answer, or null when it did not check it. */
     private String guardrailStatus;
     private int guardrailViolations;
@@ -70,13 +76,19 @@ public class ChatRun {
     @OrderBy("sequence")
     private List<RunToolCall> toolCallRows;
 
-    public ChatRun(UUID id, Instant createdAt, String question, String provider, String model, AgentResult result,
+    public ChatRun(UUID id, Instant createdAt, String question, String provider, AgentResult result,
                    List<String> toolNames, long latencyMs, BigDecimal costUsd) {
         this.id = id;
         this.createdAt = createdAt;
         this.question = question;
         this.provider = provider;
-        this.model = model;
+        this.model = result.route().model();
+        this.routedReason = result.route().reason().name();
+        var complexity = result.route().complexity();
+        if (complexity != null) {
+            this.complexityScore = complexity.score();
+            this.complexityRules = complexity.rules().stream().map(Enum::name).collect(Collectors.joining(","));
+        }
         this.inputTokens = result.usage().inputTokens();
         this.outputTokens = result.usage().outputTokens();
         this.cacheReadTokens = result.usage().cacheReadTokens();

@@ -131,7 +131,7 @@ public class AnthropicLlmClient implements LlmClient {
 
     ObjectNode buildBody(LlmRequest request) {
         var body = json.createObjectNode();
-        body.put("model", props.model());
+        body.put("model", request.model() != null ? request.model() : props.model());
         body.put("max_tokens", props.maxTokens());
         body.put("stream", true);
         body.put("system", request.system());

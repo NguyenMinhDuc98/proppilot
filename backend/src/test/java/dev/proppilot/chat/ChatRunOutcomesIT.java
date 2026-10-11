@@ -286,6 +286,21 @@ class ChatRunOutcomesIT extends PostgresIntegrationTest {
     }
 
     @Test
+    void withNoLargerModelTheDoneEventSaysTheDefaultModelAnsweredAndNothingWasScored() throws Exception {
+        llm.thenText("There are 150 units.");
+
+        var sse = chat("done: default model");
+
+        assertThat(sse).contains("\"model\":\"test\"").contains("\"routedReason\":\"DEFAULT\"");
+        var run = recordedRun("done: default model");
+        assertThat(run.getRoutedReason()).isEqualTo("DEFAULT");
+        assertThat(run.getComplexityScore()).isNull();
+        traceOf("done: default model")
+                .andExpect(jsonPath("$.routedReason").value("DEFAULT"))
+                .andExpect(jsonPath("$.complexity").value(nullValue()));
+    }
+
+    @Test
     void storesTheFailedCallOfAFailedRun() throws Exception {
         llm.thenFail(ErrorCode.LLM_OVERLOADED, "Claude API returned 529: upstream-secret");
 
