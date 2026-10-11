@@ -11,6 +11,10 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @param cacheWriteMultiplier the price of a token written to the prompt cache, as a multiple of the input price
  * @param cacheReadMultiplier the price of a token read from the prompt cache, as a multiple of the input price
  * @param promptCaching whether requests mark the prompt prefix for the API to cache
+ * @param largeModel the larger model that takes the questions routed to it and the calls that fall back to it; blank
+ *                   when there is none, which switches both off
+ * @param largePriceInputPerMtok the input price of the larger model, USD per million tokens
+ * @param largePriceOutputPerMtok the output price of the larger model, USD per million tokens
  */
 @ConfigurationProperties(prefix = "proppilot.llm")
 public record LlmProperties(
@@ -26,5 +30,17 @@ public record LlmProperties(
         BigDecimal priceOutputPerMtok,
         BigDecimal cacheWriteMultiplier,
         BigDecimal cacheReadMultiplier,
-        boolean promptCaching) {
+        boolean promptCaching,
+        String largeModel,
+        BigDecimal largePriceInputPerMtok,
+        BigDecimal largePriceOutputPerMtok) {
+
+    public LlmProperties {
+        largeModel = largeModel == null ? "" : largeModel.strip();
+    }
+
+    /** Whether there is a second model to send questions to: one is named, and it is not the default model. */
+    public boolean hasLargeModel() {
+        return !largeModel.isEmpty() && !largeModel.equals(model);
+    }
 }

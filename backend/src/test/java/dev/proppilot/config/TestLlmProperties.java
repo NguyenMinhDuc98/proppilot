@@ -16,6 +16,9 @@ public final class TestLlmProperties {
     private BigDecimal cacheWriteMultiplier = new BigDecimal("1.25");
     private BigDecimal cacheReadMultiplier = new BigDecimal("0.10");
     private boolean promptCaching = true;
+    private String largeModel = "";
+    private BigDecimal largePriceInputPerMtok = new BigDecimal("3.00");
+    private BigDecimal largePriceOutputPerMtok = new BigDecimal("15.00");
 
     private TestLlmProperties() {
     }
@@ -67,9 +70,20 @@ public final class TestLlmProperties {
         return this;
     }
 
+    public TestLlmProperties largeModel(String largeModel) {
+        this.largeModel = largeModel;
+        return this;
+    }
+
+    public TestLlmProperties largePrices(String input, String output) {
+        this.largePriceInputPerMtok = new BigDecimal(input);
+        this.largePriceOutputPerMtok = new BigDecimal(output);
+        return this;
+    }
+
     public LlmProperties build() {
         return new LlmProperties(provider, "test-api-key-123", model, apiUrl, 1024, timeoutSeconds, maxRetries,
                 retryBaseDelayMs, priceInputPerMtok, priceOutputPerMtok, cacheWriteMultiplier, cacheReadMultiplier,
-                promptCaching);
+                promptCaching, largeModel, largePriceInputPerMtok, largePriceOutputPerMtok);
     }
 }

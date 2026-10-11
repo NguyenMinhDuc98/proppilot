@@ -2,6 +2,7 @@ package dev.proppilot.agent;
 
 import dev.proppilot.agent.llm.LlmResponse;
 import dev.proppilot.agent.llm.StopReason;
+import dev.proppilot.agent.llm.Usage;
 import java.time.Instant;
 
 /**
@@ -17,6 +18,10 @@ public record LlmCallRecord(int sequence, String model, int inputTokens, int out
                             ErrorCode errorCode, Instant startedAt) {
 
     public enum Outcome { OK, ERROR }
+
+    public Usage usage() {
+        return new Usage(inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens);
+    }
 
     static LlmCallRecord succeeded(int sequence, String model, Instant startedAt, long latencyMs, LlmResponse response) {
         var usage = response.usage();

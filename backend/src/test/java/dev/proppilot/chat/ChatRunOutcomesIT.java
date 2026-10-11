@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.proppilot.PostgresIntegrationTest;
 import dev.proppilot.agent.AgentResult;
 import dev.proppilot.agent.ErrorCode;
@@ -265,6 +266,23 @@ class ChatRunOutcomesIT extends PostgresIntegrationTest {
         assertThat(recordedRun("trace: cache cost").getCostUsd()).isEqualByComparingTo("0.000803");
         assertThat(sse).contains("\"costUsd\":0.000803");
         traceOf("trace: cache cost").andExpect(jsonPath("$.totals.costUsd").value(0.000803));
+    }
+
+    @Test
+    void theDoneEventAndTheStoredRunCarryTheCacheTokenTotalsOfEveryCall() throws Exception {
+        var occupancy = new ContentBlock.ToolUse("t1", "get_occupancy_summary", new ObjectMapper().createObjectNode());
+        llm.then(new LlmResponse(List.of(occupancy), StopReason.TOOL_USE, new Usage(50, 10, 0, 3000)))
+                .then(new LlmResponse(List.of(new ContentBlock.Text("There are 150 units.")), StopReason.END_TURN,
+                        new Usage(40, 20, 3000, 120)));
+
+        var sse = chat("done: cache totals");
+
+        assertThat(sse).contains("\"model\":\"test\"").contains("\"inputTokens\":90").contains("\"outputTokens\":30")
+                .contains("\"cacheReadTokens\":3000").contains("\"cacheWriteTokens\":3120");
+        var run = recordedRun("done: cache totals");
+        assertThat(run.getCacheReadTokens()).isEqualTo(3000);
+        assertThat(run.getCacheWriteTokens()).isEqualTo(3120);
+        assertThat(run.getModel()).isEqualTo("test");
     }
 
     @Test

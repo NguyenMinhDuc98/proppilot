@@ -40,7 +40,8 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
  *       expiresAt, ...}), right after the {@code tool_result} of the tool that proposed it</li>
  *   <li>{@code token}: {@code {text}}, a piece of the answer</li>
  *   <li>{@code error}: {@code {message, code}}</li>
- *   <li>{@code done}: the usage and outcome of the run</li>
+ *   <li>{@code done}: the usage and outcome of the run: status, provider, model, the token counts (input, output and
+ *       the cache read and write tokens), tool calls, iterations, latency and cost</li>
  * </ul>
  *
  * <p>A turn is a question, or the confirmation of a decision a person took on a proposal ({@code actionId}). A
@@ -147,13 +148,13 @@ public class ChatService {
         if (result.status() == AgentResult.Status.ERROR) {
             client.send("error", ErrorPayload.of(result.errorCode()));
         }
-        client.send("done", DonePayload.of(run, llm));
+        client.send("done", DonePayload.of(run));
         client.complete();
     }
 
     /** The tool names are those of the trace, which fit their column whatever name the model chose. */
     private ChatRun record(AgentRequest turn, AgentResult result, long latencyMs) {
-        var cost = costs.cost(result.usage(), llm.billable());
+        var cost = costs.cost(result.llmCallRecords(), llm.billable());
         var toolNames = result.toolCallRecords().stream().map(ToolCallRecord::toolName).toList();
         var run = new ChatRun(turn.runId(), Instant.now(clock), truncate(turn.message()), llm.provider(), llm.model(),
                 result, toolNames, latencyMs, cost);
@@ -217,12 +218,15 @@ public class ChatService {
         }
     }
 
+    /** The token counts are the run's totals; {@code inputTokens} are the uncached ones, apart from the cache tokens. */
     record DonePayload(UUID runId, String status, String provider, String model, int inputTokens, int outputTokens,
-                       int toolCalls, int iterations, long latencyMs, BigDecimal costUsd, boolean truncated) {
+                       int cacheReadTokens, int cacheWriteTokens, int toolCalls, int iterations, long latencyMs,
+                       BigDecimal costUsd, boolean truncated) {
 
-        static DonePayload of(ChatRun run, LlmClient llm) {
-            return new DonePayload(run.getId(), run.getStatus().name(), llm.provider(), llm.model(), run.getInputTokens(),
-                    run.getOutputTokens(), run.getToolCalls(), run.getIterations(), run.getLatencyMs(), run.getCostUsd(),
+        static DonePayload of(ChatRun run) {
+            return new DonePayload(run.getId(), run.getStatus().name(), run.getProvider(), run.getModel(),
+                    run.getInputTokens(), run.getOutputTokens(), run.getCacheReadTokens(), run.getCacheWriteTokens(),
+                    run.getToolCalls(), run.getIterations(), run.getLatencyMs(), run.getCostUsd(),
                     run.getStatus() == AgentResult.Status.TRUNCATED);
         }
     }
