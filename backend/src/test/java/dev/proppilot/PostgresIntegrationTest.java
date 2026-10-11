@@ -14,7 +14,7 @@ import org.testcontainers.utility.DockerImageName;
 @SpringBootTest
 public abstract class PostgresIntegrationTest {
 
-    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>(
+    public static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>(
             DockerImageName.parse("pgvector/pgvector:pg16").asCompatibleSubstituteFor("postgres"));
 
     static {
