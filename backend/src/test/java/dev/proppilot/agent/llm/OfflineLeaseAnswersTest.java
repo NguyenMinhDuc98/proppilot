@@ -104,6 +104,32 @@ class OfflineLeaseAnswersTest {
     }
 
     @Test
+    void namesTheSearchedLeasesThatNoReturnedClauseIsFrom() {
+        var crowdedOut = ENGLISH_RESULT.replace("\"units\":[\"A-504\",\"B-203\"]",
+                "\"units\":[\"A-504\",\"B-101\",\"C-105\",\"B-203\"]");
+
+        var english = answerAfter("Compare the late fee for A-504, B-101, C-105 and B-203", "search_lease_documents",
+                crowdedOut);
+        var arabic = answerAfter("قارن غرامة التأخير للوحدات A-504 وB-101 وC-105 وB-203", "search_lease_documents",
+                crowdedOut);
+
+        assertThat(english.text()).contains("No lease document is on file for unit(s): A-105.\n\n"
+                + "No matching clause was returned for unit(s): B-101, C-105.");
+        assertThat(arabic.text()).endsWith("لم يُعرض بند مطابق للوحدات: B-101، C-105.");
+    }
+
+    @Test
+    void doesNotListTheLeasesOfAnEmptyAnswerOneByOne() {
+        var none = """
+                {"notice":"quoted data","query":"qzx","retrieval":"keyword",
+                 "scope":{"allDocuments":false,"units":["A-504","B-203"]},"results":[]}""";
+
+        var response = answerAfter("What is the late fee in A-504 and B-203?", "search_lease_documents", none);
+
+        assertThat(response.text()).isEqualTo("I found no clause in the lease documents that answers this.");
+    }
+
+    @Test
     void saysThatEveryDocumentWasSearchedWhenNoUnitOrTenantWasKnown() {
         var everything = ARABIC_RESULT.replace("\"allDocuments\":false,\"units\":[\"A-504\"]",
                 "\"allDocuments\":true,\"units\":[]");

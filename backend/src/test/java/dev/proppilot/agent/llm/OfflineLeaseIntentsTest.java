@@ -301,6 +301,20 @@ class OfflineLeaseIntentsTest {
     }
 
     @Test
+    void theClausesAskedForGrowWithTheNumberOfLeasesSoEachOneHasRoomForOne() {
+        var five = route("Compare the late fee of units A-101, A-102, A-103, A-104 and A-105");
+        var many = route("Compare the late fee of units A-101, A-102, A-103, A-104, A-105, B-101, B-102, B-103, "
+                + "B-104 and B-105");
+        var twoTerms = route("Compare the late fee and the notice period of units A-101, A-102, A-103 and A-104");
+        var few = route("Compare the late fee of units A-101 and A-102");
+
+        assertThat(five.input().get("top_k").asInt()).isEqualTo(5);
+        assertThat(many.input().get("top_k").asInt()).as("no more than the tool returns").isEqualTo(8);
+        assertThat(twoTerms.input().get("top_k").asInt()).isEqualTo(8);
+        assertThat(few.input().has("top_k")).as("four is the default").isFalse();
+    }
+
+    @Test
     void aQuestionAboutTheLeaseAsAWholeSearchesWithTheQuestionItself() {
         var call = route("What does the lease agreement for unit A-504 say?");
 

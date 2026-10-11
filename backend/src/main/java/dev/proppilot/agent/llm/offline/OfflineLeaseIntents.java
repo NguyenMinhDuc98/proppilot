@@ -173,7 +173,9 @@ final class OfflineLeaseIntents {
             tenantName(question).ifPresent(name -> call.put("tenant_name", name));
         }
         boolean oneLease = units.size() == 1 || call.args().has("tenant_name");
-        int clauses = Math.min(MOST_CLAUSES, (oneLease ? 2 : DEFAULT_CLAUSES) * Math.max(1, topics.size()));
+        // Room for a clause of each named lease, which the best clauses of a few leases would otherwise crowd out.
+        int perTopic = oneLease ? 2 : Math.max(DEFAULT_CLAUSES, units.size());
+        int clauses = Math.min(MOST_CLAUSES, perTopic * Math.max(1, topics.size()));
         if (clauses != DEFAULT_CLAUSES) {
             call.args().put("top_k", clauses);
         }

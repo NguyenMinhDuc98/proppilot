@@ -6,6 +6,7 @@ import dev.proppilot.agent.MoneyText;
 import dev.proppilot.rag.CitationRefs;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 
 /** Formats a tool result as a short answer in English or Arabic. Every figure comes straight from the tool JSON. */
 final class OfflineAnswerWriter {
@@ -124,7 +125,25 @@ final class OfflineAnswerWriter {
             sb.append("\n\n").append(ar ? "لا توجد وثيقة عقد محفوظة للوحدات: " + String.join("، ", units) + "."
                     : "No lease document is on file for unit(s): " + String.join(", ", units) + ".");
         }
+        var withoutClause = searchedUnitsWithoutClause(d);
+        if (!results.isEmpty() && !withoutClause.isEmpty()) {
+            sb.append("\n\n").append(ar ? "لم يُعرض بند مطابق للوحدات: " + String.join("، ", withoutClause) + "."
+                    : "No matching clause was returned for unit(s): " + String.join(", ", withoutClause) + ".");
+        }
         return sb.toString();
+    }
+
+    /** The searched leases that none of the returned clauses is from, which the answer would otherwise leave out. */
+    private static List<String> searchedUnitsWithoutClause(JsonNode d) {
+        var shown = new HashSet<String>();
+        d.path("results").forEach(clause -> shown.add(clause.path("unit").asText()));
+        var missing = new ArrayList<String>();
+        d.path("scope").path("units").forEach(unit -> {
+            if (!shown.contains(unit.asText())) {
+                missing.add(unit.asText());
+            }
+        });
+        return missing;
     }
 
     /**
