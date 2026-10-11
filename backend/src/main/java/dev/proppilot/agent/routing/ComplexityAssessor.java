@@ -52,11 +52,14 @@ public class ComplexityAssessor {
         var folded = Folding.fold(Folding.withoutDiacritics(question.substring(0,
                 Math.min(question.length(), READ_CHARACTERS))));
         var words = QuestionWords.of(folded);
-        var topics = LeaseTopic.in(folded);
-        boolean window = ExpiryWindow.days(folded).isPresent();
+        var command = WriteCommand.in(words);
+        // A command is a change to make, in words of its own: what it says is no question about the data.
+        var asked = command.map(span -> words.without(span.from(), span.to())).orElse(words);
+        var topics = LeaseTopic.in(asked.text());
+        boolean window = ExpiryWindow.days(asked.text()).isPresent();
 
         var rules = new ArrayList<ComplexityRule>();
-        if (dataAreas(words, topics, window) >= 2) {
+        if (dataAreas(command.isPresent(), asked, topics, window) >= 2) {
             rules.add(ComplexityRule.SEVERAL_DATA_AREAS);
         }
         if (window && !topics.isEmpty()) {
@@ -78,17 +81,25 @@ public class ComplexityAssessor {
     }
 
     /**
-     * How many of the data areas the question touches. A command's own words do not count for another area ("record a
-     * payment" is a change, not a question about payments), and neither do the words of a late fee clause ("late",
-     * "payment").
+     * How many of the data areas the question touches. A command is one area and its own words count for no other
+     * ("record a payment" is a change, not a question about payments, and "log a repair" is no question about the
+     * maintenance clause), so {@code asked} is the question without them.
      */
-    private static int dataAreas(QuestionWords words, List<LeaseTopic> topics, boolean window) {
-        var command = WriteCommand.in(words);
-        var rest = command.map(span -> words.without(span.from(), span.to())).orElse(words);
-        boolean lateFeeClause = topics.contains(LeaseTopic.LATE_FEE);
-        boolean expiring = rest.has(EXPIRING) || (rest.has(ENDING) && (window || rest.has(SOON)));
-        return count(command.isPresent(), !lateFeeClause && rest.has(PAYMENTS), rest.has(OCCUPANCY), expiring,
-                !topics.isEmpty() || rest.has(CLAUSES), rest.has(MESSAGES));
+    private static int dataAreas(boolean command, QuestionWords asked, List<LeaseTopic> topics, boolean window) {
+        boolean expiring = asked.has(EXPIRING) || (asked.has(ENDING) && (window || asked.has(SOON)));
+        return count(command, mentionsPayments(asked, topics), asked.has(OCCUPANCY), expiring,
+                !topics.isEmpty() || asked.has(CLAUSES), asked.has(MESSAGES));
+    }
+
+    /**
+     * Whether a word is about payments or rent that is owed. The words of a late fee clause ("late", "payment" in "the
+     * late payment fee") name the clause and do not count, but a question that is also about who is late on rent does.
+     */
+    private static boolean mentionsPayments(QuestionWords asked, List<LeaseTopic> topics) {
+        if (!topics.contains(LeaseTopic.LATE_FEE)) {
+            return asked.has(PAYMENTS);
+        }
+        return QuestionWords.of(LeaseTopic.LATE_FEE.without(asked.text())).has(PAYMENTS);
     }
 
     private static int count(boolean... areas) {

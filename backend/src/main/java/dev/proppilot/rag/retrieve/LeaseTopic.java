@@ -25,9 +25,9 @@ public enum LeaseTopic {
 
     LATE_FEE("late payment fee penalty", "غرامة التأخير",
             words("(?:late|overdue|delayed)(?: payment| rent)? (?:fees?|charges?|penalt(?:y|ies)|clause|terms)"
-                            + "|grace period|(?:fees?|charges?) for (?:late|overdue|delayed)",
-                    "غرام[هات] (?:ال)?(?:تاخير|تاخر)|رسوم (?:ال)?تاخير|(?:ال)?تاخير في (?:ال)?(?:سداد|دفع)"
-                            + "|عقوبه (?:ال)?تاخير|مهله (?:ال)?سماح"),
+                            + "|grace period|(?:fees?|charges?) for (?:late|overdue|delayed)(?: payments?| rent)?",
+                    "(?:غرام[هات] (?:ال)?(?:تاخير|تاخر)|رسوم (?:ال)?تاخير|عقوبه (?:ال)?تاخير)"
+                            + "(?: في (?:ال)?(?:سداد|دفع))?|(?:ال)?تاخير في (?:ال)?(?:سداد|دفع)|مهله (?:ال)?سماح"),
             Words.NONE,
             words("penalt(?:y|ies)", "غرام[هات]")),
 
@@ -141,6 +141,14 @@ public enum LeaseTopic {
     /** The words to search the lease documents for, in both languages. */
     public String query() {
         return query;
+    }
+
+    /**
+     * The folded text without the words that name this topic wherever they stand: what is left is what the question
+     * says besides it, so that "the late payment fee" is not also read as a word about payments.
+     */
+    public String without(String folded) {
+        return always.matcher(folded).replaceAll(" ");
     }
 
     /** The topics a folded question is about, in the order of this enum. */

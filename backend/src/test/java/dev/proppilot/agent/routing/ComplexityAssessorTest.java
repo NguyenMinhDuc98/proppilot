@@ -7,6 +7,7 @@ import static dev.proppilot.agent.routing.ComplexityRule.SEQUENCING_WORD;
 import static dev.proppilot.agent.routing.ComplexityRule.SEVERAL_DATA_AREAS;
 import static dev.proppilot.agent.routing.ComplexityRule.WINDOW_WITH_LEASE_TERM;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -111,6 +112,57 @@ class ComplexityAssessorTest {
         assertThat(assess("Add up the payments of A-504").rules()).isEmpty();
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "Log a repair for unit A-101",
+            "Send a notice to A-101",
+            "Raise a repair request for A-101",
+            "Log a repair for unit A-101, the kitchen tap has been leaking since Sunday morning and the water has "
+                    + "reached the floor of the flat below, so please mark it urgent and send someone today"})
+    void aCommandWhoseObjectIsALeaseTopicWordIsOneAreaNotTwo(String question) {
+        assertThat(assess(question).rules()).doesNotContain(SEVERAL_DATA_AREAS);
+    }
+
+    @Test
+    void aLongRepairCommandScoresOnlyItsLengthAndStaysBelowTheThreshold() {
+        var complexity = assess("Log a repair for unit A-101: the kitchen tap has been leaking since Sunday morning and "
+                + "the water has reached the floor of the flat below, so please mark it urgent");
+
+        assertThat(complexity.rules()).containsExactly(LONG_QUESTION);
+    }
+
+    @Test
+    void aCommandAndAQuestionAboutTheSameTopicAreStillTwoAreas() {
+        var complexity = assess("Log a repair for A-101 and what does the lease say about repairs?");
+
+        assertThat(complexity.rules()).containsExactly(SEVERAL_DATA_AREAS);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "Which tenants owe rent and what is the late payment fee in their lease?",
+            "Who is overdue on rent and what is the late fee in the lease?",
+            "Who has unpaid invoices and what does the lease say about the grace period?",
+            "Who is late on rent and what is the late fee in the lease?",
+            "Which tenants are behind on payments and what penalty for late payment does the lease set?",
+            "من المستأجرون المتأخرون في الدفع وما غرامة التأخير في العقد؟",
+            "من لديه فواتير غير مدفوعة وما غرامة التأخير في عقده؟"})
+    void overdueRentAndALateFeeClauseAreTwoAreas(String question) {
+        assertThat(assess(question).rules()).containsExactly(SEVERAL_DATA_AREAS);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "What is the late fee in the lease for unit A-203?",
+            "What is the late payment fee in the lease for unit A-203?",
+            "What is the overdue payment fee in the lease for unit A-203?",
+            "What are the fees for late payment in the lease of A-203?",
+            "What late payment penalties does the lease of A-203 set?",
+            "ما غرامة التأخير في السداد في عقد الوحدة A-203؟"})
+    void theWordsOfALateFeeClauseAloneAreOneArea(String question) {
+        assertThat(assess(question).rules()).isEmpty();
+    }
+
     @Test
     void aWindowWithALeaseTermScoresFourWithTheAreasItReachesInto() {
         var english = assess("Which leases end in the next 60 days and require 90 days notice?");
@@ -203,6 +255,17 @@ class ComplexityAssessorTest {
         assertThat(complexity.rules()).containsExactly(SEVERAL_DATA_AREAS, WINDOW_WITH_LEASE_TERM, LONG_QUESTION,
                 SEQUENCING_WORD, MANY_UNITS, LONG_CONVERSATION);
         assertThat(complexity.score()).isEqualTo(2 + 2 + 1 + 1 + 1 + 1);
+    }
+
+    @Test
+    void aDigitOutsideTheBasicMultilingualPlaneIsNoNumberAndNoFailure() {
+        var mathematicalFive = new String(Character.toChars(0x1D7D3));
+        var adlamOne = new String(Character.toChars(0x1E951));
+
+        assertThatCode(() -> assess("which leases end within " + mathematicalFive + " days")).doesNotThrowAnyException();
+        assertThatCode(() -> assess("ما العقود التي تنتهي خلال " + adlamOne + " يوما")).doesNotThrowAnyException();
+        assertThat(assess("which leases end within " + mathematicalFive + " days and require 90 days notice").rules())
+                .doesNotContain(WINDOW_WITH_LEASE_TERM);
     }
 
     @Test

@@ -16,29 +16,49 @@ final class QuestionWords {
     private static final Set<String> NOT_AND = Set.of("وحدات", "وحده", "وديعه", "وثيقه", "وثائق", "وقت", "واحد", "وضع",
             "وصف");
 
-    private final List<String> words;
+    /** A word, and where it stands in the text it was read from. */
+    private record Word(String text, int start, int end) {
+    }
 
-    private QuestionWords(List<String> words) {
+    private final String text;
+    private final List<Word> words;
+
+    private QuestionWords(String text, List<Word> words) {
+        this.text = text;
         this.words = words;
     }
 
     static QuestionWords of(String folded) {
-        var words = new ArrayList<String>();
-        var word = new StringBuilder();
-        for (int i = 0; i < folded.length() && words.size() < MOST_WORDS; ) {
-            int codePoint = folded.codePointAt(i);
-            i += Character.charCount(codePoint);
-            if (Character.isLetterOrDigit(codePoint)) {
-                word.appendCodePoint(codePoint);
-            } else if (!word.isEmpty()) {
-                words.add(word.toString());
-                word.setLength(0);
+        var words = new ArrayList<Word>();
+        int start = nextWordFrom(folded, 0);
+        while (start >= 0 && words.size() < MOST_WORDS) {
+            int end = endOfWordAt(folded, start);
+            words.add(new Word(folded.substring(start, end), start, end));
+            start = nextWordFrom(folded, end);
+        }
+        return new QuestionWords(folded, words);
+    }
+
+    private static int nextWordFrom(String text, int from) {
+        for (int i = from; i < text.length(); i += Character.charCount(text.codePointAt(i))) {
+            if (Character.isLetterOrDigit(text.codePointAt(i))) {
+                return i;
             }
         }
-        if (!word.isEmpty() && words.size() < MOST_WORDS) {
-            words.add(word.toString());
+        return -1;
+    }
+
+    private static int endOfWordAt(String text, int start) {
+        int i = start;
+        while (i < text.length() && Character.isLetterOrDigit(text.codePointAt(i))) {
+            i += Character.charCount(text.codePointAt(i));
         }
-        return new QuestionWords(words);
+        return i;
+    }
+
+    /** The text the words were read from, so that a check that needs the text can read the same question. */
+    String text() {
+        return text;
     }
 
     int size() {
@@ -46,7 +66,7 @@ final class QuestionWords {
     }
 
     String get(int index) {
-        return words.get(index);
+        return words.get(index).text();
     }
 
     boolean has(Vocabulary vocabulary) {
@@ -56,7 +76,7 @@ final class QuestionWords {
     /** The position of the first word of the vocabulary, or -1. */
     int indexOf(Vocabulary vocabulary) {
         for (int i = 0; i < words.size(); i++) {
-            if (vocabulary.matches(words.get(i))) {
+            if (vocabulary.matches(words.get(i).text())) {
                 return i;
             }
         }
@@ -65,7 +85,7 @@ final class QuestionWords {
 
     boolean hasInOrder(String first, String second) {
         for (int i = 0; i + 1 < words.size(); i++) {
-            if (words.get(i).equals(first) && words.get(i + 1).equals(second)) {
+            if (words.get(i).text().equals(first) && words.get(i + 1).text().equals(second)) {
                 return true;
             }
         }
@@ -78,7 +98,7 @@ final class QuestionWords {
      */
     int andAfter(int index) {
         for (int i = index + 1; i < words.size(); i++) {
-            var word = words.get(i);
+            var word = words.get(i).text();
             boolean attached = word.startsWith("و") && word.length() > 3 && !NOT_AND.contains(word);
             if (word.equals("and") || word.equals("و") || attached) {
                 return i;
@@ -87,10 +107,11 @@ final class QuestionWords {
         return words.size();
     }
 
-    /** These words without the ones from {@code from} up to, and not including, {@code to}. */
+    /**
+     * The question without the words from {@code from} up to, and not including, {@code to}. What stands around them,
+     * the punctuation too, is left as it was written.
+     */
     QuestionWords without(int from, int to) {
-        var kept = new ArrayList<>(words.subList(0, from));
-        kept.addAll(words.subList(to, words.size()));
-        return new QuestionWords(kept);
+        return of(text.substring(0, words.get(from).start()) + " " + text.substring(words.get(to - 1).end()));
     }
 }
