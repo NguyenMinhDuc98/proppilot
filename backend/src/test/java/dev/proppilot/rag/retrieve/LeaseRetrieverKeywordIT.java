@@ -57,6 +57,40 @@ class LeaseRetrieverKeywordIT extends CorpusIntegrationTest {
     }
 
     @Test
+    void anEnglishQuestionFindsTheNoticeClauseOfAnArabicDocumentByItsTopic() {
+        long lease = leaseOf("ar");
+
+        var result = retriever.retrieve("What notice period does the lease require?", Set.of(lease));
+
+        assertThat(result.retrieval()).isEqualTo(RetrievalMode.KEYWORD);
+        assertThat(result.chunks()).isNotEmpty();
+        var top = result.chunks().get(0);
+        assertThat(top.language()).isEqualTo(DocumentLanguage.AR);
+        assertThat(top.ref()).isEqualTo(refOf(lease, "مدة الإشعار"));
+    }
+
+    @Test
+    void anArabicQuestionFindsTheNoticeClauseOfAnEnglishDocumentByItsTopic() {
+        long lease = leaseOf("en");
+
+        var result = retriever.retrieve("ما هي مدة الإشعار في العقد؟", Set.of(lease));
+
+        assertThat(result.chunks()).isNotEmpty();
+        var top = result.chunks().get(0);
+        assertThat(top.language()).isEqualTo(DocumentLanguage.EN);
+        assertThat(top.ref()).isEqualTo(refOf(lease, "Notice period"));
+    }
+
+    @Test
+    void aQuestionWithNoLeaseTopicIsSearchedAsItWasAsked() {
+        long lease = leaseOf("ar");
+
+        var result = retriever.retrieve("completely unrelated wording about nothing", Set.of(lease));
+
+        assertThat(result.chunks()).isEmpty();
+    }
+
+    @Test
     void anEnglishWordIsFoundByItsStem() {
         long lease = leaseOf("en");
 
@@ -72,8 +106,10 @@ class LeaseRetrieverKeywordIT extends CorpusIntegrationTest {
 
         var result = retriever.retrieve("terminaton", Set.of(lease));
 
-        assertThat(result.chunks().stream().map(RetrievedChunk::ref)).contains(refOf(lease, "Early termination"));
-        assertThat(result.chunks()).allSatisfy(chunk -> assertThat(chunk.matchedBy()).containsExactly(TRIGRAM));
+        var termination = result.chunks().stream()
+                .filter(chunk -> chunk.ref().equals(refOf(lease, "Early termination"))).findFirst();
+        assertThat(termination).as("the clause the misspelled word means").isPresent();
+        assertThat(termination.get().matchedBy()).contains(TRIGRAM);
     }
 
     @Test

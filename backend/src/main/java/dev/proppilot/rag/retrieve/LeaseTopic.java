@@ -1,4 +1,4 @@
-package dev.proppilot.agent.llm.offline;
+package dev.proppilot.rag.retrieve;
 
 import java.util.Arrays;
 import java.util.List;
@@ -21,7 +21,7 @@ import java.util.regex.Pattern;
  * "تكاليف"); its ending is left open for suffixes. Every pattern is a plain alternation: the gaps between two words
  * are bounded and nothing repeats a group.
  */
-enum LeaseTopic {
+public enum LeaseTopic {
 
     LATE_FEE("late payment fee penalty", "غرامة التأخير",
             words("(?:late|overdue|delayed)(?: payment| rent)? (?:fees?|charges?|penalt(?:y|ies)|clause|terms)"
@@ -139,12 +139,12 @@ enum LeaseTopic {
     }
 
     /** The words to search the lease documents for, in both languages. */
-    String query() {
+    public String query() {
         return query;
     }
 
     /** The topics a folded question is about, in the order of this enum. */
-    static List<LeaseTopic> in(String folded) {
+    public static List<LeaseTopic> in(String folded) {
         boolean aboutALease = LEASE_WORD.matcher(folded).find();
         var named = Arrays.stream(values())
                 .filter(topic -> topic.always.matcher(folded).find()

@@ -358,6 +358,21 @@ class SearchLeaseDocumentsToolIT extends FakeEmbeddingIntegrationTest {
     }
 
     @Test
+    void anEnglishQueryByKeywordsFindsTheClauseOfEveryLeaseWhateverLanguageItsDocumentIsIn() throws Exception {
+        var leases = List.of(document("en", 0), document("ar", 0), document("en", 1), document("ar", 1),
+                document("ar", 2));
+        fake.enabled(false);
+        var units = leases.stream().map(Document::unit).toArray(String[]::new);
+
+        var d = data(call("{\"query\":\"notice period\",\"unit_codes\":[" + unitCodeList(units) + "]}"));
+
+        assertThat(d.get("retrieval").asText()).isEqualTo("keyword");
+        var refs = new ArrayList<String>();
+        d.get("results").forEach(clause -> refs.add(clause.get("ref").asText()));
+        assertThat(refs).containsExactlyInAnyOrderElementsOf(leases.stream().map(lease -> lease.code() + "#4").toList());
+    }
+
+    @Test
     void topKDefaultsToFourAndAcceptsOneToEight() throws Exception {
         assertThat(data(call("{\"query\":\"notice\"}")).get("results")).hasSize(4);
         assertThat(data(call("{\"query\":\"notice\",\"top_k\":1}")).get("results")).hasSize(1);

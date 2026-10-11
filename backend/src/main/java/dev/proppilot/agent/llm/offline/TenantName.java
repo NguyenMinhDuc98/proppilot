@@ -1,5 +1,6 @@
 package dev.proppilot.agent.llm.offline;
 
+import dev.proppilot.rag.retrieve.LeaseTopic;
 import dev.proppilot.text.Folding;
 import java.util.ArrayList;
 import java.util.List;

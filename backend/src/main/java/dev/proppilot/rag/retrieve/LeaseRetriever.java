@@ -3,6 +3,7 @@ package dev.proppilot.rag.retrieve;
 import dev.proppilot.rag.DocumentLanguage;
 import dev.proppilot.rag.embed.VectorLiteral;
 import dev.proppilot.rag.retrieve.ReciprocalRankFusion.Fused;
+import dev.proppilot.text.Folding;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
@@ -136,25 +137,49 @@ public class LeaseRetriever {
             return new RetrievalResult(RetrievalMode.KEYWORD, List.of());
         }
         var terms = QueryTerms.of(text);
+        var fullTextTerms = QueryTerms.of(withTopicWords(text));
         // Before the transaction: no database connection is held while a provider is waited for.
         var embedding = queryEmbedder.embed(text);
+        var queries = new Queries(terms, fullTextTerms);
         var scopes = eachLease && leaseIds != null
                 ? leaseIds.stream().map(id -> Scope.of(Set.of(id))).toList()
                 : List.of(Scope.of(leaseIds));
         int limit = Math.clamp(topK, 1, MAX_TOP_K);
         var chunks = readOnly.execute(status -> scopes.stream()
-                .flatMap(scope -> searchIn(scope, terms, embedding, limit).stream()).toList());
+                .flatMap(scope -> searchIn(scope, queries, embedding, limit).stream()).toList());
         return new RetrievalResult(RetrievalMode.of(embedding.isPresent()), chunks);
     }
 
-    private List<RetrievedChunk> searchIn(Scope scope, QueryTerms terms, Optional<float[]> embedding, int limit) {
+    /**
+     * The words of a question twice: as asked, which trigram similarity is measured for (words of the other language
+     * would only dilute it), and with the words of its topics in both languages, for full text search.
+     */
+    private record Queries(QueryTerms asked, QueryTerms fullText) {
+    }
+
+    private List<RetrievedChunk> searchIn(Scope scope, Queries queries, Optional<float[]> embedding, int limit) {
         var lists = new EnumMap<CandidateList, List<Candidate>>(CandidateList.class);
         embedding.ifPresent(vector -> lists.put(CandidateList.VECTOR, byEmbedding(vector, scope)));
-        if (!terms.isEmpty()) {
-            lists.put(CandidateList.FULL_TEXT, byFullText(terms, scope));
-            lists.put(CandidateList.TRIGRAM, byTrigrams(terms, scope));
+        if (!queries.fullText().isEmpty()) {
+            lists.put(CandidateList.FULL_TEXT, byFullText(queries.fullText(), scope));
+        }
+        if (!queries.asked().isEmpty()) {
+            lists.put(CandidateList.TRIGRAM, byTrigrams(queries.asked(), scope));
         }
         return chunks(ReciprocalRankFusion.fuse(lists, limit));
+    }
+
+    /**
+     * The question with the words of the lease topics it is about, in both languages. A lease document is written in
+     * its tenant's language, so a question in English finds an Arabic clause by keywords only through them; the
+     * embedding of the question needs no such help and is made from the question as it was asked.
+     */
+    private static String withTopicWords(String question) {
+        var topics = LeaseTopic.in(Folding.fold(Folding.withoutDiacritics(question)));
+        if (topics.isEmpty()) {
+            return question;
+        }
+        return question + " " + topics.stream().map(LeaseTopic::query).collect(Collectors.joining(" "));
     }
 
     private static String capped(String question) {

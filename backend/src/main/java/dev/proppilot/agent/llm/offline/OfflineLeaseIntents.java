@@ -2,6 +2,7 @@ package dev.proppilot.agent.llm.offline;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.proppilot.rag.retrieve.LeaseTopic;
 import dev.proppilot.text.Folding;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
