@@ -180,24 +180,6 @@ class LeaseDocumentIngestionIT extends CorpusIntegrationTest {
         assertThat(count("select count(*) from lease_documents")).isEqualTo(30);
     }
 
-    @Test
-    void theSeederStartsInTheBackgroundOnlyWhenTheApplicationIsConfiguredTo() {
-        var repository = mock(LeaseFactsRepository.class);
-        var asked = new CountDownLatch(1);
-        when(repository.firstActive(30)).thenAnswer(call -> {
-            asked.countDown();
-            return List.of();
-        });
-        var ingestor = new LeaseDocumentIngestor(new LeasePdfGenerator(), extractor, chunker, store);
-
-        new LeaseDocumentSeeder(new RagProperties(30, false), repository, ingestor, store).seedWhenReady();
-        // A thread that was started by mistake asks within moments, and waiting is the only way to see it not ask.
-        assertThat(awaited(asked, 500)).as("a disabled seeder does not start").isFalse();
-
-        new LeaseDocumentSeeder(new RagProperties(30, true), repository, ingestor, store).seedWhenReady();
-        assertThat(awaited(asked, 30_000)).as("an enabled seeder starts").isTrue();
-    }
-
     private static boolean ingestAfter(CyclicBarrier barrier, LeaseDocumentIngestor ingestor, LeaseFacts facts,
                                        LeaseTerms terms) {
         try {
@@ -211,15 +193,6 @@ class LeaseDocumentIngestionIT extends CorpusIntegrationTest {
     private LeaseDocumentSeeder seederFor(LeasePdfGenerator generator, int count) {
         return new LeaseDocumentSeeder(new RagProperties(count, false), leases,
                 new LeaseDocumentIngestor(generator, extractor, chunker, store), store);
-    }
-
-    private static boolean awaited(CountDownLatch latch, long millis) {
-        try {
-            return latch.await(millis, TimeUnit.MILLISECONDS);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return false;
-        }
     }
 
     private List<Map<String, Object>> rows(String sql) {

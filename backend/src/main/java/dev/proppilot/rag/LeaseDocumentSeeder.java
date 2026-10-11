@@ -1,19 +1,16 @@
 package dev.proppilot.rag;
 
 import dev.proppilot.config.RagProperties;
-import jakarta.annotation.PreDestroy;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.boot.context.event.ApplicationReadyEvent;
-import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
 /**
  * Writes the lease documents the database is missing: one for each of the first {@code documentCount} active leases,
- * by lease id. It runs in a background thread once the application is ready, so the HTTP port never waits for it, and
- * it can run again at any time: a lease whose document is already stored by this version of the generator is left
- * alone, so a restart changes nothing.
+ * by lease id. It can run again at any time: a lease whose document is already stored by this version of the generator
+ * is left alone, so a restart changes nothing. {@link CorpusIndexer} runs it in the background when the application is
+ * ready, and on demand.
  *
  * <p>A document that cannot be written is logged and skipped; the seeder never throws. Only one run goes at a time.
  */
@@ -42,7 +39,6 @@ public class LeaseDocumentSeeder {
     private final LeaseDocumentIngestor ingestor;
     private final LeaseDocumentStore store;
     private final AtomicBoolean running = new AtomicBoolean();
-    private volatile Thread worker;
 
     public LeaseDocumentSeeder(RagProperties properties, LeaseFactsRepository leases, LeaseDocumentIngestor ingestor,
                                LeaseDocumentStore store) {
@@ -50,17 +46,6 @@ public class LeaseDocumentSeeder {
         this.leases = leases;
         this.ingestor = ingestor;
         this.store = store;
-    }
-
-    @EventListener(ApplicationReadyEvent.class)
-    void seedWhenReady() {
-        if (properties.seedOnStartup()) {
-            seedInBackground();
-        }
-    }
-
-    public void seedInBackground() {
-        worker = Thread.ofVirtual().name("lease-document-seeder").start(this::seed);
     }
 
     /**
@@ -84,14 +69,6 @@ public class LeaseDocumentSeeder {
 
     public CorpusCounts counts() {
         return store.counts();
-    }
-
-    @PreDestroy
-    void stop() {
-        var thread = worker;
-        if (thread != null) {
-            thread.interrupt();
-        }
     }
 
     private Result seedAll() {
