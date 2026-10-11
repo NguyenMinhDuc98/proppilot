@@ -124,6 +124,14 @@ The other 54 pass offline. Some of those passes are weaker than the case reads: 
 
 A full run asks one question per case and run, plus the earlier questions of the follow-up cases, plus one judge call for each case that is judged. It spends real money: the cost per question is printed at the end of the run, and I have not measured it for the current prompt. Keep `runs` low until you have seen one run. Large-model prices default to Sonnet's (`LLM_LARGE_PRICE_*`); the cost shown is wrong for another model unless the backend is given its prices.
 
+## Measuring prompt caching, routing and the guardrail
+
+None of the three has been measured on real Claude. The manual full run is how to do it; each question needs two runs with one input changed.
+
+- **Prompt caching.** Start `Evals (full)` twice with the same `runs`, `only`, `guardrail_mode` and `large_model`, once with `prompt_caching` true and once with false. In each job summary read `Cache read / write tokens` (the second run's must be 0 / 0), `Average cost per question` and the latency. If the first run's cache tokens are 0 / 0 too, the prompt prefix is below the model's minimum cacheable length: Anthropic then accepts the request, bills it in full and says nothing, so that is a result and not a bug. The harness sends its questions much closer together than visitors do, so a hit rate here is an upper bound for a demo with a few questions an hour.
+- **Routing.** Give `large_model` and compare with a run without it. Read the routing reasons and, in the per-model table, the questions each model answered with its pass rate, cost and latency: which cases the complexity rules sent to the larger model, and whether it passed them more often.
+- **The guardrail.** Read `Answers the guardrail flagged` and the flagged cases, and open their runs on the admin page (`/admin/traces`, filter `Flagged answers only`) to see the values. A flagged answer that is correct (a rounded or derived figure) is a false positive of the check, not of the model. A run with `guardrail_mode` `retry` shows how many flagged answers became clean (`RETRIED_OK`) and what the second call cost.
+
 ## Against a deployment
 
 The read, lease, multi-tool, multi-turn, ambiguous, out-of-scope, injection and hallucination cases only read. The write cases leave `PROPOSED` actions on the Activity page of the backend they run against, where every visitor of a public deployment sees them, and use that day's proposals. Every request counts against the deployment's daily question cap, which real visitors share: `--runs 3` of 64 cases is about 200 questions. Prefer a local stack, or call `POST /api/admin/reset` first and use `--delay-ms 7000`.
