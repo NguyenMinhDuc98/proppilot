@@ -3,6 +3,10 @@ package dev.proppilot.agent.llm.offline;
 import com.fasterxml.jackson.databind.JsonNode;
 import dev.proppilot.agent.DecisionNotice;
 import dev.proppilot.agent.MoneyText;
+import dev.proppilot.rag.CitationRefs;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.regex.Matcher;
 
 /** Formats a tool result as a short answer in English or Arabic. Every figure comes straight from the tool JSON. */
 final class OfflineAnswerWriter {
@@ -19,8 +23,25 @@ final class OfflineAnswerWriter {
             case "get_payment_history" -> paymentHistory(data, arabic);
             case "draft_tenant_message" -> draft(data, arabic);
             case "record_payment", "create_maintenance_request", "send_tenant_reminder" -> proposed(data, arabic);
+            case "search_lease_documents" -> leaseClauses(data, arabic);
+            case "find_expiring_leases" -> expiringLeases(data, arabic);
             default -> data.toString();
         };
+    }
+
+    /**
+     * A line under the clauses of a question that listed leases and then searched their documents, when the search
+     * covered fewer leases than the list holds. Empty when it covered them all.
+     */
+    static String searchedFewer(JsonNode listed, JsonNode searched, boolean arabic) {
+        int covered = searched.path("scope").path("units").size() + searched.path("noDocumentFor").size();
+        int total = listed.path("totalLeases").asInt();
+        if (covered >= total) {
+            return "";
+        }
+        return arabic
+                ? "اقتصر البحث على أول " + covered + " عقود تنتهي من أصل " + total + "."
+                : "I searched only the " + covered + " leases that end first, out of " + total + ".";
     }
 
     /** Confirms a decision a person took on a proposal; the server wrote the notice. */
@@ -67,10 +88,102 @@ final class OfflineAnswerWriter {
     static String help(boolean arabic) {
         return arabic
                 ? "لم أفهم سؤالك. جرّب مثلاً: «ما الوحدات الشاغرة في الرياض؟» أو «من المستأجرون المتأخرون أكثر من 30 يومًا؟» "
-                  + "أو «ملخص الإشغال للمبنى A» أو «صغ رسالة تذكير للوحدة A-203» أو «سجّل دفعة بمبلغ 2000 للوحدة A-203»."
+                  + "أو «ملخص الإشغال للمبنى A» أو «صغ رسالة تذكير للوحدة A-203» "
+                  + "أو «سجّل دفعة بمبلغ 2000 للوحدة A-203» أو «ما غرامة التأخير في عقد الوحدة A-203؟» "
+                  + "أو «ما العقود التي تنتهي خلال 60 يومًا؟»."
                 : "I did not understand that. Try: \"Which units in Riyadh are vacant?\", \"Who is more than 30 days late?\", "
-                  + "\"Occupancy for building A\", \"Draft a rent reminder for unit A-203\" or "
-                  + "\"Record a payment of 2000 for unit A-203\".";
+                  + "\"Occupancy for building A\", \"Draft a rent reminder for unit A-203\", "
+                  + "\"Record a payment of 2000 for unit A-203\", "
+                  + "\"What is the late fee in the lease for unit A-203?\" or \"Which leases end in the next 60 days?\".";
+    }
+
+    private static String leaseClauses(JsonNode d, boolean ar) {
+        var results = d.path("results");
+        var sb = new StringBuilder();
+        if (results.isEmpty()) {
+            sb.append(ar ? "لم أجد في وثائق العقود بندًا يجيب عن هذا السؤال."
+                    : "I found no clause in the lease documents that answers this.");
+        } else {
+            var documents = new HashSet<String>();
+            results.forEach(clause -> documents.add(clause.path("document").asText()));
+            sb.append(ar
+                    ? "عدد البنود المطابقة: " + results.size() + " من " + documents.size() + " وثيقة عقد:"
+                    : results.size() + " matching clause(s) from " + documents.size() + " lease document(s):");
+            for (var clause : results) {
+                sb.append("\n\n").append(quoted(clause.path("text").asText()))
+                        .append("\n\n").append(source(clause, ar));
+            }
+        }
+        var withoutDocument = d.path("noDocumentFor");
+        if (!withoutDocument.isEmpty()) {
+            var units = new ArrayList<String>();
+            withoutDocument.forEach(unit -> units.add(unit.asText()));
+            sb.append("\n\n").append(ar ? "لا توجد وثيقة عقد محفوظة للوحدات: " + String.join("، ", units) + "."
+                    : "No lease document is on file for unit(s): " + String.join(", ", units) + ".");
+        }
+        return sb.toString();
+    }
+
+    /**
+     * A clause as a blockquote, its heading in bold so a number does not read as a list. A citation marker inside the
+     * quoted text is turned into plain brackets: only the marker the writer adds is one.
+     */
+    private static String quoted(String text) {
+        var plain = CitationRefs.MARKER.matcher(text).replaceAll(
+                found -> Matcher.quoteReplacement("(" + found.group(1) + "#" + found.group(2)
+                        + (found.group(3) == null ? "" : found.group(3)) + ")"));
+        var lines = plain.strip().split("\\R");
+        var quote = new StringBuilder();
+        for (int i = 0; i < lines.length; i++) {
+            var line = lines[i].strip();
+            if (i > 0) {
+                quote.append('\n');
+            }
+            quote.append(line.isEmpty() ? ">" : "> " + (i == 0 && lines.length > 1 ? "**" + line + "**" : line));
+        }
+        return quote.toString();
+    }
+
+    private static String source(JsonNode clause, boolean ar) {
+        var marker = CitationRefs.marker(clause.path("ref").asText());
+        var unit = clause.path("unit").asText();
+        var tenant = clause.path("tenant").path(ar ? "ar" : "en").asText();
+        var document = clause.path("document").asText();
+        int page = clause.path("page").asInt();
+        return ar
+                ? marker + " من الوحدة " + unit + " (" + tenant + ")، وثيقة العقد " + document + "، صفحة " + page + "."
+                : marker + " From unit " + unit + " (" + tenant + "), lease document " + document + ", page " + page
+                  + ".";
+    }
+
+    private static String expiringLeases(JsonNode d, boolean ar) {
+        int total = d.path("totalLeases").asInt();
+        int days = d.path("withinDays").asInt();
+        if (total == 0) {
+            return ar ? "لا يوجد عقد ساري ينتهي خلال " + days + " يومًا القادمة."
+                    : "No active lease ends within the next " + days + " days.";
+        }
+        var sb = new StringBuilder(ar
+                ? "عدد العقود التي تنتهي خلال " + days + " يومًا القادمة: " + total + "."
+                : total + " lease(s) end within the next " + days + " days.");
+        sb.append("\n\n").append(ar
+                ? "| الوحدة | المستأجر | تاريخ الانتهاء | الأيام المتبقية | الإيجار (ريال/شهر) | وثيقة العقد |"
+                  + "\n|---|---|---|---|---|---|"
+                : "| Unit | Tenant | Ends | Days left | Rent (SAR/mo) | Lease document |\n|---|---|---|---|---|---|");
+        for (var lease : d.path("leases")) {
+            sb.append("\n| ").append(lease.path("unitCode").asText())
+                    .append(" | ").append(lease.path(ar ? "tenantNameAr" : "tenantNameEn").asText())
+                    .append(" | ").append(lease.path("endDate").asText())
+                    .append(" | ").append(lease.path("daysLeft").asInt())
+                    .append(" | ").append(money(lease.path("monthlyRent")))
+                    .append(" | ").append(lease.path("hasLeaseDocument").asBoolean() ? (ar ? "نعم" : "Yes")
+                            : (ar ? "لا" : "No")).append(" |");
+        }
+        if (total > d.path("shown").asInt()) {
+            sb.append(ar ? "\n\nعُرضت أول " + d.path("shown").asInt() + " فقط." : "\n\nShowing the first "
+                    + d.path("shown").asInt() + ".");
+        }
+        return sb.toString();
     }
 
     private static String searchUnits(JsonNode d, boolean ar) {

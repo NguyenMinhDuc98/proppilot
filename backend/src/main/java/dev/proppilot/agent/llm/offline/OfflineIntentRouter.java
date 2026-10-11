@@ -1,5 +1,6 @@
 package dev.proppilot.agent.llm.offline;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.util.Map;
@@ -10,7 +11,9 @@ import java.util.regex.Pattern;
 /**
  * Keyword-based stand-in for the model's tool selection (English and Arabic).
  * Maps a question to at most one tool call; returns empty when it does not understand. A command to change something
- * is checked first, because its words ("reminder", "payment") also appear in the read questions.
+ * is checked first, because its words ("reminder", "payment") also appear in the read questions. A request to draft a
+ * message comes next and a question about what a lease says after it, because "renewal" and "notice" are also what a
+ * draft is about; both go before the questions about payments, which share words such as "late" with the lease clauses.
  */
 final class OfflineIntentRouter {
 
@@ -35,10 +38,12 @@ final class OfflineIntentRouter {
 
     private final ObjectMapper json;
     private final OfflineWriteIntents writes;
+    private final OfflineLeaseIntents leases;
 
     OfflineIntentRouter(ObjectMapper json) {
         this.json = json;
         this.writes = new OfflineWriteIntents(json);
+        this.leases = new OfflineLeaseIntents(json);
     }
 
     Optional<Call> route(String question) {
@@ -52,6 +57,10 @@ final class OfflineIntentRouter {
 
         if (hasAny(q, "draft", "reminder", "write a message", "رسالة", "تذكير", "صياغة", "صيغ")) {
             return draft(question, q, unitCode);
+        }
+        var lease = leases.route(question);
+        if (lease.isPresent()) {
+            return lease;
         }
         if (hasAny(q, "payment history", "payments of", "payment record", "سجل الدفع", "سجل المدفوعات", "سجل")) {
             return unitCode == null ? Optional.empty() : Optional.of(call("get_payment_history").put("unit_code", unitCode));
@@ -75,6 +84,17 @@ final class OfflineIntentRouter {
             return Optional.of(searchUnits(question, q));
         }
         return Optional.empty();
+    }
+
+    /**
+     * The call that comes after another tool answered, for a question that needs two: the units of the leases that were
+     * listed as ending are searched for the lease term the question names. Empty when the answer is complete.
+     *
+     * @param tool the tool that answered last
+     * @param result what it returned, which is JSON
+     */
+    Optional<Call> followUp(String question, String tool, JsonNode result) {
+        return "find_expiring_leases".equals(tool) ? leases.followUp(question, result) : Optional.empty();
     }
 
     private Optional<Call> draft(String question, String q, String unitCode) {

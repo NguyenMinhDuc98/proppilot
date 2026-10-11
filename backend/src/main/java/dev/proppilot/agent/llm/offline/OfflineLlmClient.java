@@ -1,6 +1,7 @@
 package dev.proppilot.agent.llm.offline;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.proppilot.agent.DecisionNotice;
 import dev.proppilot.agent.llm.ContentBlock;
@@ -10,7 +11,9 @@ import dev.proppilot.agent.llm.LlmResponse;
 import dev.proppilot.agent.llm.Message;
 import dev.proppilot.agent.llm.StopReason;
 import dev.proppilot.agent.llm.Usage;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Consumer;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -18,8 +21,9 @@ import org.springframework.stereotype.Component;
 
 /**
  * Zero-cost stand-in for the model so the whole app (agent loop, tools, streaming, UI) works with no API key.
- * Turn 1 routes the question to a tool by keyword; turn 2 turns the tool result into a templated answer. A decision
- * notice from the server gets a short templated confirmation and no tool.
+ * Turn 1 routes the question to a tool by keyword; turn 2 turns the tool result into a templated answer. A question
+ * that needs two tools (leases that end soon, and what their leases say) has a second tool call before the answer.
+ * A decision notice from the server gets a short templated confirmation and no tool.
  */
 @Component
 @ConditionalOnProperty(name = "proppilot.llm.provider", havingValue = "offline", matchIfMissing = true)
@@ -48,7 +52,7 @@ public class OfflineLlmClient implements LlmClient {
             // The notice is in English whatever the user speaks, so the language is that of what they wrote before it.
             response = textResponse(OfflineAnswerWriter.decision(decision.get(), userWroteArabicBefore(messages)), onTextDelta);
         } else if (last.content().stream().anyMatch(ContentBlock.ToolResult.class::isInstance)) {
-            response = answerFromToolResults(messages, arabic, onTextDelta);
+            response = afterTools(messages, question, arabic, onTextDelta);
         } else {
             response = routeQuestion(question, arabic, onTextDelta);
         }
@@ -60,33 +64,92 @@ public class OfflineLlmClient implements LlmClient {
         if (call.isEmpty()) {
             return textResponse(OfflineAnswerWriter.help(arabic), onTextDelta);
         }
-        var use = new ContentBlock.ToolUse("offline-" + UUID.randomUUID(), call.get().tool(), call.get().args());
+        return toolUse(call.get());
+    }
+
+    private static LlmResponse toolUse(OfflineIntentRouter.Call call) {
+        var use = new ContentBlock.ToolUse("offline-" + UUID.randomUUID(), call.tool(), call.args());
         return new LlmResponse(List.of(use), StopReason.TOOL_USE, Usage.ZERO);
     }
 
-    private LlmResponse answerFromToolResults(List<Message> messages, boolean arabic, Consumer<String> onTextDelta) {
-        var results = messages.get(messages.size() - 1).content();
-        var toolUses = messages.get(messages.size() - 2).content();
-        var answer = new StringBuilder();
-        for (var block : results) {
-            if (!(block instanceof ContentBlock.ToolResult result)) {
-                continue;
-            }
+    /** What a tool answered to a call of this question. */
+    private record Outcome(String tool, ContentBlock.ToolResult result) {
+    }
+
+    /** Either the next tool the question needs, or the answer from everything the tools returned. */
+    private LlmResponse afterTools(List<Message> messages, String question, boolean arabic,
+                                   Consumer<String> onTextDelta) {
+        var outcomes = outcomesSinceQuestion(messages);
+        var next = followUp(question, outcomes);
+        if (next.isPresent()) {
+            return toolUse(next.get());
+        }
+        return textResponse(answerFrom(outcomes, arabic), onTextDelta);
+    }
+
+    private Optional<OfflineIntentRouter.Call> followUp(String question, List<Outcome> outcomes) {
+        var last = outcomes.get(outcomes.size() - 1);
+        if (last.result().error()) {
+            return Optional.empty();
+        }
+        try {
+            return router.followUp(question, last.tool(), json.readTree(last.result().content()));
+        } catch (JsonProcessingException e) {
+            return Optional.empty();
+        }
+    }
+
+    private String answerFrom(List<Outcome> outcomes, boolean arabic) {
+        var parts = new ArrayList<String>();
+        JsonNode listed = null;
+        JsonNode searched = null;
+        for (var outcome : outcomes) {
+            var result = outcome.result();
             if (result.error()) {
-                answer.append(OfflineAnswerWriter.error(result.content(), arabic));
+                parts.add(OfflineAnswerWriter.error(result.content(), arabic));
                 continue;
             }
-            var tool = toolUses.stream()
-                    .filter(ContentBlock.ToolUse.class::isInstance).map(ContentBlock.ToolUse.class::cast)
-                    .filter(use -> use.id().equals(result.toolUseId()))
-                    .map(ContentBlock.ToolUse::name).findFirst().orElse("unknown");
             try {
-                answer.append(OfflineAnswerWriter.write(tool, json.readTree(result.content()), arabic));
+                var data = json.readTree(result.content());
+                parts.add(OfflineAnswerWriter.write(outcome.tool(), data, arabic));
+                listed = "find_expiring_leases".equals(outcome.tool()) ? data : listed;
+                searched = "search_lease_documents".equals(outcome.tool()) ? data : searched;
             } catch (JsonProcessingException e) {
-                answer.append(OfflineAnswerWriter.error("unreadable tool result", arabic));
+                parts.add(OfflineAnswerWriter.error("unreadable tool result", arabic));
             }
         }
-        return textResponse(answer.toString(), onTextDelta);
+        if (listed != null && searched != null) {
+            var note = OfflineAnswerWriter.searchedFewer(listed, searched, arabic);
+            if (!note.isEmpty()) {
+                parts.add(note);
+            }
+        }
+        return String.join("\n\n", parts);
+    }
+
+    /** The tool calls of this question that have been answered, oldest first. */
+    private static List<Outcome> outcomesSinceQuestion(List<Message> messages) {
+        var outcomes = new ArrayList<Outcome>();
+        for (int i = messages.size() - 1; i >= 1 && hasToolResults(messages.get(i)); i -= 2) {
+            var uses = messages.get(i - 1).content();
+            var turn = new ArrayList<Outcome>();
+            for (var block : messages.get(i).content()) {
+                if (block instanceof ContentBlock.ToolResult result) {
+                    var tool = uses.stream()
+                            .filter(ContentBlock.ToolUse.class::isInstance).map(ContentBlock.ToolUse.class::cast)
+                            .filter(use -> use.id().equals(result.toolUseId()))
+                            .map(ContentBlock.ToolUse::name).findFirst().orElse("unknown");
+                    turn.add(new Outcome(tool, result));
+                }
+            }
+            outcomes.addAll(0, turn);
+        }
+        return outcomes;
+    }
+
+    private static boolean hasToolResults(Message message) {
+        return message.role() == Message.Role.USER
+                && message.content().stream().anyMatch(ContentBlock.ToolResult.class::isInstance);
     }
 
     private static LlmResponse textResponse(String text, Consumer<String> onTextDelta) {
