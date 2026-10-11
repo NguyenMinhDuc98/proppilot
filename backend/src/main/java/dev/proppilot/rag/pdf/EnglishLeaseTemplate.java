@@ -1,5 +1,7 @@
 package dev.proppilot.rag.pdf;
 
+import static dev.proppilot.rag.pdf.RootFormat.format;
+
 import dev.proppilot.agent.MoneyText;
 import dev.proppilot.rag.DocumentLanguage;
 import dev.proppilot.rag.LeaseFacts;
@@ -49,33 +51,33 @@ final class EnglishLeaseTemplate implements LeaseTemplate {
     private static List<LeaseText.Section> preamble(LeaseFacts f) {
         return List.of(
                 new LeaseText.Section("Parties", List.of(
-                        "Landlord: %s, acting through its property manager (the \"Landlord\").".formatted(LANDLORD),
-                        "Tenant: %s (the \"Tenant\").".formatted(f.tenantName()))),
+                        format("Landlord: %s, acting through its property manager (the \"Landlord\").", LANDLORD),
+                        format("Tenant: %s (the \"Tenant\").", f.tenantName()))),
                 new LeaseText.Section("The property", List.of(
-                        ("Unit %s on floor %d, a %d-bedroom apartment of %d sqm in %s, %s (the \"Property\").")
-                                .formatted(f.unitCode(), f.floor(), f.bedrooms(), f.areaSqm(), f.buildingName(),
-                                        f.address()))),
+                        format("Unit %s on floor %d, a %d-bedroom apartment of %d sqm in %s, %s (the \"Property\").",
+                                f.unitCode(), f.floor(), f.bedrooms(), f.areaSqm(), f.buildingName(),
+                                f.address()))),
                 new LeaseText.Section("Term and rent", List.of(
-                        "The lease starts on %s and ends on %s (the \"Term\")."
-                                .formatted(DATE.format(f.startDate()), DATE.format(f.endDate())),
-                        "The monthly rent is SAR %s, payable in advance on the first day of each month."
-                                .formatted(MoneyText.of(f.monthlyRent())),
+                        format("The lease starts on %s and ends on %s (the \"Term\").",
+                                DATE.format(f.startDate()), DATE.format(f.endDate())),
+                        format("The monthly rent is SAR %s, payable in advance on the first day of each month.",
+                                MoneyText.of(f.monthlyRent())),
                         "The parties agree as follows.")));
     }
 
     private static List<String> rent(LeaseFacts f) {
         return List.of(
-                ("The Tenant shall pay the monthly rent of SAR %s in advance, on or before the first day of each "
-                        + "month, by bank transfer to the account the Landlord names in writing.")
-                        .formatted(MoneyText.of(f.monthlyRent())),
+                format("The Tenant shall pay the monthly rent of SAR %s in advance, on or before the first day of each "
+                        + "month, by bank transfer to the account the Landlord names in writing.",
+                        MoneyText.of(f.monthlyRent())),
                 "A payment counts as made on the day it reaches the Landlord's account. The rent stays the same "
                         + "during the Term except as the clause on term and renewal allows.");
     }
 
     private static List<String> deposit(LeaseFacts f, LeaseTerms t) {
         return List.of(
-                "On signing, the Tenant pays a security deposit of %s of rent, which is SAR %s."
-                        .formatted(months(t.securityDepositMonths()), amount(f, t.securityDepositMonths())),
+                format("On signing, the Tenant pays a security deposit of %s of rent, which is SAR %s.",
+                        months(t.securityDepositMonths()), amount(f, t.securityDepositMonths())),
                 "The Landlord holds the deposit as security for the Tenant's obligations and pays no interest on it. "
                         + "The Landlord returns it within 30 days after the Tenant hands back the Property, less any "
                         + "unpaid rent and the cost of damage beyond normal wear.");
@@ -84,24 +86,24 @@ final class EnglishLeaseTemplate implements LeaseTemplate {
     private static List<String> renewal(LeaseTerms t) {
         var renewal = t.renewal();
         if (renewal.mode() == RenewalMode.AUTOMATIC_12_MONTHS) {
-            return List.of(("The lease runs for the Term stated at the top of this agreement. Unless one party gives "
-                    + "the other written notice of non-renewal at least %d days before the Term ends, the lease "
-                    + "renews automatically for a further 12 months. The rent for a renewal period may rise by no "
-                    + "more than %d%% of the previous rent.")
-                    .formatted(t.noticePeriodDays(), renewal.rentIncreaseCapPercent()));
+            return List.of(format("The lease runs for the Term stated at the top of this agreement. Unless one "
+                    + "party gives the other written notice of non-renewal at least %d days before the Term ends, "
+                    + "the lease renews automatically for a further 12 months. The rent for a renewal period may "
+                    + "rise by no more than %d%% of the previous rent.",
+                    t.noticePeriodDays(), renewal.rentIncreaseCapPercent()));
         }
-        return List.of(("The lease runs for the Term stated at the top of this agreement and does not renew "
+        return List.of(format("The lease runs for the Term stated at the top of this agreement and does not renew "
                 + "automatically. A renewal needs a new written agreement, and the Landlord shall make its renewal "
                 + "offer at least %d days before the Term ends. The rent offered for a renewal may not exceed the "
-                + "current rent by more than %d%%.")
-                .formatted(t.noticePeriodDays(), renewal.rentIncreaseCapPercent()));
+                + "current rent by more than %d%%.",
+                t.noticePeriodDays(), renewal.rentIncreaseCapPercent()));
     }
 
     private static List<String> notice(LeaseTerms t) {
-        return List.of(("A party that wants to end the lease at the end of the Term, or to propose changes to it, "
-                + "shall give the other party at least %d days' written notice. Notice is given by registered letter "
-                + "delivered to the Property or by e-mail to the address the receiving party has given in writing, "
-                + "and it counts from the day it is received.").formatted(t.noticePeriodDays()));
+        return List.of(format("A party that wants to end the lease at the end of the Term, or to propose changes "
+                + "to it, shall give the other party at least %d days' written notice. Notice is given by "
+                + "registered letter delivered to the Property or by e-mail to the address the receiving party has "
+                + "given in writing, and it counts from the day it is received.", t.noticePeriodDays()));
     }
 
     private static List<String> lateFee(LeaseFacts f, LeaseTerms t) {
@@ -109,22 +111,22 @@ final class EnglishLeaseTemplate implements LeaseTemplate {
         String first;
         if (fee.kind() == LateFeeKind.PERCENT_OF_RENT_PER_MONTH) {
             var sar = MoneyText.of(f.monthlyRent().multiply(BigDecimal.valueOf(fee.amount())).movePointLeft(2));
-            first = ("Rent that has not been received %d days after its due date carries a late fee of %d%% of the "
-                    + "monthly rent, which is SAR %s, for each month or part of a month it remains unpaid.")
-                    .formatted(fee.graceDays(), fee.amount(), sar);
+            first = format("Rent that has not been received %d days after its due date carries a late fee of %d%% "
+                    + "of the monthly rent, which is SAR %s, for each month or part of a month it remains unpaid.",
+                    fee.graceDays(), fee.amount(), sar);
         } else {
-            first = ("Rent that has not been received %d days after its due date carries a late fee of SAR %d for "
-                    + "each day it remains unpaid, counted from the end of that grace period.")
-                    .formatted(fee.graceDays(), fee.amount());
+            first = format("Rent that has not been received %d days after its due date carries a late fee of SAR "
+                    + "%d for each day it remains unpaid, counted from the end of that grace period.",
+                    fee.graceDays(), fee.amount());
         }
         return List.of(first, "The late fee does not limit the Landlord's other remedies for non-payment.");
     }
 
     private static List<String> maintenance(LeaseTerms t) {
         return List.of(
-                ("The Tenant pays for minor repairs and routine upkeep inside the Property, up to SAR %d for each "
-                        + "repair, such as light bulbs, tap washers, filters and door handles.")
-                        .formatted(t.minorRepairLimitSar()),
+                format("The Tenant pays for minor repairs and routine upkeep inside the Property, up to SAR %d for "
+                        + "each repair, such as light bulbs, tap washers, filters and door handles.",
+                        t.minorRepairLimitSar()),
                 "The Landlord pays for structural repairs and for major repairs of the building and its plumbing, "
                         + "electrical and air-conditioning systems, and for any repair above that amount unless the "
                         + "Tenant or a guest of the Tenant caused the damage. The Tenant shall report any defect to "
@@ -139,8 +141,9 @@ final class EnglishLeaseTemplate implements LeaseTemplate {
                     "The Landlord may withdraw its consent if the pet disturbs the neighbours or damages the "
                             + "Property.");
             case WITH_DEPOSIT -> List.of(
-                    ("The Tenant may keep a pet in the Property after paying an additional pet deposit of SAR %d.")
-                            .formatted(t.pets().depositSar()),
+                    format("The Tenant may keep a pet in the Property after paying an additional pet deposit of "
+                            + "SAR %d.",
+                            t.pets().depositSar()),
                     "The Landlord returns the pet deposit with the security deposit if the pet has caused no damage "
                             + "or nuisance. The Tenant answers for all damage and nuisance the pet causes.");
         };
@@ -149,9 +152,9 @@ final class EnglishLeaseTemplate implements LeaseTemplate {
     private static List<String> earlyTermination(LeaseFacts f, LeaseTerms t) {
         var early = t.earlyTermination();
         return List.of(
-                ("The Tenant may end the lease before the Term ends by giving the Landlord at least %d days' written "
-                        + "notice and paying an early termination fee of %s of rent, which is SAR %s.")
-                        .formatted(early.noticeDays(), months(early.feeMonths()), amount(f, early.feeMonths())),
+                format("The Tenant may end the lease before the Term ends by giving the Landlord at least %d days' "
+                        + "written notice and paying an early termination fee of %s of rent, which is SAR %s.",
+                        early.noticeDays(), months(early.feeMonths()), amount(f, early.feeMonths())),
                 "The lease then ends on the last day of the notice period, and rent stays payable until that day. "
                         + "The Landlord may end the lease early only for a serious breach by the Tenant that is not "
                         + "put right within 15 days of written notice.");
@@ -170,23 +173,24 @@ final class EnglishLeaseTemplate implements LeaseTemplate {
     }
 
     private static List<String> use(LeaseFacts f) {
-        return List.of(("The Property is let for residential use by the Tenant and the Tenant's family only. The "
+        return List.of(format("The Property is let for residential use by the Tenant and the Tenant's family only. The "
                 + "Tenant shall not run a business from the Property or allow more than %d persons to live in it. "
                 + "The Tenant shall keep the Property clean and in good order and shall follow the rules of the "
-                + "building.").formatted(Occupants.limit(f)));
+                + "building.", Occupants.limit(f)));
     }
 
     private static List<String> inspection(LeaseTerms t) {
-        return List.of(("The Landlord may enter the Property at reasonable hours to inspect it, to carry out repairs "
-                + "or to show it to a future tenant, after giving the Tenant at least %d hours' notice. In an "
-                + "emergency, such as a fire or a water leak, the Landlord may enter at once.")
-                .formatted(t.inspectionNoticeHours()));
+        return List.of(format("The Landlord may enter the Property at reasonable hours to inspect it, to carry out "
+                + "repairs or to show it to a future tenant, after giving the Tenant at least %d hours' notice. In "
+                + "an emergency, such as a fire or a water leak, the Landlord may enter at once.",
+                t.inspectionNoticeHours()));
     }
 
     private static List<String> governingLaw(LeaseFacts f) {
-        return List.of(("This agreement is governed by the laws of the Kingdom of Saudi Arabia. The parties shall "
-                + "first try to settle any dispute in good faith. If they cannot, the courts of %s have jurisdiction.")
-                .formatted(f.city()));
+        return List.of(format("This agreement is governed by the laws of the Kingdom of Saudi Arabia. The parties "
+                + "shall first try to settle any dispute in good faith. If they cannot, the courts of %s have "
+                + "jurisdiction.",
+                f.city()));
     }
 
     private static List<String> houseRules() {

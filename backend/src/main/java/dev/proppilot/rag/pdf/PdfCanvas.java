@@ -83,7 +83,7 @@ final class PdfCanvas implements AutoCloseable {
         stream.close();
         stream = null;
         for (int number = 1; number <= pages.size(); number++) {
-            var footer = footerFormat.formatted(number, pages.size());
+            var footer = RootFormat.format(footerFormat, number, pages.size());
             try (var footerStream = new PDPageContentStream(document, pages.get(number - 1),
                     PDPageContentStream.AppendMode.APPEND, true, true)) {
                 draw(footerStream, footer, regular, FOOTER_SIZE, Align.CENTER, FOOTER_BASELINE);

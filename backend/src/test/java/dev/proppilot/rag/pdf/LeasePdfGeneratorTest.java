@@ -8,6 +8,7 @@ import dev.proppilot.rag.LeaseFixtures;
 import dev.proppilot.rag.LeaseTerms;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Locale;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 
@@ -24,6 +25,27 @@ class LeasePdfGeneratorTest {
         var second = generator.generate(facts, LeaseTerms.of(facts.leaseId()));
 
         assertThat(first).isEqualTo(second);
+    }
+
+    @Test
+    void theDocumentIsTheSameOnAHostWhoseDefaultLocaleWritesArabicIndicDigits() {
+        var arabicIndicDigits = Locale.forLanguageTag("ar-SA-u-nu-arab");
+        assertThat(String.format(arabicIndicDigits, "%d", 7)).as("the locale under test").isEqualTo("٧");
+        var host = Locale.getDefault(Locale.Category.FORMAT);
+        try {
+            for (var facts : List.of(LeaseFixtures.english(), LeaseFixtures.arabic())) {
+                var terms = LeaseTerms.of(facts.leaseId());
+                Locale.setDefault(Locale.Category.FORMAT, Locale.ROOT);
+                var expected = extractor.pages(generator.generate(facts, terms));
+
+                Locale.setDefault(Locale.Category.FORMAT, arabicIndicDigits);
+                var actual = extractor.pages(generator.generate(facts, terms));
+
+                assertThat(actual).as(facts.documentCode()).isEqualTo(expected);
+            }
+        } finally {
+            Locale.setDefault(Locale.Category.FORMAT, host);
+        }
     }
 
     @Test
@@ -90,9 +112,9 @@ class LeasePdfGeneratorTest {
 
         var text = textOf(facts, terms);
 
-        assertThat(text).contains("at least %d days' written notice".formatted(terms.noticePeriodDays()));
-        assertThat(text).contains("%d hours' notice".formatted(terms.inspectionNoticeHours()));
-        assertThat(text).contains("SAR %d for each repair".formatted(terms.minorRepairLimitSar()));
+        assertThat(text).contains("at least " + terms.noticePeriodDays() + " days' written notice");
+        assertThat(text).contains(terms.inspectionNoticeHours() + " hours' notice");
+        assertThat(text).contains("SAR " + terms.minorRepairLimitSar() + " for each repair");
     }
 
     @Test

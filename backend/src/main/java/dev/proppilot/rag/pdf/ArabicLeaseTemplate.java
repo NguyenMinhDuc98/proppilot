@@ -1,5 +1,7 @@
 package dev.proppilot.rag.pdf;
 
+import static dev.proppilot.rag.pdf.RootFormat.format;
+
 import dev.proppilot.agent.MoneyText;
 import dev.proppilot.rag.DocumentLanguage;
 import dev.proppilot.rag.LeaseFacts;
@@ -53,35 +55,35 @@ final class ArabicLeaseTemplate implements LeaseTemplate {
     private static List<LeaseText.Section> preamble(LeaseFacts f) {
         return List.of(
                 new LeaseText.Section("الأطراف", List.of(
-                        "المؤجر: %s، وتمثلها إدارة العقار (ويشار إليها فيما يلي باسم \"المؤجر\").".formatted(LANDLORD),
-                        "المستأجر: %s (ويشار إليه فيما يلي باسم \"المستأجر\").".formatted(f.tenantName()))),
+                        format("المؤجر: %s، وتمثلها إدارة العقار (ويشار إليها فيما يلي باسم \"المؤجر\").", LANDLORD),
+                        format("المستأجر: %s (ويشار إليه فيما يلي باسم \"المستأجر\").", f.tenantName()))),
                 new LeaseText.Section("العقار المؤجر", List.of(
-                        ("الوحدة %s في الدور %d، وهي شقة مكونة من %s بمساحة %d متر مربع، في مبنى %s بمدينة %s "
-                                + "(ويشار إليها فيما يلي باسم \"العقار\").")
-                                .formatted(f.unitCode(), f.floor(), bedrooms(f.bedrooms()), f.areaSqm(),
+                        format("الوحدة %s في الدور %d، وهي شقة مكونة من %s بمساحة %d متر مربع، في مبنى %s بمدينة %s "
+                                + "(ويشار إليها فيما يلي باسم \"العقار\").",
+                                f.unitCode(), f.floor(), bedrooms(f.bedrooms()), f.areaSqm(),
                                         f.buildingName(), f.city()),
-                        "العنوان: %s.".formatted(f.address()))),
+                        format("العنوان: %s.", f.address()))),
                 new LeaseText.Section("مدة العقد والإيجار", List.of(
-                        "تبدأ مدة العقد في %s وتنتهي في %s (ويشار إليها فيما يلي باسم \"المدة\")."
-                                .formatted(date(f.startDate()), date(f.endDate())),
-                        "الإيجار الشهري %s ريال سعودي، يدفع مقدما في اليوم الأول من كل شهر."
-                                .formatted(MoneyText.of(f.monthlyRent())),
+                        format("تبدأ مدة العقد في %s وتنتهي في %s (ويشار إليها فيما يلي باسم \"المدة\").",
+                                date(f.startDate()), date(f.endDate())),
+                        format("الإيجار الشهري %s ريال سعودي، يدفع مقدما في اليوم الأول من كل شهر.",
+                                MoneyText.of(f.monthlyRent())),
                         "اتفق الطرفان على ما يلي.")));
     }
 
     private static List<String> rent(LeaseFacts f) {
         return List.of(
-                ("يلتزم المستأجر بدفع الإيجار الشهري البالغ %s ريال سعودي مقدما، في موعد أقصاه اليوم الأول من كل "
-                        + "شهر، بالتحويل البنكي إلى الحساب الذي يحدده المؤجر كتابة.")
-                        .formatted(MoneyText.of(f.monthlyRent())),
+                format("يلتزم المستأجر بدفع الإيجار الشهري البالغ %s ريال سعودي مقدما، في موعد أقصاه اليوم الأول من كل "
+                        + "شهر، بالتحويل البنكي إلى الحساب الذي يحدده المؤجر كتابة.",
+                        MoneyText.of(f.monthlyRent())),
                 "يعد السداد قد تم في اليوم الذي يصل فيه المبلغ إلى حساب المؤجر. ويبقى الإيجار ثابتا طوال المدة، "
                         + "إلا في الحدود التي يسمح بها بند المدة والتجديد.");
     }
 
     private static List<String> deposit(LeaseFacts f, LeaseTerms t) {
         return List.of(
-                "يدفع المستأجر عند التوقيع مبلغ تأمين يعادل إيجار %s، وقدره %s ريال سعودي."
-                        .formatted(months(t.securityDepositMonths()), amount(f, t.securityDepositMonths())),
+                format("يدفع المستأجر عند التوقيع مبلغ تأمين يعادل إيجار %s، وقدره %s ريال سعودي.",
+                        months(t.securityDepositMonths()), amount(f, t.securityDepositMonths())),
                 "يحتفظ المؤجر بمبلغ التأمين ضمانا لالتزامات المستأجر دون أن يدفع عنه أي فوائد، ويرده إلى المستأجر "
                         + "خلال 30 يوما من تسليم العقار، بعد خصم الإيجار غير المسدد وتكلفة الأضرار التي تتجاوز "
                         + "الاستعمال المعتاد.");
@@ -90,22 +92,22 @@ final class ArabicLeaseTemplate implements LeaseTemplate {
     private static List<String> renewal(LeaseTerms t) {
         var renewal = t.renewal();
         if (renewal.mode() == RenewalMode.AUTOMATIC_12_MONTHS) {
-            return List.of(("يسري العقد للمدة المبينة في صدر هذا العقد. وما لم يخطر أحد الطرفين الآخر كتابة بعدم "
+            return List.of(format("يسري العقد للمدة المبينة في صدر هذا العقد. وما لم يخطر أحد الطرفين الآخر كتابة بعدم "
                     + "رغبته في التجديد قبل نهاية المدة بمدة لا تقل عن %d يوما، يتجدد العقد تلقائيا لمدة 12 شهرا "
-                    + "أخرى. ولا يجوز أن تزيد زيادة الإيجار عند التجديد على %d بالمائة من الإيجار السابق.")
-                    .formatted(t.noticePeriodDays(), renewal.rentIncreaseCapPercent()));
+                    + "أخرى. ولا يجوز أن تزيد زيادة الإيجار عند التجديد على %d بالمائة من الإيجار السابق.",
+                    t.noticePeriodDays(), renewal.rentIncreaseCapPercent()));
         }
-        return List.of(("يسري العقد للمدة المبينة في صدر هذا العقد، ولا يتجدد تلقائيا. ويتطلب التجديد اتفاقا كتابيا "
-                + "جديدا، على أن يقدم المؤجر عرض التجديد قبل نهاية المدة بمدة لا تقل عن %d يوما. ولا يجوز أن يزيد "
-                + "الإيجار المعروض للتجديد على الإيجار الحالي بأكثر من %d بالمائة.")
-                .formatted(t.noticePeriodDays(), renewal.rentIncreaseCapPercent()));
+        return List.of(format("يسري العقد للمدة المبينة في صدر هذا العقد، ولا يتجدد تلقائيا. ويتطلب التجديد اتفاقا "
+                + "كتابيا جديدا، على أن يقدم المؤجر عرض التجديد قبل نهاية المدة بمدة لا تقل عن %d يوما. ولا يجوز أن "
+                + "يزيد الإيجار المعروض للتجديد على الإيجار الحالي بأكثر من %d بالمائة.",
+                t.noticePeriodDays(), renewal.rentIncreaseCapPercent()));
     }
 
     private static List<String> notice(LeaseTerms t) {
-        return List.of(("على الطرف الذي يرغب في إنهاء العقد عند نهاية المدة، أو في اقتراح تعديل شروطه، أن يخطر "
+        return List.of(format("على الطرف الذي يرغب في إنهاء العقد عند نهاية المدة، أو في اقتراح تعديل شروطه، أن يخطر "
                 + "الطرف الآخر كتابة قبل %d يوما على الأقل. ويتم الإشعار بخطاب مسجل يسلم في العقار أو برسالة "
-                + "بريد إلكتروني إلى العنوان الذي حدده الطرف المستلم كتابة، ويسري من يوم استلامه.")
-                .formatted(t.noticePeriodDays()));
+                + "بريد إلكتروني إلى العنوان الذي حدده الطرف المستلم كتابة، ويسري من يوم استلامه.",
+                t.noticePeriodDays()));
     }
 
     private static List<String> lateFee(LeaseFacts f, LeaseTerms t) {
@@ -113,22 +115,22 @@ final class ArabicLeaseTemplate implements LeaseTemplate {
         String first;
         if (fee.kind() == LateFeeKind.PERCENT_OF_RENT_PER_MONTH) {
             var sar = MoneyText.of(f.monthlyRent().multiply(BigDecimal.valueOf(fee.amount())).movePointLeft(2));
-            first = ("إذا لم يصل الإيجار إلى المؤجر خلال %d أيام من تاريخ استحقاقه، تستحق غرامة تأخير قدرها %d "
-                    + "بالمائة من الإيجار الشهري، أي %s ريال سعودي، عن كل شهر أو جزء من شهر يتأخر فيه السداد.")
-                    .formatted(fee.graceDays(), fee.amount(), sar);
+            first = format("إذا لم يصل الإيجار إلى المؤجر خلال %d أيام من تاريخ استحقاقه، تستحق غرامة تأخير قدرها %d "
+                    + "بالمائة من الإيجار الشهري، أي %s ريال سعودي، عن كل شهر أو جزء من شهر يتأخر فيه السداد.",
+                    fee.graceDays(), fee.amount(), sar);
         } else {
-            first = ("إذا لم يصل الإيجار إلى المؤجر خلال %d أيام من تاريخ استحقاقه، تستحق غرامة تأخير قدرها %d "
-                    + "ريال سعودي عن كل يوم تأخير، وتحتسب من انتهاء مهلة السماح المذكورة.")
-                    .formatted(fee.graceDays(), fee.amount());
+            first = format("إذا لم يصل الإيجار إلى المؤجر خلال %d أيام من تاريخ استحقاقه، تستحق غرامة تأخير قدرها %d "
+                    + "ريال سعودي عن كل يوم تأخير، وتحتسب من انتهاء مهلة السماح المذكورة.",
+                    fee.graceDays(), fee.amount());
         }
         return List.of(first, "ولا تحد هذه الغرامة من حقوق المؤجر الأخرى في حال عدم السداد.");
     }
 
     private static List<String> maintenance(LeaseTerms t) {
         return List.of(
-                ("يتحمل المستأجر تكلفة الإصلاحات البسيطة وأعمال الصيانة الدورية داخل العقار بما لا يتجاوز %d ريال "
-                        + "سعودي للإصلاح الواحد، مثل استبدال المصابيح وحشوات الصنابير والمرشحات ومقابض الأبواب.")
-                        .formatted(t.minorRepairLimitSar()),
+                format("يتحمل المستأجر تكلفة الإصلاحات البسيطة وأعمال الصيانة الدورية داخل العقار بما لا يتجاوز %d "
+                        + "ريال سعودي للإصلاح الواحد، مثل استبدال المصابيح وحشوات الصنابير والمرشحات ومقابض الأبواب.",
+                        t.minorRepairLimitSar()),
                 "ويتحمل المؤجر تكلفة الإصلاحات الإنشائية والإصلاحات الكبرى للمبنى ولأنظمة السباكة والكهرباء "
                         + "والتكييف، وكل إصلاح يزيد على هذا المبلغ ما لم يكن المستأجر أو أحد زواره قد تسبب في "
                         + "الضرر. وعلى المستأجر إبلاغ المؤجر فورا بأي عيب يظهر في العقار.");
@@ -141,8 +143,8 @@ final class ArabicLeaseTemplate implements LeaseTemplate {
                     "لا يجوز للمستأجر اقتناء حيوان أليف في العقار إلا بموافقة كتابية مسبقة من المؤجر.",
                     "وللمؤجر سحب هذه الموافقة إذا أزعج الحيوان الجيران أو أتلف العقار.");
             case WITH_DEPOSIT -> List.of(
-                    ("يجوز للمستأجر اقتناء حيوان أليف في العقار بعد دفع مبلغ تأمين إضافي للحيوان الأليف قدره %d "
-                            + "ريال سعودي.").formatted(t.pets().depositSar()),
+                    format("يجوز للمستأجر اقتناء حيوان أليف في العقار بعد دفع مبلغ تأمين إضافي للحيوان الأليف قدره %d "
+                            + "ريال سعودي.", t.pets().depositSar()),
                     "يرد المؤجر هذا المبلغ مع مبلغ التأمين إذا لم يتسبب الحيوان في ضرر أو إزعاج. ويتحمل المستأجر "
                             + "مسؤولية كل ضرر أو إزعاج يسببه الحيوان.");
         };
@@ -151,9 +153,9 @@ final class ArabicLeaseTemplate implements LeaseTemplate {
     private static List<String> earlyTermination(LeaseFacts f, LeaseTerms t) {
         var early = t.earlyTermination();
         return List.of(
-                ("يجوز للمستأجر إنهاء العقد قبل انتهاء المدة بإخطار المؤجر كتابة قبل %d يوما على الأقل ودفع رسم "
-                        + "إنهاء مبكر يعادل إيجار %s، وقدره %s ريال سعودي.")
-                        .formatted(early.noticeDays(), months(early.feeMonths()), amount(f, early.feeMonths())),
+                format("يجوز للمستأجر إنهاء العقد قبل انتهاء المدة بإخطار المؤجر كتابة قبل %d يوما على الأقل ودفع رسم "
+                        + "إنهاء مبكر يعادل إيجار %s، وقدره %s ريال سعودي.",
+                        early.noticeDays(), months(early.feeMonths()), amount(f, early.feeMonths())),
                 "وينتهي العقد في آخر يوم من مدة الإشعار، ويبقى الإيجار مستحقا حتى ذلك اليوم. ولا يجوز للمؤجر إنهاء "
                         + "العقد مبكرا إلا عند إخلال جسيم من المستأجر لم يصححه خلال 15 يوما من الإخطار الكتابي.");
     }
@@ -170,20 +172,20 @@ final class ArabicLeaseTemplate implements LeaseTemplate {
     }
 
     private static List<String> use(LeaseFacts f) {
-        return List.of(("العقار مؤجر للسكن الخاص بالمستأجر وأسرته فقط. ولا يجوز للمستأجر ممارسة أي نشاط تجاري في "
+        return List.of(format("العقار مؤجر للسكن الخاص بالمستأجر وأسرته فقط. ولا يجوز للمستأجر ممارسة أي نشاط تجاري في "
                 + "العقار، ولا أن يسكن فيه أكثر من %s. وعلى المستأجر المحافظة على نظافة العقار وحسن حالته، "
-                + "والتقيد بأنظمة المبنى.").formatted(persons(Occupants.limit(f))));
+                + "والتقيد بأنظمة المبنى.", persons(Occupants.limit(f))));
     }
 
     private static List<String> inspection(LeaseTerms t) {
-        return List.of(("يجوز للمؤجر دخول العقار في أوقات معقولة لمعاينته أو لإجراء الإصلاحات أو لعرضه على مستأجر "
-                + "جديد، بعد إخطار المستأجر قبل %d ساعة على الأقل. وفي حالات الطوارئ، كالحريق أو تسرب المياه، "
-                + "يجوز للمؤجر الدخول فورا.").formatted(t.inspectionNoticeHours()));
+        return List.of(format("يجوز للمؤجر دخول العقار في أوقات معقولة لمعاينته أو لإجراء الإصلاحات أو لعرضه على "
+                + "مستأجر جديد، بعد إخطار المستأجر قبل %d ساعة على الأقل. وفي حالات الطوارئ، كالحريق أو تسرب المياه، "
+                + "يجوز للمؤجر الدخول فورا.", t.inspectionNoticeHours()));
     }
 
     private static List<String> governingLaw(LeaseFacts f) {
-        return List.of(("يخضع هذا العقد لأنظمة المملكة العربية السعودية. ويسعى الطرفان أولا إلى تسوية أي نزاع "
-                + "ينشأ عنه بالطرق الودية، فإن تعذرت التسوية كان الاختصاص لمحاكم مدينة %s.").formatted(f.city()));
+        return List.of(format("يخضع هذا العقد لأنظمة المملكة العربية السعودية. ويسعى الطرفان أولا إلى تسوية أي نزاع "
+                + "ينشأ عنه بالطرق الودية، فإن تعذرت التسوية كان الاختصاص لمحاكم مدينة %s.", f.city()));
     }
 
     private static List<String> houseRules() {
@@ -237,7 +239,7 @@ final class ArabicLeaseTemplate implements LeaseTemplate {
     }
 
     private static String date(LocalDate date) {
-        return "%d %s %d".formatted(date.getDayOfMonth(), MONTHS[date.getMonthValue() - 1], date.getYear());
+        return format("%d %s %d", date.getDayOfMonth(), MONTHS[date.getMonthValue() - 1], date.getYear());
     }
 
     private static String amount(LeaseFacts f, int months) {

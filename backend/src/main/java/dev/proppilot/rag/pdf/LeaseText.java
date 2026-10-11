@@ -25,6 +25,6 @@ record LeaseText(DocumentLanguage language, String title, String reference, List
     }
 
     String heading(Clause clause) {
-        return clauseHeadingFormat.formatted(clause.number(), clause.title());
+        return RootFormat.format(clauseHeadingFormat, clause.number(), clause.title());
     }
 }
