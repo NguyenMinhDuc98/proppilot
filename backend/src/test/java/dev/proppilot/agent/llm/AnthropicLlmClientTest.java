@@ -163,9 +163,9 @@ class AnthropicLlmClientTest {
                 .timeoutSeconds(timeoutSeconds).retries(maxRetries, retryBaseDelayMs).build();
     }
 
-    /** A client for the body it builds, which needs no server. */
-    private static AnthropicLlmClient clientWithCaching(boolean promptCaching) {
-        var props = TestLlmProperties.defaults().model("test-model").promptCaching(promptCaching).build();
+    private AnthropicLlmClient clientWithCaching(boolean promptCaching) {
+        var props = TestLlmProperties.defaults().model("test-model").promptCaching(promptCaching)
+                .apiUrl("http://127.0.0.1:" + server.getAddress().getPort() + "/v1/messages").build();
         return new AnthropicLlmClient(props, JSON);
     }
 
@@ -219,9 +219,11 @@ class AnthropicLlmClientTest {
 
     @Test
     void sendsTheRequestWithNoCacheMarksWhenPromptCachingIsOff() {
-        var body = clientWithCaching(false).buildBody(CONVERSATION);
+        replies.add(Reply.stream(ANSWER_STREAM));
 
-        assertThat(body.toString()).isEqualTo("{\"model\":\"test-model\",\"max_tokens\":1024,\"stream\":true,"
+        clientWithCaching(false).complete(CONVERSATION, deltas::add);
+
+        assertThat(bodies.get(0)).isEqualTo("{\"model\":\"test-model\",\"max_tokens\":1024,\"stream\":true,"
                 + "\"system\":\"system\",\"tools\":["
                 + "{\"name\":\"lookup\",\"description\":\"Looks something up\",\"input_schema\":{\"type\":\"object\"}},"
                 + "{\"name\":\"count\",\"description\":\"Counts something\",\"input_schema\":{\"type\":\"object\"}}],"
@@ -234,19 +236,27 @@ class AnthropicLlmClientTest {
     }
 
     @Test
-    void promptCachingChangesNothingInTheRequestButTheMarks() {
-        var off = clientWithCaching(false).buildBody(CONVERSATION);
-        var on = clientWithCaching(true).buildBody(CONVERSATION);
+    void promptCachingChangesNothingInTheRequestButTheMarks() throws Exception {
+        replies.add(Reply.stream(ANSWER_STREAM));
+        replies.add(Reply.stream(ANSWER_STREAM));
 
+        clientWithCaching(false).complete(CONVERSATION, deltas::add);
+        clientWithCaching(true).complete(CONVERSATION, deltas::add);
+
+        var off = JSON.readTree(bodies.get(0));
+        var on = JSON.readTree(bodies.get(1));
         assertThat(on).isNotEqualTo(off);
-        assertThat(withoutCacheMarks(on)).isEqualTo(off);
+        assertThat(withoutCacheMarks((ObjectNode) on)).isEqualTo(off);
         assertThat(on.fieldNames()).toIterable().containsExactlyElementsOf(() -> off.fieldNames());
     }
 
     @Test
-    void marksOnlyTheSystemPromptAndTheConversationWhenNoToolsAreOffered() {
-        var body = clientWithCaching(true).buildBody(REQUEST);
+    void marksOnlyTheSystemPromptAndTheConversationWhenNoToolsAreOffered() throws Exception {
+        replies.add(Reply.stream(ANSWER_STREAM));
 
+        clientWithCaching(true).complete(REQUEST, deltas::add);
+
+        var body = JSON.readTree(bodies.get(0));
         assertThat(body.has("tools")).isFalse();
         assertThat(body.get("system").get(0).has("cache_control")).isTrue();
         assertThat(body.get("messages").get(0).get("content").get(0).has("cache_control")).isTrue();
