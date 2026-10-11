@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.proppilot.config.EmbeddingProperties;
 import java.util.List;
+import org.assertj.core.util.Throwables;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
@@ -67,6 +68,21 @@ class EmbeddingConfigTest {
                     assertThat(context.getStartupFailure()).rootCause()
                             .isInstanceOf(IllegalStateException.class)
                             .hasMessageContaining("VOYAGE_API_KEY is required when EMBEDDING_PROVIDER=voyage");
+                });
+    }
+
+    @Test
+    void aKeyThatAHeaderCannotCarryFailsStartupWithoutQuotingItAnywhere() {
+        var key = "pa-\u2013-secret";
+
+        runner.withPropertyValues("proppilot.embedding.provider=voyage", "proppilot.embedding.api-key=" + key)
+                .run(context -> {
+                    assertThat(context).hasFailed();
+                    assertThat(context.getStartupFailure()).rootCause()
+                            .isInstanceOf(IllegalStateException.class)
+                            .hasMessageContaining("VOYAGE_API_KEY");
+                    assertThat(Throwables.getStackTrace(context.getStartupFailure())).doesNotContain(key)
+                            .doesNotContain("secret");
                 });
     }
 

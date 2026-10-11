@@ -141,8 +141,12 @@ class VoyageEmbeddingClientTest {
     }
 
     private VoyageEmbeddingClient client(int timeoutSeconds, int maxRetries) {
-        return new VoyageEmbeddingClient(props(server.getAddress().getPort(), timeoutSeconds, maxRetries, API_KEY),
-                JSON, new RetryPolicy(maxRetries, Duration.ofSeconds(1), sleeps::add, () -> 0.5));
+        return client(props(server.getAddress().getPort(), timeoutSeconds, maxRetries, API_KEY));
+    }
+
+    private VoyageEmbeddingClient client(EmbeddingProperties props) {
+        return new VoyageEmbeddingClient(props, JSON,
+                new RetryPolicy(props.maxRetries(), Duration.ofSeconds(1), sleeps::add, () -> 0.5));
     }
 
     private static EmbeddingProperties props(int port, int timeoutSeconds, int maxRetries, String key) {
@@ -455,6 +459,34 @@ class VoyageEmbeddingClientTest {
         assertThat(client.enabled()).isTrue();
         assertThat(client.model()).isEqualTo("test-model");
         assertThat(client.dimensions()).isEqualTo(DIMENSIONS);
+    }
+
+    @Test
+    void aKeyThatAHeaderCannotCarryIsRefusedAtStartupWithoutBeingQuoted() {
+        for (var key : List.of("pa-\u2013-key", "pa-\u201Ckey\u201D", "pa-key\nsecond", "pa-ke\u0000y",
+                "pa-\u007fkey", "pa key", "pa-\u00e9-key")) {
+            assertThatThrownBy(() -> new VoyageEmbeddingClient(props(1, 5, 3, key), JSON)).as(key)
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasNoCause()
+                    .hasMessageContaining("VOYAGE_API_KEY")
+                    .satisfies(e -> assertThat(e.toString()).doesNotContain(key));
+        }
+    }
+
+    @Test
+    void everyVisibleAsciiCharacterIsAllowedInAKey() {
+        var key = "pa-AZaz09_.~!#$%&'*+/=?^`{|}-:;<>@[]\\\"";
+
+        client(props(server.getAddress().getPort(), 5, 3, key)).embedQuery("question");
+
+        assertThat(received).extracting(Received::authorization).containsExactly("Bearer " + key);
+    }
+
+    @Test
+    void aKeyWithWhitespaceAroundItIsSentWithoutIt() {
+        client(props(server.getAddress().getPort(), 5, 3, "  " + API_KEY + "\n")).embedQuery("question");
+
+        assertThat(received).extracting(Received::authorization).containsExactly("Bearer " + API_KEY);
     }
 
     @Test

@@ -59,6 +59,11 @@ public class VoyageEmbeddingClient implements EmbeddingClient {
         if (props.apiKey().isEmpty()) {
             throw new IllegalStateException("VOYAGE_API_KEY is required when EMBEDDING_PROVIDER=voyage");
         }
+        // The JDK quotes a header value it refuses, so a key like that would be written to the log in full.
+        if (!props.apiKey().chars().allMatch(VoyageEmbeddingClient::isVisibleAscii)) {
+            throw new IllegalStateException("VOYAGE_API_KEY may hold visible ASCII characters only: "
+                    + "check it for a pasted quote, dash or line break");
+        }
         this.props = props;
         this.json = json;
         this.retries = retries;
@@ -209,5 +214,9 @@ public class VoyageEmbeddingClient implements EmbeddingClient {
     private String excerpt(byte[] body) {
         var text = new String(body, 0, Math.min(body.length, LOGGED_ERROR_BODY_BYTES), StandardCharsets.UTF_8);
         return text.replace(props.apiKey(), "[key]");
+    }
+
+    private static boolean isVisibleAscii(int c) {
+        return c > ' ' && c < 0x7f;
     }
 }
