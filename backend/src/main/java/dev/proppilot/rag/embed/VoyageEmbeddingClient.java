@@ -23,9 +23,6 @@ import java.util.concurrent.TimeoutException;
 import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.stereotype.Component;
 
 /**
  * Calls the Voyage AI embeddings API over plain HTTP, retrying transient failures. Documents and questions are
@@ -35,8 +32,6 @@ import org.springframework.stereotype.Component;
  * documents has longer, because it runs in the background. Neither the key nor a request body is ever logged or put
  * in an exception.
  */
-@Component
-@ConditionalOnProperty(name = "proppilot.embedding.provider", havingValue = EmbeddingProperties.VOYAGE)
 public class VoyageEmbeddingClient implements EmbeddingClient {
 
     private static final Logger log = LoggerFactory.getLogger(VoyageEmbeddingClient.class);
@@ -50,7 +45,6 @@ public class VoyageEmbeddingClient implements EmbeddingClient {
     private final RetryPolicy retries;
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
 
-    @Autowired
     public VoyageEmbeddingClient(EmbeddingProperties props, ObjectMapper json) {
         this(props, json, RetryPolicy.withBackoff(props.maxRetries(), Duration.ofMillis(props.retryBaseDelayMs())));
     }

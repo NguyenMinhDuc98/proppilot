@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.proppilot.config.EmbeddingProperties;
 import java.util.List;
+import java.util.Map;
 import org.assertj.core.util.Throwables;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -13,13 +14,14 @@ import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
+import org.springframework.core.env.MapPropertySource;
 
 /** Which client the settings select, and what refuses to start, without a database. */
 class EmbeddingConfigTest {
 
     @Configuration
     @EnableConfigurationProperties(EmbeddingProperties.class)
-    @Import({NoEmbeddingClient.class, VoyageEmbeddingClient.class})
+    @Import(EmbeddingConfig.class)
     static class Clients {
         @Bean
         ObjectMapper json() {
@@ -33,6 +35,12 @@ class EmbeddingConfigTest {
                     "proppilot.embedding.api-url=http://127.0.0.1:9/v1/embeddings",
                     "proppilot.embedding.timeout-seconds=20", "proppilot.embedding.max-retries=3",
                     "proppilot.embedding.retry-base-delay-ms=1000");
+
+    /** Sets the provider as it is, spaces included: {@code withPropertyValues} would trim them. */
+    private ApplicationContextRunner withProvider(String provider) {
+        return runner.withInitializer(context -> context.getEnvironment().getPropertySources().addFirst(
+                new MapPropertySource("provider", Map.of("proppilot.embedding.provider", provider))));
+    }
 
     @Test
     void noProviderSettingMeansNoEmbeddings() {
@@ -58,6 +66,24 @@ class EmbeddingConfigTest {
                     assertThat(context).hasSingleBean(VoyageEmbeddingClient.class);
                     assertThat(context.getBean(EmbeddingClient.class).enabled()).isTrue();
                 });
+    }
+
+    @Test
+    void theProviderIsChosenByTheSettingsEvenWhenItIsPaddedOrInUpperCase() {
+        for (var provider : List.of(" voyage", "voyage ", " Voyage\t", "VOYAGE")) {
+            withProvider(provider).withPropertyValues("proppilot.embedding.api-key=pa-test").run(context -> {
+                assertThat(context).as("[%s]", provider).hasSingleBean(EmbeddingClient.class);
+                assertThat(context.getBean(EmbeddingClient.class)).as("[%s]", provider)
+                        .isInstanceOf(VoyageEmbeddingClient.class);
+            });
+        }
+        for (var provider : List.of(" none", "none ", "NONE")) {
+            withProvider(provider).run(context -> {
+                assertThat(context).as("[%s]", provider).hasSingleBean(EmbeddingClient.class);
+                assertThat(context.getBean(EmbeddingClient.class)).as("[%s]", provider)
+                        .isInstanceOf(NoEmbeddingClient.class);
+            });
+        }
     }
 
     @Test
