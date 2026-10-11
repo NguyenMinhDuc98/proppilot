@@ -192,6 +192,16 @@ class VoyageEmbeddingClientTest {
     }
 
     @Test
+    void textWithOddCharactersStillMakesARequestTheApiCanRead() {
+        client().embedDocuments(List.of("clause \u0000 with a nul", "clause \ud800 with a lone surrogate",
+                "clause 😀 \"quoted\" \\ back\nslash"));
+
+        assertThat(received).hasSize(1);
+        assertThat(received.get(0).inputs()).hasSize(3);
+        assertThat(received.get(0).inputs().get(2)).isEqualTo("clause 😀 \"quoted\" \\ back\nslash");
+    }
+
+    @Test
     void anEmptyListCallsNobody() {
         assertThat(client().embedDocuments(List.of())).isEmpty();
 
