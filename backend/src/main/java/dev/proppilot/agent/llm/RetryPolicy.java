@@ -11,11 +11,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Retries a model call that failed for a transient reason: exponential backoff with full jitter, or the wait the
+ * Retries a provider call that failed for a transient reason: exponential backoff with full jitter, or the wait the
  * provider asked for. Never retries once text has reached the caller, because the user has already seen it, and never
- * waits longer than the time left, so the original failure is reported instead of a timeout after the wait.
+ * waits longer than the time left, so the original failure is reported instead of a timeout after the wait. Shared by
+ * the model client and the embedding client.
  */
-final class RetryPolicy {
+public final class RetryPolicy {
 
     private static final Logger log = LoggerFactory.getLogger(RetryPolicy.class);
     private static final double BACKOFF_FACTOR = 2;
@@ -24,7 +25,7 @@ final class RetryPolicy {
 
     /** Seam so tests never really wait. */
     @FunctionalInterface
-    interface Sleeper {
+    public interface Sleeper {
         void sleep(Duration duration) throws InterruptedException;
     }
 
@@ -39,15 +40,24 @@ final class RetryPolicy {
     private final Sleeper sleeper;
     private final DoubleSupplier random;
 
-    RetryPolicy(int maxRetries, Duration baseDelay, Sleeper sleeper, DoubleSupplier random) {
+    public RetryPolicy(int maxRetries, Duration baseDelay, Sleeper sleeper, DoubleSupplier random) {
         this.maxRetries = maxRetries;
         this.baseDelay = baseDelay;
         this.sleeper = sleeper;
         this.random = random;
     }
 
-    static RetryPolicy withBackoff(int maxRetries, Duration baseDelay) {
+    public static RetryPolicy withBackoff(int maxRetries, Duration baseDelay) {
         return new RetryPolicy(maxRetries, baseDelay, Thread::sleep, () -> ThreadLocalRandom.current().nextDouble());
+    }
+
+    /**
+     * Runs a call that streams nothing: up to {@code maxRetries + 1} times, rethrowing the last failure.
+     *
+     * @param timeLeft the time the whole call may still take; a retry whose wait is not shorter than this is skipped
+     */
+    public <T> T execute(Supplier<Duration> timeLeft, Supplier<T> attempt) {
+        return execute(timeLeft, text -> { }, sink -> attempt.get());
     }
 
     /**
@@ -70,10 +80,10 @@ final class RetryPolicy {
                 }
                 var delay = delayBeforeRetry(retry, e);
                 if (delay.compareTo(timeLeft.get()) >= 0) {
-                    log.warn("Claude call failed ({}); not retrying, a {} ms wait would use up the time left", e.code(), delay.toMillis());
+                    log.warn("Provider call failed ({}); not retrying, a {} ms wait would use up the time left", e.code(), delay.toMillis());
                     throw e;
                 }
-                log.warn("Claude call failed ({}); retry {}/{} in {} ms", e.code(), retry + 1, maxRetries, delay.toMillis());
+                log.warn("Provider call failed ({}); retry {}/{} in {} ms", e.code(), retry + 1, maxRetries, delay.toMillis());
                 pause(delay);
             }
         }

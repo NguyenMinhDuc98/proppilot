@@ -187,6 +187,21 @@ class RetryPolicyTest {
     }
 
     @Test
+    void aCallThatStreamsNothingIsRetriedTheSameWay() {
+        var policy = policy(3, ONE_SECOND, () -> 0.5);
+
+        var result = policy.execute(PLENTY_OF_TIME, () -> {
+            if (attempts.incrementAndGet() < 3) {
+                throw LlmException.retryable("slow down", ErrorCode.LLM_OVERLOADED, Duration.ofSeconds(7), null);
+            }
+            return "ok";
+        });
+
+        assertThat(result).isEqualTo("ok");
+        assertThat(sleeps).containsExactly(Duration.ofSeconds(7), Duration.ofSeconds(7));
+    }
+
+    @Test
     void neverRetriesOnceTextHasReachedTheCaller() {
         var policy = policy(3, ONE_SECOND, () -> 0.5);
         var delivered = new ArrayList<String>();
