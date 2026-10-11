@@ -25,7 +25,7 @@ const question = computed(() => props.detail?.question ?? props.run?.question ??
 </script>
 
 <template>
-  <ElDrawer v-model="open" append-to-body :direction="direction" size="min(560px, 100vw)">
+  <ElDrawer v-model="open" append-to-body destroy-on-close :direction="direction" size="min(560px, 100vw)">
     <template #header="{ titleId, titleClass }">
       <h2 :id="titleId" :class="titleClass">{{ t('admin.detail.title') }}</h2>
     </template>

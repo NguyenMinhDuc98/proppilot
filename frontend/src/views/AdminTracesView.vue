@@ -36,21 +36,38 @@ let latestDetail = 0
 
 const failedWith = (failure: unknown, status: number) => failure instanceof ApiError && failure.status === status
 
+/**
+ * The token is forgotten and with it what it fetched: the runs, the one that was opened, and any request still on
+ * its way, whose answer would otherwise put the visitors' questions back on a page that is no longer unlocked.
+ */
+function leave(to: 'locked' | 'disabled') {
+  forget()
+  latestList++
+  latestDetail++
+  runs.value = []
+  hasMore.value = false
+  loadingMore.value = false
+  moreFailed.value = false
+  selected.value = null
+  detail.value = null
+  detailLoading.value = false
+  detailFailed.value = false
+  detailOpen.value = false
+  phase.value = to
+}
+
 /** The server did not accept the token: it is dropped, and the form asks for another. */
 function tokenRefused(failure: unknown): boolean {
   if (!failedWith(failure, 403)) return false
-  forget()
   rejected.value = true
-  detailOpen.value = false
-  phase.value = 'locked'
+  leave('locked')
   return true
 }
 
 /** A server with no admin token configured answers 404 to every admin endpoint, as if they did not exist. */
 function adminDisabled(failure: unknown): boolean {
   if (!failedWith(failure, 404)) return false
-  forget()
-  phase.value = 'disabled'
+  leave('disabled')
   return true
 }
 
@@ -58,12 +75,9 @@ function adminDisabled(failure: unknown): boolean {
 async function load(older = false) {
   const read = ++latestList
   const before = older ? runs.value.at(-1)?.createdAt : undefined
-  if (older) {
-    loadingMore.value = true
-    moreFailed.value = false
-  } else {
-    phase.value = 'loading'
-  }
+  moreFailed.value = false
+  if (older) loadingMore.value = true
+  else phase.value = 'loading'
   try {
     const page = await fetchAdminRuns(
       token.value,
@@ -102,10 +116,7 @@ function unlock() {
 }
 
 function lock() {
-  forget()
-  runs.value = []
-  detailOpen.value = false
-  phase.value = 'locked'
+  leave('locked')
 }
 
 async function start() {
@@ -131,11 +142,12 @@ async function openRun(run: AdminRun) {
   }
 }
 
-// A filter that changes asks for the list again from its start.
+// A filter that changes asks for the list again from its start, even while a list is on its way: the answer of the
+// request it replaces is dropped. The filters are shown only while there is a token to ask with.
 watch(
   () => [filters.status, filters.model, filters.flaggedOnly],
   () => {
-    if (phase.value === 'ready' || phase.value === 'failed') void load()
+    if (phase.value !== 'locked' && phase.value !== 'disabled') void load()
   },
 )
 

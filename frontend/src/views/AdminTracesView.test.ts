@@ -17,9 +17,12 @@ interface Reply {
   body?: unknown
 }
 
-/** What the server answers, by address: tests set these and read what was asked from `asked`. */
-let runsReply: (params: URLSearchParams) => Reply
-let detailReply: (id: string) => Reply
+/**
+ * What the server answers, by address: tests set these and read what was asked from `asked`. A reply that is a promise
+ * is an answer that is still on its way until the test lets it go.
+ */
+let runsReply: (params: URLSearchParams) => Reply | Promise<Reply>
+let detailReply: (id: string) => Reply | Promise<Reply>
 const asked: { url: URL; headers: Record<string, string> }[] = []
 
 function respond({ status = 200, body = [] }: Reply) {
@@ -32,10 +35,17 @@ function fetchStub(input: RequestInfo | URL, init?: RequestInit) {
   if (url.pathname === '/api/stats') {
     return respond({ body: { byModel: [{ model: HAIKU, runs: 3, costUsd: 0.1 }, { model: SONNET, runs: 1, costUsd: 0.05 }] } })
   }
-  if (url.pathname === '/api/admin/runs') return respond(runsReply(url.searchParams))
+  if (url.pathname === '/api/admin/runs') return Promise.resolve(runsReply(url.searchParams)).then(respond)
   const match = /^\/api\/admin\/runs\/(.+)$/.exec(url.pathname)
-  if (match) return respond(detailReply(match[1]))
+  if (match) return Promise.resolve(detailReply(match[1])).then(respond)
   return respond({ status: 404 })
+}
+
+/** A reply the server holds back until `release` is called. */
+function held(reply: Reply) {
+  let release: () => void = () => {}
+  const gate = new Promise<void>((resolve) => { release = resolve })
+  return { reply: gate.then(() => reply), release }
 }
 
 const mounted: VueWrapper[] = []
@@ -152,6 +162,41 @@ describe('the admin token', () => {
     expect(sessionStorage.getItem('proppilot.adminToken')).toBeNull()
     expect(wrapper.find('input[type="password"]').exists()).toBe(true)
     expect(wrapper.find('.list').exists()).toBe(false)
+  })
+
+  it('keeps the page locked when an older page that was on its way arrives after the token was forgotten', async () => {
+    const older = held({ body: [runAt(10, { question: 'An older question' })] })
+    runsReply = (params) => (params.has('before') ? older.reply : { body: Array.from({ length: PAGE }, (_, i) => runAt(59 - i)) })
+    const wrapper = await render()
+    await unlock(wrapper)
+    await wrapper.get('.more').trigger('click')
+    await flushPromises()
+
+    await wrapper.findAll('button').find((button) => button.text() === en.admin.lock)?.trigger('click')
+    older.release()
+    await flushPromises()
+
+    expect(wrapper.find('input[type="password"]').exists()).toBe(true)
+    expect(wrapper.find('li.row').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('An older question')
+    expect(wrapper.findAll('button').some((button) => button.text() === en.admin.lock)).toBe(false)
+  })
+
+  it('closes the run that was open when it is forgotten, and takes what was shown of it off the page', async () => {
+    const detail = held({ body: adminRunDetail() })
+    detailReply = () => detail.reply
+    const wrapper = await render()
+    await unlock(wrapper)
+    await wrapper.get('li.row button').trigger('click')
+    await flushPromises()
+    expect(document.body.textContent).toContain('Which units in Riyadh are vacant right now?')
+
+    await wrapper.findAll('button').find((button) => button.text() === en.admin.lock)?.trigger('click')
+    detail.release()
+    await flushPromises()
+
+    expect(drawer()).toBeNull()
+    expect(document.body.textContent).not.toContain('Which units in Riyadh are vacant right now?')
   })
 
   it('is cleared from the field once it is sent', async () => {
@@ -321,6 +366,22 @@ describe('the filters', () => {
     })
   })
 
+  it('asks again when a filter changes while the list is still loading, and shows only the list it chose', async () => {
+    const unfiltered = held({ body: [runAt(30, { question: 'Without the filter' })] })
+    runsReply = (params) => (params.has('status') ? { body: [runAt(5, { status: 'ERROR', question: 'With the filter' })] } : unfiltered.reply)
+    const wrapper = await render()
+    await unlock(wrapper)
+    expect(wrapper.text()).toContain(en.admin.loading)
+
+    await wrapper.findAll('select')[0].setValue('ERROR')
+    await flushPromises()
+    unfiltered.release()
+    await flushPromises()
+
+    expect(lastRunsRequest()?.get('status')).toBe('ERROR')
+    expect(wrapper.findAll('li.row').map((row) => row.get('.question').text())).toEqual(['With the filter'])
+  })
+
   it('offers the models the server has runs for', async () => {
     const wrapper = await render()
     await unlock(wrapper)
@@ -412,6 +473,39 @@ describe('older runs', () => {
 
     expect(wrapper.findAll('li.row')).toHaveLength(PAGE)
     expect(wrapper.get('.problem').text()).toContain(en.admin.error)
+  })
+})
+
+describe('older runs that could not be loaded', () => {
+  const fullPage = Array.from({ length: PAGE }, (_, i) => runAt(59 - i))
+
+  it('stop being reported once the list is loaded again for another filter', async () => {
+    runsReply = (params) => (params.has('before') ? { status: 500 } : { body: fullPage })
+    const wrapper = await render()
+    await unlock(wrapper)
+    await wrapper.get('.more').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('.problem').exists()).toBe(true)
+
+    await wrapper.findAll('select')[0].setValue('ERROR')
+    await flushPromises()
+
+    expect(wrapper.findAll('li.row')).toHaveLength(PAGE)
+    expect(wrapper.find('.problem').exists()).toBe(false)
+  })
+
+  it('are not reported on the list the next unlock loads', async () => {
+    runsReply = (params) => (params.has('before') ? { status: 500 } : { body: fullPage })
+    const wrapper = await render()
+    await unlock(wrapper)
+    await wrapper.get('.more').trigger('click')
+    await flushPromises()
+    await wrapper.findAll('button').find((button) => button.text() === en.admin.lock)?.trigger('click')
+
+    await unlock(wrapper)
+
+    expect(wrapper.findAll('li.row')).toHaveLength(PAGE)
+    expect(wrapper.find('.problem').exists()).toBe(false)
   })
 })
 
