@@ -2,6 +2,7 @@ package dev.proppilot.agent;
 
 import dev.proppilot.agent.llm.Usage;
 import dev.proppilot.agent.routing.ModelRoute;
+import dev.proppilot.guardrail.GuardrailOutcome;
 import java.util.List;
 
 /**
@@ -13,9 +14,12 @@ import java.util.List;
  * @param route where the run's last answered call went: the model that answered and why it was chosen, with how the
  *              question scored. The route the run was sent to when no call was answered, as a model that failed
  *              answered nothing
+ * @param guardrail what the grounding guardrail found in the answer, or null when it did not check one: the guardrail
+ *                  is off, or the run did not end with an answer
  */
 public record AgentResult(String answer, Usage usage, int toolCalls, int iterations, Status status, ErrorCode errorCode,
-                          List<LlmCallRecord> llmCallRecords, List<ToolCallRecord> toolCallRecords, ModelRoute route) {
+                          List<LlmCallRecord> llmCallRecords, List<ToolCallRecord> toolCallRecords, ModelRoute route,
+                          GuardrailOutcome guardrail) {
 
     public enum Status { OK, ERROR, MAX_ITERATIONS, TRUNCATED, ABORTED }
 
@@ -29,6 +33,6 @@ public record AgentResult(String answer, Usage usage, int toolCalls, int iterati
                                      List<LlmCallRecord> llmCallRecords, List<ToolCallRecord> toolCallRecords,
                                      ModelRoute route) {
         return new AgentResult(code.message(), usage, toolCalls, iterations, Status.ERROR, code, llmCallRecords,
-                toolCallRecords, route);
+                toolCallRecords, route, null);
     }
 }

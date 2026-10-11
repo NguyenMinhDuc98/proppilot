@@ -14,6 +14,7 @@ import dev.proppilot.agent.tools.ToolRegistry;
 import dev.proppilot.agent.tools.ToolResult;
 import dev.proppilot.config.AgentProperties;
 import dev.proppilot.config.TestLlmProperties;
+import dev.proppilot.guardrail.Guardrails;
 import dev.proppilot.rag.FakeEmbeddingIntegrationTest;
 import dev.proppilot.rag.embed.EmbeddingBackfill;
 import java.time.Clock;
@@ -49,7 +50,8 @@ class LeaseQuestionAgentLoopIT extends FakeEmbeddingIntegrationTest {
 
     private AgentResult ask(String question) {
         var router = new ModelRouter(llm, TestLlmProperties.defaults().build(), new ComplexityAssessor());
-        var loop = new AgentLoop(llm, registry, new AgentProperties(6, 10, 90), Clock.systemUTC(), router);
+        var loop = new AgentLoop(llm, registry, new AgentProperties(6, 10, 90), Clock.systemUTC(), router,
+                Guardrails.off());
         return loop.run(AgentRequest.question(question, List.of(), UUID.randomUUID()), events::add, () -> false);
     }
 

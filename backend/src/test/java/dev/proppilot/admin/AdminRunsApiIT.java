@@ -269,7 +269,7 @@ class AdminRunsApiIT extends PostgresIntegrationTest {
                 T0);
         var toolCall = new ToolCallRecord(1, "search_units", "{\"city\":\"Riyadh\"}", "3 units", false, 25, T0);
         var result = new AgentResult("answer", new Usage(120, 45), 1, 1, AgentResult.Status.OK, null, List.of(llmCall),
-                List.of(toolCall), ModelRoute.byDefault(HAIKU));
+                List.of(toolCall), ModelRoute.byDefault(HAIKU), null);
         var id = UUID.randomUUID();
         runs.save(new ChatRun(id, T0, "who is late on rent?", "anthropic", result, List.of("search_units"), 850,
                 new BigDecimal("0.000345")));

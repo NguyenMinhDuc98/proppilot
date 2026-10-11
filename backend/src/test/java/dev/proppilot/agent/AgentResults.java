@@ -17,6 +17,6 @@ public final class AgentResults {
 
     public static AgentResult ended(String model, Usage usage, int toolCalls, int iterations, AgentResult.Status status) {
         return new AgentResult("answer", usage, toolCalls, iterations, status, null, List.of(), List.of(),
-                ModelRoute.byDefault(model));
+                ModelRoute.byDefault(model), null);
     }
 }

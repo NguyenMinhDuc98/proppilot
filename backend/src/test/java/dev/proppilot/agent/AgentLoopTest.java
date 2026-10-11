@@ -22,6 +22,7 @@ import dev.proppilot.agent.tools.ToolResult;
 import dev.proppilot.agent.tools.ToolSchema;
 import dev.proppilot.config.AgentProperties;
 import dev.proppilot.config.TestLlmProperties;
+import dev.proppilot.guardrail.Guardrails;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -93,7 +94,7 @@ class AgentLoopTest {
         var registry = new ToolRegistry(tools, mock(PlatformTransactionManager.class));
         var router = new ModelRouter(llm, TestLlmProperties.defaults().build(), new ComplexityAssessor());
         return new AgentLoop(llm, registry, new AgentProperties(maxIterations, 10, (int) RUN_TIMEOUT.toSeconds()), clock,
-                router);
+                router, Guardrails.off());
     }
 
     @Test

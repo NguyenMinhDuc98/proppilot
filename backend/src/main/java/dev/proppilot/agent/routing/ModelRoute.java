@@ -19,4 +19,9 @@ public record ModelRoute(String model, RoutedReason reason, Complexity complexit
     ModelRoute fallingBackTo(String model) {
         return new ModelRoute(model, RoutedReason.FALLBACK, complexity);
     }
+
+    /** The same run, sent to a model to answer again after the grounding guardrail found its answer wanting. */
+    ModelRoute retryingOn(String model) {
+        return new ModelRoute(model, RoutedReason.GUARDRAIL_RETRY, complexity);
+    }
 }

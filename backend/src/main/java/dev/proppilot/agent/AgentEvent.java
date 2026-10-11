@@ -14,4 +14,15 @@ public sealed interface AgentEvent {
 
     record Token(String text) implements AgentEvent {
     }
+
+    /**
+     * The answer streamed so far is replaced by one that is coming: the grounding guardrail found values in it that
+     * nothing supports and the model was asked again.
+     *
+     * @param reason why, as the browser sees it: {@value #GROUNDING}
+     */
+    record Revise(String reason) implements AgentEvent {
+
+        public static final String GROUNDING = "grounding";
+    }
 }

@@ -23,6 +23,16 @@ class OfflineLlmClientTest {
     }
 
     @Test
+    void theExamplesItOffersForAQuestionItDoesNotUnderstandAreItsOwnTextForTheGuardrail() {
+        var asked = client.complete(new LlmRequest("", List.of(Message.user("tell me a joke")), List.of(), TIMEOUT),
+                s -> { });
+        var asArabic = client.complete(new LlmRequest("", List.of(Message.user("احكِ لي نكتة")), List.of(), TIMEOUT),
+                s -> { });
+
+        assertThat(client.ownText()).contains(asked.text(), asArabic.text());
+    }
+
+    @Test
     void ignoresTheModelARequestNamesBecauseItHasOnlyOne() {
         var messages = List.of(Message.user("Show me unit B-101"));
 

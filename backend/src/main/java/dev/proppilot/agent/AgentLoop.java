@@ -1,5 +1,6 @@
 package dev.proppilot.agent;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import dev.proppilot.agent.llm.ContentBlock;
 import dev.proppilot.agent.llm.LlmClient;
 import dev.proppilot.agent.llm.LlmException;
@@ -15,15 +16,24 @@ import dev.proppilot.agent.tools.ToolContext;
 import dev.proppilot.agent.tools.ToolRegistry;
 import dev.proppilot.agent.tools.ToolResult;
 import dev.proppilot.config.AgentProperties;
+import dev.proppilot.guardrail.Evidence;
+import dev.proppilot.guardrail.GroundingCorrection;
+import dev.proppilot.guardrail.Guardrail;
+import dev.proppilot.guardrail.GuardrailMode;
+import dev.proppilot.guardrail.GuardrailOutcome;
+import dev.proppilot.guardrail.Violation;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
@@ -42,6 +52,11 @@ import org.springframework.stereotype.Service;
  * is still possible, the client is told not to retry a call that timed out on the same model, which would use the
  * time the other model needs. The result names the model of the last call that was answered, not the one the loop was
  * about to try.
+ *
+ * <p>The grounding guardrail checks the final answer. In {@code retry} mode an answer that states values nothing in the
+ * run supports is asked for once more, on the larger model when there is one, with the values named; the client is
+ * told to drop the earlier answer when the new one begins. If that second call fails before it began, the earlier
+ * answer stands, flagged: the guardrail never turns an answer into an error.
  */
 @Service
 public class AgentLoop {
@@ -54,13 +69,16 @@ public class AgentLoop {
     private final AgentProperties props;
     private final Clock clock;
     private final ModelRouter router;
+    private final Guardrail guardrail;
 
-    public AgentLoop(LlmClient llm, ToolRegistry tools, AgentProperties props, Clock clock, ModelRouter router) {
+    public AgentLoop(LlmClient llm, ToolRegistry tools, AgentProperties props, Clock clock, ModelRouter router,
+                     Guardrail guardrail) {
         this.llm = llm;
         this.tools = tools;
         this.props = props;
         this.clock = clock;
         this.router = router;
+        this.guardrail = guardrail;
     }
 
     /**
@@ -77,6 +95,7 @@ public class AgentLoop {
     /** The state of one question, so the loop reads as a sequence of small steps. */
     private final class Run {
 
+        private final UUID runId;
         private final Consumer<AgentEvent> events;
         private final BooleanSupplier cancelled;
         private final List<Message> messages = new ArrayList<>();
@@ -88,6 +107,10 @@ public class AgentLoop {
         private final Map<String, Integer> callsByTool = new HashMap<>();
         private final List<LlmCallRecord> llmCalls = new ArrayList<>();
         private final List<ToolCallRecord> toolCallRecords = new ArrayList<>();
+        /** What the guardrail holds an answer against: what the model was given, and what its tools returned. */
+        private final List<String> givenTexts;
+        private final List<String> toolResultTexts = new ArrayList<>();
+        private final Set<String> retrievedRefs = new LinkedHashSet<>();
         private Usage usage = Usage.ZERO;
         private int iterations;
         /** Where the next call goes. */
@@ -96,18 +119,40 @@ public class AgentLoop {
         private ModelRoute answeredBy;
         /** The code of the failure that sent the run to the other model. Set once: a run falls back only once. */
         private ErrorCode fellBackFrom;
+        /** Set once the guardrail has asked for the answer again: a run is asked only once. */
+        private Retry retry;
 
         Run(AgentRequest request, Consumer<AgentEvent> events, BooleanSupplier cancelled) {
+            this.runId = request.runId();
             this.events = events;
             this.cancelled = cancelled;
             this.toolsOffered = request.toolsOffered();
             this.toolSpecs = toolsOffered ? tools.specs() : List.of();
-            this.context = new ToolContext(request.runId());
+            this.context = new ToolContext(runId);
             messages.addAll(conversationSoFar(request.history()));
             // A confirmation only words an outcome that is settled, so it has no question to score.
             this.route = toolsOffered ? router.route(request.message(), messages.size()) : router.defaultRoute();
             this.answeredBy = route;
             messages.add(Message.user(request.message()));
+            this.givenTexts = givenTexts(messages);
+        }
+
+        /**
+         * The question and the conversation, today's date (which the system prompt states) and the words the client
+         * itself writes into its answers: the text of the turn that the app and the person wrote.
+         */
+        private List<String> givenTexts(List<Message> conversation) {
+            var texts = new ArrayList<String>();
+            for (var message : conversation) {
+                for (var block : message.content()) {
+                    if (block instanceof ContentBlock.Text text) {
+                        texts.add(text.text());
+                    }
+                }
+            }
+            texts.add(LocalDate.now(clock).toString());
+            texts.addAll(llm.ownText());
+            return texts;
         }
 
         AgentResult execute() {
@@ -140,6 +185,7 @@ public class AgentLoop {
                         text -> {
                             if (!text.isEmpty()) {
                                 streamedText.set(true);
+                                reviseEarlierAnswer();
                             }
                             events.accept(new AgentEvent.Token(text));
                         });
@@ -162,9 +208,73 @@ public class AgentLoop {
 
             var requested = response.toolUses();
             if (requested.isEmpty()) {
-                return Optional.of(result(AgentResult.Status.OK, response.text()));
+                return afterAnswer(response.text());
             }
             return runTools(requested);
+        }
+
+        /**
+         * The model gave its final answer. The guardrail checks it, as far as its mode goes: the answer is delivered
+         * with what was found, or, in {@code retry} mode, the model is asked for it again, once.
+         */
+        private Optional<AgentResult> afterAnswer(String answer) {
+            if (retry != null && !retry.revised && answer.isBlank()) {
+                return Optional.of(keepEarlierAnswer());
+            }
+            var checked = guardrail.check(answer, evidence());
+            if (checked.isEmpty()) {
+                return Optional.of(result(AgentResult.Status.OK, answer));
+            }
+            var violations = checked.get();
+            if (!violations.isEmpty() && canAskAgain()) {
+                askAgain(answer, violations);
+                return Optional.empty();
+            }
+            return Optional.of(delivered(answer, violations, retry != null));
+        }
+
+        private Evidence evidence() {
+            return new Evidence(toolResultTexts, givenTexts, retrievedRefs);
+        }
+
+        private boolean canAskAgain() {
+            return guardrail.mode() == GuardrailMode.RETRY && retry == null && iterations < props.maxIterations()
+                    && timeLeft().isPositive() && !cancelled.getAsBoolean();
+        }
+
+        /**
+         * Appends the server's own turn that names the values and sends the run to the model that answers again. The
+         * client is told to drop the earlier answer only when the new one begins, so that a call that fails first
+         * leaves it an answer to show.
+         */
+        private void askAgain(String answer, List<Violation> violations) {
+            log.info("Grounding guardrail asks run {} to answer again: {} value(s) not found in the data ({})", runId,
+                    violations.size(), Violation.describe(violations));
+            retry = new Retry(answer, violations);
+            route = router.retryFrom(route);
+            messages.add(Message.user(GroundingCorrection.message(violations)));
+        }
+
+        private void reviseEarlierAnswer() {
+            if (retry != null && !retry.revised) {
+                retry.revised = true;
+                events.accept(new AgentEvent.Revise(AgentEvent.Revise.GROUNDING));
+            }
+        }
+
+        /** The answer of a run that was checked, with what the guardrail found; one warning for a flagged one. */
+        private AgentResult delivered(String answer, List<Violation> violations, boolean retried) {
+            var outcome = GuardrailOutcome.of(violations, retried);
+            if (outcome.flagged()) {
+                log.warn("Grounding guardrail flagged run {}: {} value(s) not found in the data ({})", runId,
+                        violations.size(), Violation.describe(violations));
+            }
+            return result(AgentResult.Status.OK, answer, outcome);
+        }
+
+        /** The answer asked for again never came, and the first one is what the client has: it stands, flagged. */
+        private AgentResult keepEarlierAnswer() {
+            return delivered(retry.answer, retry.violations, false);
         }
 
         /**
@@ -213,9 +323,12 @@ public class AgentLoop {
                 if (interruption.isPresent()) {
                     return interruption;
                 }
+                reviseEarlierAnswer();
                 events.accept(new AgentEvent.ToolCall(call.name(), call.input()));
                 var startedAt = clock.instant();
                 var result = execute(call);
+                toolResultTexts.add(result.content());
+                rememberRefs(result.ui());
                 toolCallRecords.add(new ToolCallRecord(toolCallRecords.size() + 1, call.name(), call.input().toString(),
                         result.summary(), result.error(), millisSince(startedAt), startedAt));
                 events.accept(new AgentEvent.ToolResultEvent(call.name(), result.summary(), result.error(), result.ui()));
@@ -223,6 +336,13 @@ public class AgentLoop {
             }
             messages.add(new Message(Message.Role.USER, results));
             return Optional.empty();
+        }
+
+        /** The refs of the clauses a lease search returned: the only ones an answer may cite. */
+        private void rememberRefs(JsonNode ui) {
+            if (ui != null && ToolResult.SOURCES_UI_TYPE.equals(ui.path("type").asText())) {
+                ui.path("sources").forEach(source -> retrievedRefs.add(source.path("ref").asText()));
+            }
         }
 
         /**
@@ -276,13 +396,35 @@ public class AgentLoop {
         }
 
         private AgentResult result(AgentResult.Status status, String answer) {
+            return result(status, answer, null);
+        }
+
+        private AgentResult result(AgentResult.Status status, String answer, GuardrailOutcome outcome) {
             return new AgentResult(answer, usage, toolCallRecords.size(), iterations, status, null, llmCalls,
-                    toolCallRecords, answeredBy);
+                    toolCallRecords, answeredBy, outcome);
         }
 
         private AgentResult failed(ErrorCode code) {
+            if (retry != null && !retry.revised) {
+                return keepEarlierAnswer();
+            }
             return AgentResult.failed(code, usage, toolCallRecords.size(), iterations, llmCalls, toolCallRecords,
                     answeredBy);
+        }
+    }
+
+    /**
+     * The answer the guardrail asked to have again: what it was and what was wrong with it, and whether the client has
+     * been told to drop it yet.
+     */
+    private static final class Retry {
+        private final String answer;
+        private final List<Violation> violations;
+        private boolean revised;
+
+        Retry(String answer, List<Violation> violations) {
+            this.answer = answer;
+            this.violations = violations;
         }
     }
 

@@ -12,6 +12,7 @@ import dev.proppilot.agent.routing.RoutedReason;
 import dev.proppilot.agent.tools.ToolRegistry;
 import dev.proppilot.config.AgentProperties;
 import dev.proppilot.config.TestLlmProperties;
+import dev.proppilot.guardrail.Guardrails;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -102,7 +103,8 @@ class StalledModelFallbackTest {
         var client = new AnthropicLlmClient(props, JSON);
         var router = new ModelRouter(client, props, new ComplexityAssessor());
         var registry = new ToolRegistry(List.of(), mock(PlatformTransactionManager.class));
-        var loop = new AgentLoop(client, registry, new AgentProperties(6, 10, 10), Clock.systemUTC(), router);
+        var loop = new AgentLoop(client, registry, new AgentProperties(6, 10, 10), Clock.systemUTC(), router,
+                Guardrails.off());
         var request = AgentRequest.question("Who is more than 30 days late on rent?", List.of(), UUID.randomUUID());
 
         var result = loop.run(request, event -> { }, () -> false);

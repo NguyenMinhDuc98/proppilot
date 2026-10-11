@@ -74,7 +74,7 @@ class RunTraceApiIT extends CorpusIntegrationTest {
         var tool = new ToolCallRecord(1, "search_units", "{\"city\":\"Riyadh\"}", "3 units found", false, 25,
                 T0.plusMillis(650));
         return new AgentResult(ANSWER, new Usage(1240, 205, 3000, 3000), 1, 2, AgentResult.Status.OK, null,
-                List.of(first, second), List.of(tool), ModelRoute.byDefault(MODEL));
+                List.of(first, second), List.of(tool), ModelRoute.byDefault(MODEL), null);
     }
 
     @Test
@@ -168,7 +168,7 @@ class RunTraceApiIT extends CorpusIntegrationTest {
         var route = new ModelRoute(MODEL, RoutedReason.COMPLEX, new Complexity(
                 List.of(ComplexityRule.SEVERAL_DATA_AREAS, ComplexityRule.SEQUENCING_WORD)));
         var id = save(new AgentResult(ANSWER, new Usage(100, 20), 0, 1, AgentResult.Status.OK, null, List.of(), List.of(),
-                route));
+                route, null));
 
         mvc.perform(get("/api/runs/{id}/trace", id))
                 .andExpect(status().isOk())
@@ -185,7 +185,7 @@ class RunTraceApiIT extends CorpusIntegrationTest {
                 "{\"query\":\"private question marker: who owes rent in B-12?\",\"unit_code\":\"B-12\"}",
                 "No tenant matches 'private question marker'", true, 25, T0.plusMillis(650));
         var id = save(new AgentResult(ANSWER, new Usage(100, 20), 1, 1, AgentResult.Status.OK, null, List.of(),
-                List.of(tool), ModelRoute.byDefault(MODEL)));
+                List.of(tool), ModelRoute.byDefault(MODEL), null));
 
         mvc.perform(get("/api/runs/{id}/trace", id))
                 .andExpect(status().isOk())

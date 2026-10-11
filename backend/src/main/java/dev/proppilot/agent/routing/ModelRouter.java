@@ -11,7 +11,8 @@ import org.springframework.stereotype.Component;
 /**
  * Decides which model a run goes to, before it starts, and which one it falls back to. The default model answers,
  * unless a larger model is configured and the question scores as multi-step or complex. Without a larger model, or
- * with a provider that has only one (the offline assistant), nothing is scored and every run goes to the default.
+ * with a provider that has only one (the offline assistant), nothing is scored and every run goes to the default. An
+ * answer that the grounding guardrail asks to have again goes to the larger model when there is one.
  */
 @Component
 public class ModelRouter {
@@ -65,6 +66,14 @@ public class ModelRouter {
             log.warn("A question could not be scored ({}), so the default model takes it", e.getClass().getName());
             return Optional.empty();
         }
+    }
+
+    /**
+     * Where the run goes to answer again after the grounding guardrail found the answer of {@code current} wanting:
+     * the larger model when one is configured, and otherwise the model it already is on.
+     */
+    public ModelRoute retryFrom(ModelRoute current) {
+        return enabled() ? current.retryingOn(props.largeModel()) : current;
     }
 
     /** The route to take after a call on {@code failed} could not be answered; empty when there is no other model. */

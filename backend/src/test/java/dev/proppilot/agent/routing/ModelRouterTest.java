@@ -156,4 +156,43 @@ class ModelRouterTest {
 
         assertThat(router.fallbackFrom(router.route(SIMPLE, 0))).isEmpty();
     }
+
+    @Test
+    void aGuardrailRetryGoesToTheLargerModelAndKeepsTheScore() {
+        var router = router(TestLlmProperties.defaults().largeModel(LARGE));
+        var first = router.route(SIMPLE, 0);
+
+        var retry = router.retryFrom(first);
+
+        assertThat(retry.model()).isEqualTo(LARGE);
+        assertThat(retry.reason()).isEqualTo(RoutedReason.GUARDRAIL_RETRY);
+        assertThat(retry.complexity()).isEqualTo(first.complexity());
+    }
+
+    @Test
+    void aGuardrailRetryOfAnAnswerFromTheLargerModelStaysThereAndSaysWhy() {
+        var router = router(TestLlmProperties.defaults().largeModel(LARGE));
+
+        var retry = router.retryFrom(router.route(COMPLEX, 0));
+
+        assertThat(retry.model()).isEqualTo(LARGE);
+        assertThat(retry.reason()).isEqualTo(RoutedReason.GUARDRAIL_RETRY);
+    }
+
+    @Test
+    void aGuardrailRetryWithoutALargerModelStaysWhereItWas() {
+        var router = router(TestLlmProperties.defaults());
+        var first = router.route(SIMPLE, 0);
+
+        assertThat(router.retryFrom(first)).isEqualTo(first);
+    }
+
+    @Test
+    void aProviderWithOneModelNeverRoutesARetryElsewhere() {
+        var offline = new ScriptedLlmClient().servingAs("offline", "rule-based");
+        var router = new ModelRouter(offline, TestLlmProperties.defaults().largeModel(LARGE).build(), assessor);
+        var first = router.defaultRoute();
+
+        assertThat(router.retryFrom(first)).isEqualTo(first);
+    }
 }

@@ -10,6 +10,8 @@ import dev.proppilot.agent.AgentResult;
 import dev.proppilot.agent.ErrorCode;
 import dev.proppilot.agent.ToolCallRecord;
 import dev.proppilot.agent.llm.LlmClient;
+import dev.proppilot.guardrail.ClaimKind;
+import dev.proppilot.guardrail.GuardrailOutcome;
 import dev.proppilot.agent.tools.ToolResult;
 import dev.proppilot.config.AgentProperties;
 import dev.proppilot.trace.RunTracer;
@@ -19,6 +21,7 @@ import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -39,10 +42,18 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
  *   <li>{@code action_proposed}: the proposed action ({@code id, kind, status, summaryEn, summaryAr, preview,
  *       expiresAt, ...}), right after the {@code tool_result} of the tool that proposed it</li>
  *   <li>{@code token}: {@code {text}}, a piece of the answer</li>
+ *   <li>{@code revise}: {@code {reason}}, where {@code reason} is {@code grounding}. The answer streamed so far is
+ *       to be dropped: the grounding guardrail found values in it that nothing the run was given supports, and a
+ *       new answer follows (guardrail mode {@code retry}). It comes once at most, as the new answer begins</li>
  *   <li>{@code error}: {@code {message, code}}</li>
+ *   <li>{@code guardrail}: {@code {status, values}}, only for an answer that states values the run cannot ground
+ *       ({@code status} is always {@code unverified}; {@code values} are {@code {kind, value}} with {@code kind}
+ *       one of {@code NUMBER}, {@code UNIT_CODE}, {@code TENANT_NAME} and {@code CITATION}, at most 10, each cut
+ *       to 40 characters). It is sent before {@code done}</li>
  *   <li>{@code done}: the usage and outcome of the run: status, provider, the model that answered and why it was
  *       chosen ({@code routedReason}), the token counts (input, output and the cache read and write tokens), tool
- *       calls, iterations, latency and cost</li>
+ *       calls, iterations, latency and cost, and {@code guardrailStatus}: {@code OK}, {@code FLAGGED},
+ *       {@code RETRIED_OK} or {@code RETRIED_FLAGGED}, and null when the guardrail did not check the answer</li>
  * </ul>
  *
  * <p>A turn is a question, or the confirmation of a decision a person took on a proposal ({@code actionId}). A
@@ -149,6 +160,9 @@ public class ChatService {
         if (result.status() == AgentResult.Status.ERROR) {
             client.send("error", ErrorPayload.of(result.errorCode()));
         }
+        if (result.guardrail() != null && result.guardrail().flagged()) {
+            client.send("guardrail", GuardrailPayload.of(result.guardrail()));
+        }
         client.send("done", DonePayload.of(run));
         client.complete();
     }
@@ -184,6 +198,7 @@ public class ChatService {
                 }
             }
             case AgentEvent.Token token -> client.send("token", new TokenPayload(token.text()));
+            case AgentEvent.Revise revise -> client.send("revise", new RevisePayload(revise.reason()));
         }
     }
 
@@ -211,6 +226,21 @@ public class ChatService {
     record TokenPayload(String text) {
     }
 
+    record RevisePayload(String reason) {
+    }
+
+    /** The claims of an answer that its run cannot ground; they are the figures, codes, names and refs it wrote. */
+    record GuardrailPayload(String status, List<Value> values) {
+
+        record Value(ClaimKind kind, String value) {
+        }
+
+        static GuardrailPayload of(GuardrailOutcome outcome) {
+            return new GuardrailPayload("unverified",
+                    outcome.violations().stream().map(v -> new Value(v.kind(), v.value())).toList());
+        }
+    }
+
     /** {@code message} is a generic English fallback; clients show their own text for {@code code}. */
     record ErrorPayload(String message, String code) {
 
@@ -222,17 +252,18 @@ public class ChatService {
     /**
      * The token counts are the run's totals; {@code inputTokens} are the uncached ones, apart from the cache tokens.
      * {@code model} is the one that answered and {@code routedReason} why: {@code DEFAULT}, {@code COMPLEX},
-     * {@code GUARDRAIL_RETRY} or {@code FALLBACK}.
+     * {@code GUARDRAIL_RETRY} or {@code FALLBACK}. {@code guardrailStatus} is null for an answer that was not checked.
      */
-    record DonePayload(UUID runId, String status, String provider, String model, String routedReason, int inputTokens,
-                       int outputTokens, int cacheReadTokens, int cacheWriteTokens, int toolCalls, int iterations,
-                       long latencyMs, BigDecimal costUsd, boolean truncated) {
+    record DonePayload(UUID runId, String status, String provider, String model, String routedReason,
+                       String guardrailStatus, int inputTokens, int outputTokens, int cacheReadTokens,
+                       int cacheWriteTokens, int toolCalls, int iterations, long latencyMs, BigDecimal costUsd,
+                       boolean truncated) {
 
         static DonePayload of(ChatRun run) {
             return new DonePayload(run.getId(), run.getStatus().name(), run.getProvider(), run.getModel(),
-                    run.getRoutedReason(), run.getInputTokens(), run.getOutputTokens(), run.getCacheReadTokens(),
-                    run.getCacheWriteTokens(), run.getToolCalls(), run.getIterations(), run.getLatencyMs(),
-                    run.getCostUsd(), run.getStatus() == AgentResult.Status.TRUNCATED);
+                    run.getRoutedReason(), run.getGuardrailStatus(), run.getInputTokens(), run.getOutputTokens(),
+                    run.getCacheReadTokens(), run.getCacheWriteTokens(), run.getToolCalls(), run.getIterations(),
+                    run.getLatencyMs(), run.getCostUsd(), run.getStatus() == AgentResult.Status.TRUNCATED);
         }
     }
 }

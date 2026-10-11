@@ -221,4 +221,10 @@ public class OfflineLlmClient implements LlmClient {
     public boolean billable() {
         return false;
     }
+
+    /** The examples it offers to a question it does not understand: they hold figures and a unit code of its own. */
+    @Override
+    public List<String> ownText() {
+        return List.of(OfflineAnswerWriter.help(false), OfflineAnswerWriter.help(true));
+    }
 }
