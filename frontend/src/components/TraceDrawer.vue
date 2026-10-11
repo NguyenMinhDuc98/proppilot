@@ -1,17 +1,42 @@
 <script setup lang="ts">
-import { computed, ref, useId } from 'vue'
+import { computed, onMounted, ref, useId } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { buildTrace } from '../composables/trace'
+import { fetchRunTrace } from '../api/runs'
+import type { RunTrace } from '../api/types'
+import { buildStoredTrace, buildTrace, toolDetailsOf } from '../composables/trace'
 import type { ChatMessage } from '../stores/chat'
+import TraceTimeline from './TraceTimeline.vue'
 
 const props = defineProps<{ message: ChatMessage }>()
 const { t } = useI18n()
 
 const open = ref(false)
 const panelId = `trace-${useId()}`
-const trace = computed(() => buildTrace(props.message))
 
-const titleKey = { note: 'note', call: 'called', result: 'returned', failed: 'failed', answer: 'answered' } as const
+/** The run as the server stored it; null until it was read, and for good when it could not be or holds no calls. */
+const stored = ref<RunTrace | null>(null)
+
+/**
+ * The drawer is there once the answer is complete, and that is when its stored trace is read. Until it arrives, and
+ * when it never does, the drawer shows what the stream already told: nothing waits on the request.
+ */
+onMounted(async () => {
+  const runId = props.message.usage?.runId
+  if (!runId) return
+  try {
+    const found = await fetchRunTrace(runId)
+    // A run stored before traces were kept has its totals and no calls: the stream says more than that.
+    if (found.llmCalls.length > 0) stored.value = found
+  } catch {
+    // The live trace stays.
+  }
+})
+
+const trace = computed(() =>
+  stored.value
+    ? buildStoredTrace(stored.value, toolDetailsOf(props.message, stored.value), props.message.preamble)
+    : buildTrace(props.message),
+)
 </script>
 
 <template>
@@ -24,26 +49,7 @@ const titleKey = { note: 'note', call: 'called', result: 'returned', failed: 'fa
     </button>
 
     <div v-show="open" :id="panelId" class="panel">
-      <ol class="steps">
-        <li v-for="(step, i) in trace.steps" :key="i" class="step" :class="step.kind">
-          <span class="num">{{ i + 1 }}</span>
-          <div class="step-body">
-            <span class="step-title">{{ t(`trace.${titleKey[step.kind]}`) }}</span>
-            <code v-if="step.kind === 'call'" class="mono">{{ step.main }}</code>
-            <code v-if="step.detail && step.detail !== '{}'" class="mono dim">{{ step.detail }}</code>
-            <span v-if="step.kind === 'note'" class="detail note-text" dir="auto">{{ step.main }}</span>
-            <span v-if="step.kind === 'result' || step.kind === 'failed'" class="detail" dir="auto">{{ step.main }}</span>
-            <span v-if="step.kind === 'answer'" class="detail">{{ t('trace.answerTokens', { n: step.tokens ?? 0 }) }}</span>
-          </div>
-        </li>
-      </ol>
-
-      <dl v-if="trace.stats.length" class="stats">
-        <div v-for="stat in trace.stats" :key="stat.id" class="stat">
-          <dt>{{ t(`trace.stats.${stat.id}`) }}</dt>
-          <dd><bdi>{{ stat.value }}</bdi></dd>
-        </div>
-      </dl>
+      <TraceTimeline :trace="trace" />
       <p class="note">{{ t('trace.readOnly') }}</p>
     </div>
   </div>
@@ -79,40 +85,5 @@ const titleKey = { note: 'note', call: 'called', result: 'returned', failed: 'fa
   border: 1px solid var(--pp-border);
   border-radius: 14px;
 }
-.steps { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; }
-.step { display: flex; gap: 12px; padding-bottom: 14px; position: relative; }
-.step:last-child { padding-bottom: 0; }
-.step:not(:last-child)::before {
-  content: '';
-  position: absolute;
-  inset-inline-start: 10px;
-  top: 24px;
-  bottom: 2px;
-  width: 1px;
-  background: var(--pp-border-strong);
-}
-.num {
-  flex: none;
-  width: 21px;
-  height: 21px;
-  display: grid;
-  place-items: center;
-  border-radius: 50%;
-  background: var(--pp-primary-soft);
-  color: var(--pp-primary-ink);
-  font-size: 11px;
-  font-weight: 700;
-}
-.step.failed .num { background: var(--pp-danger-bg); color: var(--pp-danger-ink); }
-.step-body { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.step-title { font-size: 12px; color: var(--pp-muted); font-weight: 600; }
-.mono { font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 12.5px; overflow-wrap: anywhere; direction: ltr; text-align: start; }
-.detail { font-size: 13px; overflow-wrap: anywhere; }
-.note-text { white-space: pre-line; }
-.dim { color: var(--pp-muted); }
-.stats { margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; }
-.stat { padding: 8px 12px; border-radius: 10px; background: var(--pp-bg); }
-.stat dt { font-size: 11.5px; color: var(--pp-muted); }
-.stat dd { margin: 0; font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .note { margin: 0; font-size: 12px; color: var(--pp-muted); }
 </style>
