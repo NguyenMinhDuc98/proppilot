@@ -223,6 +223,28 @@ class LeaseChunkerTest {
     }
 
     @Test
+    void whenTheLastSentenceOfAPartIsLongerThanTheOverlapTheNextPartStartsWithItsLastWords() {
+        var sentences = longSentences(20);
+        var chunks = chunker.chunk(CODE, List.of("1. House rules\n" + String.join(" ", sentences) + "\n"));
+        var bodies = chunks.stream().map(chunk -> chunk.content().substring(chunk.content().indexOf('\n') + 1)).toList();
+
+        assertThat(TokenEstimate.of(sentences.get(0))).isGreaterThan(LeaseChunker.OVERLAP_TOKENS);
+        assertThat(bodies).hasSizeGreaterThanOrEqualTo(2);
+        var rebuilt = new StringBuilder(bodies.get(0));
+        for (int part = 1; part < bodies.size(); part++) {
+            var previous = bodies.get(part - 1);
+            var current = bodies.get(part);
+            var overlap = longestEndOfFirstThatStartsTheSecond(previous, current);
+
+            assertThat(TokenEstimate.of(overlap)).as("overlap of part %d", part)
+                    .isBetween(LeaseChunker.OVERLAP_TOKENS - 5, LeaseChunker.OVERLAP_TOKENS);
+            assertThat(previous.charAt(previous.length() - overlap.length() - 1)).as("cut at a word").isEqualTo(' ');
+            rebuilt.append(current.substring(overlap.length()));
+        }
+        assertThat(rebuilt.toString()).isEqualTo(String.join(" ", sentences));
+    }
+
+    @Test
     void partRefsAreStableForTheSameText() {
         var pages = List.of("1. House rules\n" + String.join(" ", numberedSentences(80)) + "\n");
 
@@ -268,6 +290,25 @@ class LeaseChunkerTest {
                 .mapToObj(n -> ("Sentence %d says that the Tenant shall pay the rent on time and keep the Property "
                         + "in good order.").formatted(n))
                 .toList();
+    }
+
+    /** Sentences of about 57 estimated tokens each, which is more than the overlap by themselves. */
+    private static List<String> longSentences(int count) {
+        return IntStream.rangeClosed(1, count)
+                .mapToObj(n -> ("Sentence %d says that the Tenant shall pay the rent on time and keep the Property in "
+                        + "good order, that every notice must be given in writing to the other party at the address "
+                        + "named in the preamble, and that the sender keeps a copy for the whole of the Term.")
+                        .formatted(n))
+                .toList();
+    }
+
+    private static String longestEndOfFirstThatStartsTheSecond(String first, String second) {
+        for (int length = Math.min(first.length(), second.length()); length > 0; length--) {
+            if (first.endsWith(second.substring(0, length))) {
+                return second.substring(0, length);
+            }
+        }
+        return "";
     }
 
     private static List<String> sentencesOf(String content) {

@@ -10,6 +10,7 @@ import org.springframework.stereotype.Component;
  * one chunk for each numbered clause ({@code #7}). A clause of more than {@link #MAX_CHUNK_TOKENS} estimated tokens is
  * split on sentence boundaries into parts ({@code #7a}, {@code #7b}, ...), each starting with the last sentences of the
  * part before it, about {@link #OVERLAP_TOKENS} tokens of them, so an answer that straddles a cut is whole in one part.
+ * When the last sentence of a part is longer than that by itself, the part after it starts with its last words.
  *
  * <p>Every chunk begins with its clause heading, so a part reads on its own. The page footers and the signature block
  * are not part of any chunk. Clauses are numbered in sequence: a heading starts a clause only when its number is the
@@ -223,33 +224,71 @@ public class LeaseChunker {
         }
     }
 
-    /** Packs pieces into parts of at most {@code budget}, each part starting with the end of the one before. */
+    /**
+     * Packs pieces into parts of at most {@code budget}. Each part starts with the end of the one before it: the last
+     * pieces that fit the overlap, or the last words of the last piece when that piece alone is longer than the overlap.
+     */
     private static List<String> pack(List<Piece> pieces, long budget) {
         long overlapBudget = TokenEstimate.weightOf(OVERLAP_TOKENS);
         var parts = new ArrayList<String>();
+        var carried = "";
         int start = 0;
         while (start < pieces.size()) {
+            var part = new StringBuilder(carried);
+            long weight = TokenEstimate.weight(carried);
             int end = start;
-            long weight = 0;
             while (end < pieces.size()
                     && (end == start || weight + SPACE_WEIGHT + pieces.get(end).weight() <= budget)) {
-                weight += (end == start ? 0 : SPACE_WEIGHT) + pieces.get(end).weight();
+                if (!part.isEmpty()) {
+                    part.append(' ');
+                    weight += SPACE_WEIGHT;
+                }
+                part.append(pieces.get(end).text());
+                weight += pieces.get(end).weight();
                 end++;
             }
-            parts.add(join(pieces, start, end));
-            if (end == pieces.size()) {
-                break;
+            parts.add(part.toString());
+            if (end < pieces.size()) {
+                // The overlap must leave room for the piece that comes next, or the parts would never advance.
+                long room = budget - SPACE_WEIGHT - pieces.get(end).weight();
+                carried = tail(pieces, start, end, Math.min(overlapBudget, room));
             }
-            int next = end;
-            long overlap = 0;
-            while (next - 1 > start && overlap + SPACE_WEIGHT + pieces.get(next - 1).weight() <= overlapBudget) {
-                next--;
-                overlap += SPACE_WEIGHT + pieces.get(next).weight();
-            }
-            // The overlap must leave room for at least one piece that is new, or the parts would never advance.
-            start = overlap + SPACE_WEIGHT + pieces.get(end).weight() > budget ? end : next;
+            start = end;
         }
         return parts;
+    }
+
+    /** The end of {@code pieces[start, end)} that weighs at most {@code limit}, cut at a word when no piece fits. */
+    private static String tail(List<Piece> pieces, int start, int end, long limit) {
+        int first = firstWithin(pieces, start, end, limit);
+        if (first < end) {
+            return join(pieces, first, end);
+        }
+        var words = words(pieces.get(end - 1).text());
+        return join(words, firstWithin(words, 0, words.size(), limit), words.size());
+    }
+
+    /** The lowest index at which the pieces up to {@code end} weigh at most {@code limit}; {@code end} if none do. */
+    private static int firstWithin(List<Piece> pieces, int start, int end, long limit) {
+        int first = end;
+        long weight = 0;
+        while (first > start) {
+            long added = pieces.get(first - 1).weight() + (first == end ? 0 : SPACE_WEIGHT);
+            if (weight + added > limit) {
+                break;
+            }
+            weight += added;
+            first--;
+        }
+        return first;
+    }
+
+    private static List<Piece> words(String text) {
+        var words = new ArrayList<Piece>();
+        for (var word : text.split(" ")) {
+            words.add(new Piece(word, TokenEstimate.weight(word)));
+        }
+        return words;
     }
 
     private static String join(List<Piece> pieces, int start, int end) {

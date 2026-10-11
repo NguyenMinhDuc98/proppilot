@@ -29,6 +29,12 @@ class LeaseChunkerHostileInputTest {
     }
 
     @Test
+    void oneEndlessSentenceOfShortWords() {
+        assertWellFormed(chunk("1. Words\n" + "word ".repeat(HOSTILE / 5) + "\n"));
+        assertWellFormed(chunk("1. Arabic\n" + "كلمة ".repeat(HOSTILE / 5) + "\n"));
+    }
+
+    @Test
     void aLongRunOfPunctuation() {
         assertWellFormed(chunk("1. Dots\n" + ".".repeat(HOSTILE) + "\n"));
         assertWellFormed(chunk("1. Spaced\n" + "! ".repeat(HOSTILE / 2) + "\n"));
