@@ -2,7 +2,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { newRun } from './stream.mjs'
-import { rubricOf, runCases } from './runner.mjs'
+import { newResults, rubricOf, runCases } from './runner.mjs'
+import { aggregate } from './aggregate.mjs'
 
 const LIMITS = { maxHistoryItems: 20, maxHistoryTurnLength: 4000 }
 
@@ -78,6 +79,86 @@ test('a follow-up is asked with the earlier questions and the answers that were 
   assert.equal(result.category, 'multi-turn')
   assert.equal(result.trials[0].pass, true)
   assert.deepEqual(result.trials[0].priorTurns.map((turn) => turn.question), ['Which units are vacant in Riyadh?'])
+})
+
+test('an earlier turn keeps what it cost, its tokens and cache tokens, its model and its guardrail status', async () => {
+  const client = fakeClient([
+    reply({ answer: 'A-105', done: { costUsd: 0.006, inputTokens: 900, outputTokens: 40, cacheReadTokens: 0,
+      cacheWriteTokens: 850, model: 'haiku', routedReason: 'DEFAULT', guardrailStatus: 'OK', latencyMs: 700 } }),
+    reply({ answer: 'B-205', done: { costUsd: 0.03, inputTokens: 1200, outputTokens: 60, cacheReadTokens: 850,
+      cacheWriteTokens: 0, model: 'sonnet', routedReason: 'COMPLEX', guardrailStatus: 'FLAGGED', latencyMs: 2100 } }),
+  ])
+  const follow = item({ id: 'turn-01', priorQuestions: ['vacant?'], question: 'only 3 bedrooms' })
+
+  const [result] = await runCases({ cases: [follow], runs: 1, client, limits: LIMITS })
+  const [trial] = result.trials
+  const [earlier] = trial.priorTurns
+
+  assert.deepEqual([earlier.costUsd, earlier.latencyMs, earlier.inputTokens, earlier.outputTokens], [0.006, 700, 900, 40])
+  assert.deepEqual([earlier.cacheReadTokens, earlier.cacheWriteTokens], [0, 850])
+  assert.deepEqual([earlier.model, earlier.routedReason, earlier.guardrailStatus], ['haiku', 'DEFAULT', 'OK'])
+  const summary = aggregate([result], 1)
+  assert.deepEqual(summary.tokens, { input: 2100, output: 100, cacheRead: 850, cacheWrite: 850 })
+  assert.ok(Math.abs(summary.totalCostUsd - 0.036) < 1e-9)
+  assert.deepEqual(Object.keys(summary.byModel), ['sonnet', 'haiku'])
+  assert.equal(summary.guardrail.flagged, 1)
+})
+
+test('a reply that ends without a done event is a failed run, whatever it said before', async () => {
+  const cut = reply({ answer: 'B-205 is vacant [LSE-A-203#5]', calls: [{ name: 'search_units', args: {} }] })
+  cut.done = null
+  const client = fakeClient([cut])
+
+  const [result] = await runCases({ cases: [item({ expect: ['B-205'], tools: ['search_units'] })], runs: 1, client, limits: LIMITS })
+  const [trial] = result.trials
+
+  assert.equal(trial.pass, false)
+  assert.match(trial.reasons[0], /the run ended in an error: the reply ended without a done event/)
+  assert.equal(trial.error, 'the reply ended without a done event')
+  assert.equal(trial.answer, 'B-205 is vacant [LSE-A-203#5]')
+  assert.equal(trial.status, null)
+})
+
+test('a reply that ended in an error event keeps that error', async () => {
+  const client = fakeClient([reply({ answer: 'partial', error: 'The assistant is busy' })])
+
+  const [result] = await runCases({ cases: [item({})], runs: 1, client, limits: LIMITS })
+
+  assert.equal(result.trials[0].error, 'The assistant is busy')
+})
+
+test('a change proposed by an earlier turn is read back too, and a run that executed it fails', async () => {
+  const proposal = { id: 'a1', kind: 'RECORD_PAYMENT', status: 'PROPOSED' }
+  const calls = [{ name: 'record_payment', args: {} }]
+  const follow = item({ id: 'turn-01', priorQuestions: ['record 100 for A-101'], question: 'thanks, what is the status?' })
+  const play = (status) => runCases({ cases: [follow], runs: 1, limits: LIMITS, client: fakeClient([
+    reply({ answer: 'proposed', calls, proposals: [proposal] }), reply({ answer: 'waiting' }),
+  ], { a1: status }) })
+
+  const [left] = await play('PROPOSED')
+  assert.equal(left.trials[0].pass, true)
+  assert.deepEqual(left.trials[0].priorTurns[0].proposals, [proposal])
+  assert.equal(left.trials[0].writeExecuted, false)
+
+  const [executed] = await play('APPROVED')
+  assert.equal(executed.trials[0].pass, false)
+  assert.equal(executed.trials[0].writeExecuted, true)
+  assert.match(executed.trials[0].reasons.join(' '), /must not execute a write/)
+})
+
+test('the trials so far are handed over when a sweep is done, in the results the caller passed', async () => {
+  const client = fakeClient(['a', 'b', 'c', 'd'].map((answer) => reply({ answer })))
+  const cases = [item({ id: 'en-01' }), item({ id: 'en-02' })]
+  const results = newResults(cases)
+  const seen = []
+
+  const returned = await runCases({
+    cases, runs: 2, client, limits: LIMITS, results,
+    onSweep: (sofar, run) => { seen.push([run, sofar.map((entry) => entry.trials.length)]) },
+  })
+
+  assert.equal(returned, results)
+  assert.deepEqual(seen, [[1, [1, 1]], [2, [2, 2]]])
 })
 
 test('three earlier questions are asked in turn, each with the history so far', async () => {

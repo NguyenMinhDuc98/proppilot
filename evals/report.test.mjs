@@ -11,10 +11,13 @@ const trial = (pass, fields = {}) => ({
 })
 const item = (id, category, lang, ...trials) => ({ id, category, lang, question: id, trials })
 
-function results({ provider = 'offline', judge = { requested: false, enabled: false, model: null, reason: null }, cases, skipped = [] } = {}) {
+function results({
+  provider = 'offline', judge = { requested: false, enabled: false, model: null, reason: null }, cases, skipped = [],
+  offlineOnly = true,
+} = {}) {
   const info = { mode: provider, provider, model: 'rule-based', retrieval: 'keyword', leaseDocuments: 30 }
   return buildResults({
-    ranAt: '2026-10-11T12:00:00.000Z', options: { runs: 3, only: [], offlineOnly: true, judge: judge.requested, delayMs: 0 },
+    ranAt: '2026-10-11T12:00:00.000Z', options: { runs: 3, only: [], offlineOnly, judge: judge.requested, delayMs: 0 },
     url: 'http://localhost:8080', info, judge, skipped,
     cases: cases ?? [
       item('en-01', 'read', 'en', trial(true), trial(true), trial(true)),
@@ -54,6 +57,15 @@ test('an offline run says what it does not show, and a run of a real model does 
   assert.doesNotMatch(renderSummary(results({ provider: 'anthropic' })), /Offline run\./)
 })
 
+test('an offline run says that the cases for a real model were left out only when they were', () => {
+  const left = renderSummary(results({ skipped: [{ id: 'turn-01' }] }))
+  assert.match(left, /that only a real model can pass \(`offline: false`\) were left out/)
+
+  const all = renderSummary(results({ offlineOnly: false }))
+  assert.doesNotMatch(all, /were left out|were not run/)
+  assert.match(all, /A case marked `offline: false` is one that only a real model is expected to pass/)
+})
+
 test('the overall table holds the pass rate, the deviation, the flaky cases, the latency and the cost', () => {
   const summary = renderSummary(results())
 
@@ -62,9 +74,51 @@ test('the overall table holds the pass rate, the deviation, the flaky cases, the
   assert.match(summary, /Cases that passed every run \| 1\/3/)
   assert.match(summary, /Flaky cases \(passed some runs\) \| 1/)
   assert.match(summary, /Cases that failed every run \| 1/)
+  assert.match(summary, /Questions asked \(earlier turns of follow-ups included\) \| 9/)
   assert.match(summary, /Average latency \| 100 ms/)
   assert.match(summary, /p95 latency \| 100 ms/)
   assert.match(summary, /Average cost per question \| \$0\.00000/)
+  assert.match(summary, /Total cost \| \$0\.00000/)
+})
+
+test('a run that more than one model answered has a table of what each of them did', () => {
+  const mixed = results({
+    provider: 'anthropic',
+    cases: [item('en-01', 'read', 'en',
+      trial(true, { model: 'haiku', costUsd: 0.004, latencyMs: 800 }),
+      trial(false, { model: 'sonnet', costUsd: 0.03, latencyMs: 4200, routedReason: 'COMPLEX' }))],
+  })
+
+  const summary = renderSummary(mixed)
+
+  assert.match(summary, /\| Model\(s\) that answered \| haiku \(1\), sonnet \(1\) \|/)
+  assert.match(summary, /## By answering model/)
+  assert.match(summary, /\| haiku \| 1 \| 1\/1 \| 100\.0% \| \$0\.00400 \| 800 ms \| 800 ms \|/)
+  assert.match(summary, /\| sonnet \| 1 \| 0\/1 \| 0\.0% \| \$0\.03000 \| 4\.20 s \| 4\.20 s \|/)
+  assert.doesNotMatch(renderSummary(results()), /By answering model/)
+})
+
+test('a run that was stopped says so, and how many runs of each case it reached', () => {
+  const stopped = results({ cases: [
+    item('en-01', 'read', 'en', trial(true), trial(true)),
+    item('en-02', 'read', 'en', trial(true)),
+  ] })
+
+  const summary = renderSummary(stopped)
+
+  assert.equal(stopped.complete, false)
+  assert.match(summary, /Incomplete run\./)
+  assert.match(summary, /The figures cover the 3 runs of cases that finished\./)
+  assert.match(summary, /\| Runs per case \| 3 asked for, 2 reached \|/)
+  assert.doesNotMatch(renderSummary(results()), /Incomplete run/)
+  assert.equal(results().complete, true)
+})
+
+test('a run stopped before any case finished does not claim that every case passed', () => {
+  const none = results({ cases: [item('en-01', 'read', 'en'), item('en-02', 'read', 'en')] })
+
+  assert.match(renderSummary(none), /No case has finished a run\./)
+  assert.doesNotMatch(renderSummary(none), /Every case passed/)
 })
 
 test('the pass rate is shown by category in a fixed order and by language', () => {

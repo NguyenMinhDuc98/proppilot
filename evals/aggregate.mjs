@@ -5,9 +5,14 @@ const mean = (values) => (values.length ? values.reduce((a, b) => a + b, 0) / va
 const sum = (values) => values.reduce((a, b) => a + b, 0)
 const count = (values) => values.reduce((counts, value) => ({ ...counts, [value]: (counts[value] ?? 0) + 1 }), {})
 
-/** What a trial cost, with the earlier turns of its conversation. */
-const costWithEarlierTurns = (trial) => (trial.costUsd ?? 0)
-  + sum((trial.priorTurns ?? []).map((turn) => turn.costUsd ?? 0))
+/**
+ * The chat requests that got a reply: the graded one of each trial and the earlier turns of its conversation. Cost,
+ * tokens, latency, models and guardrail statuses are all counted over these, so that they add up to one another; the
+ * pass rate is counted over the graded turns.
+ */
+const answeredRequests = (trials) => trials
+  .flatMap((trial) => [trial, ...(trial.priorTurns ?? [])])
+  .filter((request) => typeof request.latencyMs === 'number')
 
 /** The sample standard deviation (n - 1); 0 for fewer than two values. */
 export function standardDeviation(values) {
@@ -43,6 +48,26 @@ function group(cases, key) {
   ]))
 }
 
+/** For each model that answered: how much it was asked, how it did on the graded turns, what it cost, how long it took. */
+function modelSummaries(trials, requests) {
+  const names = [...new Set(requests.map((request) => request.model).filter(Boolean))]
+  return Object.fromEntries(names.map((name) => {
+    const asked = requests.filter((request) => request.model === name)
+    const graded = trials.filter((trial) => trial.model === name)
+    const passed = graded.filter((trial) => trial.pass).length
+    const latencies = asked.map((request) => request.latencyMs)
+    return [name, {
+      requests: asked.length,
+      trials: graded.length,
+      passed,
+      passRate: graded.length ? passed / graded.length : 0,
+      avgCostUsd: mean(asked.map((request) => request.costUsd ?? 0)),
+      avgLatencyMs: mean(latencies),
+      p95LatencyMs: percentile(latencies, 95),
+    }]
+  }))
+}
+
 function judgeSummary(trials) {
   const judged = trials.filter((trial) => trial.judge?.scores)
   const average = (name) => mean(judged.map((trial) => trial.judge.scores[name]))
@@ -56,20 +81,25 @@ function judgeSummary(trials) {
 }
 
 /**
- * @param {{id: string, category: string, lang: string, trials: object[]}[]} cases each with one trial per run
- * @param {number} runs how many times each case was run
+ * @param {{id: string, category: string, lang: string, trials: object[]}[]} cases each with one trial per run; a run
+ *   that was stopped has fewer, and its last sweep only the cases that got to run
+ * @param {number} runs how many runs (sweeps) there are at least one trial of
  */
 export function aggregate(cases, runs) {
   const trials = cases.flatMap((item) => item.trials)
-  const perRun = Array.from({ length: runs }, (_, index) => (
-    cases.length ? cases.filter((item) => item.trials[index]?.pass).length / cases.length : 0))
+  const requests = answeredRequests(trials)
+  const perRun = Array.from({ length: runs }, (_, index) => {
+    const ran = cases.filter((item) => item.trials[index])
+    return ran.length ? ran.filter((item) => item.trials[index].pass).length / ran.length : 0
+  })
   const outcomes = cases.map((item) => ({ id: item.id, ...caseOutcome(item.trials) }))
-  const latencies = trials.map((trial) => trial.latencyMs).filter((latency) => typeof latency === 'number')
-  const statuses = trials.map((trial) => trial.guardrailStatus).filter(Boolean)
+  const latencies = requests.map((request) => request.latencyMs)
+  const statuses = requests.map((request) => request.guardrailStatus).filter(Boolean)
   return {
     cases: cases.length,
     runs,
     trials: trials.length,
+    requests: requests.length,
     passedTrials: trials.filter((trial) => trial.pass).length,
     passRate: mean(perRun),
     passRateStdDev: standardDeviation(perRun),
@@ -79,17 +109,17 @@ export function aggregate(cases, runs) {
     failingCases: outcomes.filter((o) => o.passes === 0).map((o) => o.id),
     avgLatencyMs: mean(latencies),
     p95LatencyMs: percentile(latencies, 95),
-    avgCostUsd: mean(trials.map((trial) => trial.costUsd ?? 0)),
-    totalCostUsd: sum(trials.map(costWithEarlierTurns)),
+    avgCostUsd: mean(requests.map((request) => request.costUsd ?? 0)),
+    totalCostUsd: sum(requests.map((request) => request.costUsd ?? 0)),
     tokens: {
-      input: sum(trials.map((trial) => trial.inputTokens ?? 0)),
-      output: sum(trials.map((trial) => trial.outputTokens ?? 0)),
-      cacheRead: sum(trials.map((trial) => trial.cacheReadTokens ?? 0)),
-      cacheWrite: sum(trials.map((trial) => trial.cacheWriteTokens ?? 0)),
+      input: sum(requests.map((request) => request.inputTokens ?? 0)),
+      output: sum(requests.map((request) => request.outputTokens ?? 0)),
+      cacheRead: sum(requests.map((request) => request.cacheReadTokens ?? 0)),
+      cacheWrite: sum(requests.map((request) => request.cacheWriteTokens ?? 0)),
     },
     guardrail: { flagged: statuses.filter((status) => status.includes('FLAGGED')).length, byStatus: count(statuses) },
-    models: count(trials.map((trial) => trial.model).filter(Boolean)),
-    routedReasons: count(trials.map((trial) => trial.routedReason).filter(Boolean)),
+    byModel: modelSummaries(trials, requests),
+    routedReasons: count(requests.map((request) => request.routedReason).filter(Boolean)),
     writesExecuted: trials.filter((trial) => trial.writeExecuted).length,
     judge: judgeSummary(trials),
     byCategory: group(cases, (item) => item.category),

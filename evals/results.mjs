@@ -13,13 +13,16 @@ export const FORMAT = 2
  * @param {string} input.url the backend's base URL; only its host is kept
  * @param {object|null} input.info what /api/info said, or null
  * @param {object} input.judge {requested, enabled, model, reason}
- * @param {object[]} input.cases the cases that ran, each with its trials (see runner.mjs)
+ * @param {object[]} input.cases the cases that ran, each with its trials (see runner.mjs); a run that was stopped
+ *   has fewer trials than `options.runs` for some of them, and the document is then marked `complete: false`
  * @param {object[]} input.skipped the cases `--offline-only` left out
  */
 export function buildResults({ ranAt, options, url, info, judge, cases, skipped }) {
+  const reached = Math.max(0, ...cases.map((item) => item.trials.length))
   return {
     format: FORMAT,
     ranAt,
+    complete: cases.length > 0 && cases.every((item) => item.trials.length === options.runs),
     backend: {
       host: new URL(url).host,
       mode: info?.mode ?? null,
@@ -32,7 +35,7 @@ export function buildResults({ ranAt, options, url, info, judge, cases, skipped 
     options,
     judge,
     skipped: skipped.map((item) => item.id),
-    aggregate: aggregate(cases, options.runs),
+    aggregate: aggregate(cases, reached),
     cases: cases.map((item) => ({ ...item, ...caseOutcome(item.trials) })),
   }
 }

@@ -29,13 +29,14 @@ function judgeLine(judge, summary) {
 
 function header(results) {
   const { backend, options, aggregate, judge, skipped } = results
-  const answered = Object.entries(aggregate.models).map(([model, n]) => `${model} (${n})`).join(', ')
+  const answered = Object.entries(aggregate.byModel ?? {}).map(([model, m]) => `${model} (${m.requests})`).join(', ')
   const models = answered || backend.model || '?'
   const skippedNote = skipped.length ? `, ${skipped.length} skipped (\`offline: false\`): ${skipped.join(', ')}` : ''
+  const runs = results.complete === false ? `${options.runs} asked for, ${aggregate.runs} reached` : options.runs
   return table(['', ''], [
     ['Provider', backend.provider ?? '?'],
     ['Model(s) that answered', models],
-    ['Runs per case', options.runs],
+    ['Runs per case', runs],
     ['Cases', `${aggregate.cases}${skippedNote}`],
     ['Date', results.ranAt],
     ['Backend', `${backend.host}${backend.retrieval ? `, lease search by ${backend.retrieval}` : ''}`],
@@ -43,12 +44,23 @@ function header(results) {
   ])
 }
 
+function incompleteNote(results) {
+  if (results.complete !== false) return ''
+  const { options, aggregate } = results
+  return `> **Incomplete run.** It was stopped, or is still running, before every case had run ${options.runs} `
+    + `time(s). The figures cover the ${aggregate.trials} runs of cases that finished.`
+}
+
 function offlineNote(results) {
   if (results.backend.provider !== 'offline') return ''
+  const realModelCases = results.skipped.length > 0
+    ? 'The cases that only a real model can pass (`offline: false`) were left out, as listed above.'
+    : 'A case marked `offline: false` is one that only a real model is expected to pass, so its failing here is '
+      + 'expected.'
   return '> **Offline run.** The assistant was the built-in rule-based one (zero cost). This checks the data, the '
-    + 'tools, the streaming and the grading. It says nothing about how well Claude answers: the cases that only a '
-    + 'real model can pass (`offline: false`) were not run, and neither was the LLM judge, unless the table above '
-    + 'says so. Its token counts are estimates of about four characters each, and no prompt cache was involved.\n\n'
+    + `tools, the streaming and the grading. It says nothing about how well Claude answers. ${realModelCases} `
+    + 'The LLM judge did not run, unless the table above says so. Its token counts are estimates of about four '
+    + 'characters each, and no prompt cache was involved.'
 }
 
 function overall(a) {
@@ -59,10 +71,11 @@ function overall(a) {
     ['Cases that passed every run', `${a.casesPassingEveryRun}/${a.cases}`],
     ['Flaky cases (passed some runs)', a.flakyCases.length],
     ['Cases that failed every run', a.failingCases.length],
+    ['Questions asked (earlier turns of follow-ups included)', a.requests],
     ['Average latency', duration(a.avgLatencyMs)],
     ['p95 latency', duration(a.p95LatencyMs)],
     ['Average cost per question', money(a.avgCostUsd)],
-    ['Total cost, with earlier turns', money(a.totalCostUsd)],
+    ['Total cost', money(a.totalCostUsd)],
     ['Cache read / write tokens', `${a.tokens.cacheRead} / ${a.tokens.cacheWrite}`],
     ['Input / output tokens', `${a.tokens.input} / ${a.tokens.output}`],
     ['Answers the guardrail flagged', a.guardrail.flagged],
@@ -75,6 +88,15 @@ function groups(heading, entries) {
   return `${heading}\n\n${table(['', 'Cases', 'Passed', 'Pass rate'], rows)}`
 }
 
+/** One row for each model that answered: what it was asked, how it did, what it cost and how long it took. */
+function models(byModel) {
+  const rows = Object.entries(byModel).map(([name, m]) => [
+    name, m.requests, `${m.passed}/${m.trials}`, m.trials ? percent(m.passRate) : 'n/a', money(m.avgCostUsd),
+    duration(m.avgLatencyMs), duration(m.p95LatencyMs),
+  ])
+  return table(['Model', 'Questions', 'Cases passed', 'Pass rate', 'Average cost', 'Average latency', 'p95 latency'], rows)
+}
+
 function failures(cases) {
   const rows = cases.filter((item) => item.passes < item.runs).map((item) => {
     const failing = item.trials.filter((trial) => !trial.pass)
@@ -82,6 +104,7 @@ function failures(cases) {
     const shown = why.length > MOST_REASON_LENGTH ? `${why.slice(0, MOST_REASON_LENGTH)}...` : why
     return [item.id, item.category, item.lang, `${item.passes}/${item.runs}${item.flaky ? ' (flaky)' : ''}`, shown]
   })
+  if (cases.every((item) => item.runs === 0)) return 'No case has finished a run.'
   if (rows.length === 0) return 'Every case passed every run.'
   return table(['Case', 'Category', 'Language', 'Passed', 'Why it failed'], rows)
 }
@@ -97,8 +120,9 @@ export function renderSummary(results, comparison = null) {
   const languages = Object.entries(aggregate.byLanguage).map(([lang, g]) => [LANGUAGES[lang] ?? lang, g])
   const sections = [
     '# PropPilot evals',
+    incompleteNote(results),
     header(results),
-    offlineNote(results).trimEnd(),
+    offlineNote(results),
     '## Overall',
     overall(aggregate),
     groups('## By category', categories),
@@ -106,9 +130,12 @@ export function renderSummary(results, comparison = null) {
     '## Cases that failed or were flaky',
     failures(results.cases),
   ]
+  if (Object.keys(aggregate.byModel ?? {}).length > 1) {
+    sections.push('## By answering model', models(aggregate.byModel))
+  }
   if (Object.keys(aggregate.routedReasons).length > 1) {
     const rows = Object.entries(aggregate.routedReasons).map(([reason, n]) => [reason, n])
-    sections.push('## Why each model answered', table(['Routed reason', 'Runs'], rows))
+    sections.push('## Why each model answered', table(['Routed reason', 'Questions'], rows))
   }
   if (comparison) sections.push('## Compared with an earlier run', describeComparison(comparison).join('\n'))
   return `${sections.filter(Boolean).join('\n\n')}\n`
