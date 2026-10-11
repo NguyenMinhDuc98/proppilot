@@ -119,7 +119,8 @@ public class VoyageEmbeddingClient implements EmbeddingClient {
         var response = send(request, timeout);
         if (response.statusCode() != 200) {
             log.warn("Voyage API returned {}: {}", response.statusCode(), excerpt(response.body()));
-            throw ProviderErrors.forStatus(PROVIDER, response.statusCode(), response.headers().firstValue("retry-after"));
+            var retryAfter = response.headers().firstValue("retry-after");
+            throw ProviderErrors.forStatus(PROVIDER, response.statusCode(), retryAfter);
         }
         return vectors(response.body(), texts.size());
     }
@@ -171,7 +172,8 @@ public class VoyageEmbeddingClient implements EmbeddingClient {
             }
             vectors[index] = vector(item.path("embedding"));
         }
-        log.debug("Voyage embedded {} texts using {} tokens", expected, reply.path("usage").path("total_tokens").asInt());
+        log.debug("Voyage embedded {} texts using {} tokens", expected,
+                reply.path("usage").path("total_tokens").asInt());
         return Arrays.asList(vectors);
     }
 

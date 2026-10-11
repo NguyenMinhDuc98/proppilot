@@ -17,6 +17,7 @@ import org.junit.jupiter.api.Test;
 class QueryTermsHostileInputTest {
 
     private static final int HOSTILE = 1_000_000;
+    private static final Duration LIMIT = Duration.ofSeconds(30);
     private static final long SMALL_STACK_BYTES = 256 * 1024;
 
     @Test
@@ -59,7 +60,7 @@ class QueryTermsHostileInputTest {
         var executor = Executors.newSingleThreadExecutor(
                 task -> new Thread(null, task, "small-stack", SMALL_STACK_BYTES));
         try {
-            return executor.submit(() -> QueryTerms.of(question)).get(Duration.ofSeconds(30).toSeconds(), TimeUnit.SECONDS);
+            return executor.submit(() -> QueryTerms.of(question)).get(LIMIT.toSeconds(), TimeUnit.SECONDS);
         } catch (ExecutionException | TimeoutException e) {
             throw new AssertionError("could not read the words of the question", e);
         } catch (InterruptedException e) {

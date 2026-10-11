@@ -7,7 +7,8 @@ import org.springframework.stereotype.Component;
 
 /** The default: no provider, so lease search runs on keywords alone at no cost. */
 @Component
-@ConditionalOnProperty(name = "proppilot.embedding.provider", havingValue = EmbeddingProperties.NONE, matchIfMissing = true)
+@ConditionalOnProperty(name = "proppilot.embedding.provider", havingValue = EmbeddingProperties.NONE,
+        matchIfMissing = true)
 public class NoEmbeddingClient implements EmbeddingClient {
 
     private final EmbeddingProperties props;

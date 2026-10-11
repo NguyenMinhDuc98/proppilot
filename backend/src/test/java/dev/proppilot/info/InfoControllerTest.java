@@ -48,8 +48,8 @@ class InfoControllerTest {
         mvcFor("anthropic", "claude-haiku-4-5-20251001", 20).perform(get("/api/info"))
                 .andExpect(status().isOk())
                 .andExpect(content().json("""
-                        {"mode":"claude","provider":"anthropic","model":"claude-haiku-4-5-20251001","maxHistoryItems":20,
-                         "retrieval":"keyword","leaseDocuments":0}""", true));
+                        {"mode":"claude","provider":"anthropic","model":"claude-haiku-4-5-20251001",
+                         "maxHistoryItems":20,"retrieval":"keyword","leaseDocuments":0}""", true));
     }
 
     @Test

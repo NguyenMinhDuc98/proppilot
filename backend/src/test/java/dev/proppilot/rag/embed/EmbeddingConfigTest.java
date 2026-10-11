@@ -61,12 +61,13 @@ class EmbeddingConfigTest {
 
     @Test
     void voyageWithoutAKeyFailsStartupAndSaysWhichSettingIsMissing() {
-        runner.withPropertyValues("proppilot.embedding.provider=voyage", "proppilot.embedding.api-key=").run(context -> {
-            assertThat(context).hasFailed();
-            assertThat(context.getStartupFailure()).rootCause()
-                    .isInstanceOf(IllegalStateException.class)
-                    .hasMessageContaining("VOYAGE_API_KEY is required when EMBEDDING_PROVIDER=voyage");
-        });
+        runner.withPropertyValues("proppilot.embedding.provider=voyage", "proppilot.embedding.api-key=")
+                .run(context -> {
+                    assertThat(context).hasFailed();
+                    assertThat(context.getStartupFailure()).rootCause()
+                            .isInstanceOf(IllegalStateException.class)
+                            .hasMessageContaining("VOYAGE_API_KEY is required when EMBEDDING_PROVIDER=voyage");
+                });
     }
 
     @Test

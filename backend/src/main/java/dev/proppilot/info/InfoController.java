@@ -18,7 +18,8 @@ public class InfoController {
     private final EmbeddingClient embeddings;
     private final LeaseDocumentStore documents;
 
-    public InfoController(LlmClient llm, ChatProperties chat, EmbeddingClient embeddings, LeaseDocumentStore documents) {
+    public InfoController(LlmClient llm, ChatProperties chat, EmbeddingClient embeddings,
+                          LeaseDocumentStore documents) {
         this.llm = llm;
         this.chat = chat;
         this.embeddings = embeddings;

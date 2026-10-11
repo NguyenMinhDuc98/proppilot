@@ -376,7 +376,8 @@ class VoyageEmbeddingClientTest {
             replies.add(Reply.json("{\"data\":[{\"embedding\":" + embedding + ",\"index\":0}]}"));
 
             assertThatThrownBy(() -> client().embedDocuments(List.of("a"))).as(embedding)
-                    .isInstanceOfSatisfying(LlmException.class, e -> assertThat(e.code()).isEqualTo(ErrorCode.LLM_ERROR));
+                    .isInstanceOfSatisfying(LlmException.class,
+                            e -> assertThat(e.code()).isEqualTo(ErrorCode.LLM_ERROR));
         }
     }
 

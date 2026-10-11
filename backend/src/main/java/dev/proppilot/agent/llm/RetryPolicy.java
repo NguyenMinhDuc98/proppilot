@@ -80,10 +80,12 @@ public final class RetryPolicy {
                 }
                 var delay = delayBeforeRetry(retry, e);
                 if (delay.compareTo(timeLeft.get()) >= 0) {
-                    log.warn("Provider call failed ({}); not retrying, a {} ms wait would use up the time left", e.code(), delay.toMillis());
+                    log.warn("Provider call failed ({}); not retrying, a {} ms wait would use up the time left",
+                            e.code(), delay.toMillis());
                     throw e;
                 }
-                log.warn("Provider call failed ({}); retry {}/{} in {} ms", e.code(), retry + 1, maxRetries, delay.toMillis());
+                log.warn("Provider call failed ({}); retry {}/{} in {} ms", e.code(), retry + 1, maxRetries,
+                        delay.toMillis());
                 pause(delay);
             }
         }
