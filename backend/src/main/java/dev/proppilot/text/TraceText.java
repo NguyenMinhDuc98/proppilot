@@ -1,7 +1,7 @@
-package dev.proppilot.agent;
+package dev.proppilot.text;
 
-/** Keeps the text of a trace short and storable. */
-final class TraceText {
+/** Keeps the text of a trace, a log line or a stored finding short and storable. */
+public final class TraceText {
 
     private static final char ELLIPSIS = '…';
 
@@ -13,7 +13,7 @@ final class TraceText {
      * is cut so that it ends with an ellipsis and still fits; a surrogate pair is never split. One pass, no regular
      * expression, whatever the length of the input.
      */
-    static String capped(String raw, int maxLength) {
+    public static String capped(String raw, int maxLength) {
         if (raw == null) {
             return "";
         }

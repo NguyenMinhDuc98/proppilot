@@ -19,6 +19,11 @@ public final class Folding {
         return DIACRITICS.matcher(text).replaceAll("");
     }
 
+    /** Whether {@link #withoutDiacritics} takes the character out: for a caller that keeps track of positions. */
+    public static boolean isDiacritic(char c) {
+        return (c >= '\u064B' && c <= '\u0652') || c == '\u0640';
+    }
+
     public static String fold(String text) {
         var out = new StringBuilder(text.length());
         for (int i = 0; i < text.length(); i++) {

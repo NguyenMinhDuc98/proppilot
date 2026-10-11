@@ -1,4 +1,4 @@
-package dev.proppilot.agent;
+package dev.proppilot.text;
 
 import static org.assertj.core.api.Assertions.assertThat;
 

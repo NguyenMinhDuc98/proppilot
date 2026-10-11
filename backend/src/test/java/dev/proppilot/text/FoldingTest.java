@@ -31,4 +31,13 @@ class FoldingTest {
 
         assertThat(Folding.fold(text)).hasSameSizeAs(text);
     }
+
+    @Test
+    void saysOfEveryCharacterWhetherWithoutDiacriticsTakesItOut() {
+        for (char c = 0; c < 0x0700; c++) {
+            boolean taken = Folding.withoutDiacritics(String.valueOf(c)).isEmpty();
+
+            assertThat(Folding.isDiacritic(c)).as("U+%04X", (int) c).isEqualTo(taken);
+        }
+    }
 }

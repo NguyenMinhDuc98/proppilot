@@ -1,5 +1,6 @@
 package dev.proppilot.agent;
 
+import dev.proppilot.text.TraceText;
 import java.time.Instant;
 
 /**
