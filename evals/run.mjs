@@ -6,15 +6,19 @@
 // A question passes when every `expect` entry appears in the streamed answer, no `absent` entry does, and every tool
 // in `tools` was called. An entry is a string, or an array of alternative wordings of which any one counts. Matching
 // is case-insensitive and ignores number formatting (4,800 = 4800 = ٤٨٠٠), because models format numbers freely.
-// Start the backend with CHAT_RATE_LIMIT_PER_MINUTE=1000 to run without throttling.
+// Two optional fields are for the lease search: `mustCite` (a document code such as LSE-A-203, or an array of them)
+// needs a citation marker of that document in the answer, and `absentTools` lists tools that must not be called.
+// Grading is in grade.mjs. Start the backend with CHAT_RATE_LIMIT_PER_MINUTE=1000 to run without throttling.
 //
 // --only runs the cases whose id starts with one of the comma-separated prefixes: en-,ar- for the read questions,
-// write- for the write actions. The write cases leave proposals on the backend they run against and expect its
-// seeded data, so run them against a local stack, or on a shared deployment right after its reset.
+// rag- for the lease search, write- for the write actions. The write cases leave proposals on the backend they run
+// against and expect its seeded data, so run them against a local stack, or on a shared deployment right after its
+// reset. The rag cases only read, and expect the 30 lease documents the application writes by default.
 
 import { readFile, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
+import { grade } from './grade.mjs'
 
 const args = new Map()
 for (let i = 2; i < process.argv.length; i++) {
@@ -62,23 +66,6 @@ async function ask(question) {
   return run
 }
 
-function normalize(text) {
-  return String(text)
-    .toLowerCase()
-    .replace(/[\u0660-\u0669]/g, (digit) => String(digit.charCodeAt(0) - 0x0660))
-    .replace(/(\d),(?=\d{3}\b)/g, '$1')
-}
-
-function grade(item, run) {
-  const answer = normalize(run.answer)
-  const present = (fact) => [fact].flat().some((alternative) => answer.includes(normalize(alternative)))
-  const missingFacts = item.expect.filter((fact) => !present(fact))
-  const unwantedFacts = (item.absent ?? []).filter(present)
-  const missingTools = (item.tools ?? []).filter((tool) => !run.tools.includes(tool))
-  const pass = !run.error && missingFacts.length === 0 && unwantedFacts.length === 0 && missingTools.length === 0
-  return { missingFacts, unwantedFacts, missingTools, pass }
-}
-
 const cases = JSON.parse(await readFile(join(dir, 'questions.json'), 'utf8'))
 const questions = only.length ? cases.filter((item) => only.some((prefix) => item.id.startsWith(prefix))) : cases
 if (questions.length === 0) {
@@ -99,13 +86,14 @@ for (const item of questions) {
       answer: run.answer, tools: run.tools,
     })
   } catch (error) {
-    results.push({ id: item.id, lang: item.lang, question: item.question, pass: false, error: String(error), missingFacts: [], unwantedFacts: [], missingTools: [], latencyMs: 0, costUsd: 0 })
+    results.push({ id: item.id, lang: item.lang, question: item.question, pass: false, error: String(error), missingFacts: [], unwantedFacts: [], missingTools: [], forbiddenToolsCalled: [], missingCitations: [], latencyMs: 0, costUsd: 0 })
   }
   const last = results.at(-1)
   console.log(`${last.pass ? 'PASS' : 'FAIL'}  ${last.id}  ${last.question}`)
   if (!last.pass) {
     console.log(`      missing facts: ${JSON.stringify(last.missingFacts)} unwanted facts: ${JSON.stringify(last.unwantedFacts)}`
-      + ` tools: ${JSON.stringify(last.missingTools)} ${last.error ?? ''}`)
+      + ` tools: ${JSON.stringify(last.missingTools)} forbidden tools: ${JSON.stringify(last.forbiddenToolsCalled)}`
+      + ` citations: ${JSON.stringify(last.missingCitations)} ${last.error ?? ''}`)
   }
   if (delayMs) await new Promise((resolve) => setTimeout(resolve, delayMs))
 }
