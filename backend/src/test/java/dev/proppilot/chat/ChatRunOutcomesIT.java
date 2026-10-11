@@ -2,11 +2,16 @@ package dev.proppilot.chat;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
+import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.proppilot.PostgresIntegrationTest;
 import dev.proppilot.agent.AgentResult;
 import dev.proppilot.agent.ErrorCode;
@@ -29,6 +34,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.ResultActions;
 
 /** How a chat run ends when the model misbehaves, end to end through HTTP, SSE and the database. */
 @AutoConfigureMockMvc
@@ -162,5 +168,125 @@ class ChatRunOutcomesIT extends PostgresIntegrationTest {
         var run = recordedRun("outcome: truncated");
         assertThat(run.getStatus()).isEqualTo(AgentResult.Status.TRUNCATED);
         assertThat(run.getOutputTokens()).isEqualTo(2048);
+    }
+
+    private ResultActions traceOf(String question) throws Exception {
+        return mvc.perform(get("/api/runs/{id}/trace", recordedRun(question).getId())).andExpect(status().isOk());
+    }
+
+    @Test
+    void storesTheModelCallsAndToolCallsOfARunAsItsTrace() throws Exception {
+        llm.thenToolCall("t1", "get_occupancy_summary", "{}").thenText("There are 150 units.");
+
+        chat("trace: one tool");
+
+        traceOf("trace: one tool")
+                .andExpect(jsonPath("$.provider").value("scripted"))
+                .andExpect(jsonPath("$.model").value("test"))
+                .andExpect(jsonPath("$.totals.inputTokens").value(150))
+                .andExpect(jsonPath("$.totals.outputTokens").value(30))
+                .andExpect(jsonPath("$.totals.iterations").value(2))
+                .andExpect(jsonPath("$.llmCalls", hasSize(2)))
+                .andExpect(jsonPath("$.llmCalls[0].seq").value(1))
+                .andExpect(jsonPath("$.llmCalls[0].stopReason").value("TOOL_USE"))
+                .andExpect(jsonPath("$.llmCalls[0].inputTokens").value(50))
+                .andExpect(jsonPath("$.llmCalls[1].seq").value(2))
+                .andExpect(jsonPath("$.llmCalls[1].stopReason").value("END_TURN"))
+                .andExpect(jsonPath("$.llmCalls[1].outputTokens").value(20))
+                .andExpect(jsonPath("$.toolCalls", hasSize(1)))
+                .andExpect(jsonPath("$.toolCalls[0].name").value("get_occupancy_summary"))
+                .andExpect(jsonPath("$.toolCalls[0].args").value("{}"))
+                .andExpect(jsonPath("$.toolCalls[0].error").value(false))
+                .andExpect(jsonPath("$.toolCalls[0].summary").isNotEmpty());
+    }
+
+    @Test
+    void storesTheCacheTokensApartFromTheUncachedInput() throws Exception {
+        llm.then(new LlmResponse(List.of(new ContentBlock.Text("cached")), StopReason.END_TURN, new Usage(30, 12, 4000, 250)));
+
+        chat("trace: cache tokens");
+
+        var run = recordedRun("trace: cache tokens");
+        assertThat(run.getInputTokens()).isEqualTo(30);
+        assertThat(run.getCacheReadTokens()).isEqualTo(4000);
+        assertThat(run.getCacheWriteTokens()).isEqualTo(250);
+        traceOf("trace: cache tokens")
+                .andExpect(jsonPath("$.totals.inputTokens").value(30))
+                .andExpect(jsonPath("$.totals.cacheReadTokens").value(4000))
+                .andExpect(jsonPath("$.totals.cacheWriteTokens").value(250))
+                .andExpect(jsonPath("$.llmCalls[0].cacheReadTokens").value(4000))
+                .andExpect(jsonPath("$.llmCalls[0].cacheWriteTokens").value(250));
+    }
+
+    @Test
+    void storesTheFailedCallOfAFailedRun() throws Exception {
+        llm.thenFail(ErrorCode.LLM_OVERLOADED, "Claude API returned 529: upstream-secret");
+
+        chat("trace: failure");
+
+        traceOf("trace: failure")
+                .andExpect(jsonPath("$.status").value("ERROR"))
+                .andExpect(jsonPath("$.llmCalls", hasSize(1)))
+                .andExpect(jsonPath("$.llmCalls[0].outcome").value("ERROR"))
+                .andExpect(jsonPath("$.llmCalls[0].errorCode").value("llm_overloaded"))
+                .andExpect(jsonPath("$.llmCalls[0].stopReason").value(nullValue()))
+                .andExpect(jsonPath("$.toolCalls", hasSize(0)));
+    }
+
+    @Test
+    void aTruncatedReplyKeepsItsStopReasonInTheTrace() throws Exception {
+        llm.then(new LlmResponse(List.of(new ContentBlock.Text("The portfolio has 150 un")), StopReason.MAX_TOKENS,
+                new Usage(40, 2048)));
+
+        chat("trace: truncated");
+
+        traceOf("trace: truncated")
+                .andExpect(jsonPath("$.status").value("TRUNCATED"))
+                .andExpect(jsonPath("$.llmCalls[0].stopReason").value("MAX_TOKENS"))
+                .andExpect(jsonPath("$.llmCalls[0].outcome").value("OK"));
+    }
+
+    @Test
+    void aRunTheClientLeftKeepsTheCallsThatHappenedBeforeItWasNoticed() throws Exception {
+        var held = new CountDownLatch(1);
+        llm.beforeEachCall(() -> awaitUninterruptibly(held))
+                .thenToolCall("t1", "get_occupancy_summary", "{}")
+                .thenText("never reached");
+
+        var emitter = chatService.start(new ChatRequest("trace: disconnect", null, null), "visitor-test");
+        emitter.complete();
+        held.countDown();
+
+        await().atMost(Duration.ofSeconds(10)).until(() -> runExists("trace: disconnect"));
+        traceOf("trace: disconnect")
+                .andExpect(jsonPath("$.status").value("ABORTED"))
+                .andExpect(jsonPath("$.llmCalls", hasSize(1)))
+                .andExpect(jsonPath("$.llmCalls[0].outputTokens").value(10))
+                .andExpect(jsonPath("$.toolCalls", hasSize(1)))
+                .andExpect(jsonPath("$.toolCalls[0].name").value("get_occupancy_summary"));
+    }
+
+    @Test
+    void longToolArgumentsAreStoredCutOffAtTheCap() throws Exception {
+        llm.thenToolCall("t1", "search_units", "{\"city\":\"" + "x".repeat(5000) + "\"}").thenText("none found");
+
+        chat("trace: long arguments");
+
+        var body = traceOf("trace: long arguments").andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+        var call = new ObjectMapper().readTree(body).at("/toolCalls/0");
+        assertThat(call.get("args").asText()).hasSize(2000).endsWith("\u2026");
+        assertThat(call.get("summary").asText().length()).isLessThanOrEqualTo(300);
+    }
+
+    @Test
+    void aToolTheModelInventedIsAnErrorCallInTheTrace() throws Exception {
+        llm.thenToolCall("t1", "no_such_tool", "{\"a\":1}").thenText("sorry");
+
+        chat("trace: unknown tool");
+
+        traceOf("trace: unknown tool")
+                .andExpect(jsonPath("$.toolCalls[0].name").value("no_such_tool"))
+                .andExpect(jsonPath("$.toolCalls[0].args").value("{\"a\":1}"))
+                .andExpect(jsonPath("$.toolCalls[0].error").value(true));
     }
 }

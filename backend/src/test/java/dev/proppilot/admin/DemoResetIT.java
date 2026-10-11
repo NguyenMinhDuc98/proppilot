@@ -9,7 +9,15 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.proppilot.PostgresIntegrationTest;
 import dev.proppilot.actions.ActionKind;
 import dev.proppilot.actions.ActionService;
+import dev.proppilot.agent.AgentResult;
+import dev.proppilot.agent.LlmCallRecord;
+import dev.proppilot.agent.ToolCallRecord;
+import dev.proppilot.agent.llm.StopReason;
+import dev.proppilot.agent.llm.Usage;
+import dev.proppilot.chat.ChatRun;
+import dev.proppilot.chat.ChatRunRepository;
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -41,6 +49,8 @@ class DemoResetIT extends PostgresIntegrationTest {
     DemoResetService demo;
     @Autowired
     ObjectMapper json;
+    @Autowired
+    ChatRunRepository runs;
 
     private String unit;
     private BigDecimal rent;
@@ -114,6 +124,29 @@ class DemoResetIT extends PostgresIntegrationTest {
                 select count(*) from payments p join payments_seed s on s.id = p.id
                 where p.paid_amount = s.paid_amount and p.paid_on is not distinct from s.paid_on
                   and p.method is null and p.recorded_action_id is null""", Integer.class)).isEqualTo(count("payments"));
+    }
+
+    @Test
+    void leavesTheStoredRunsAndTheirTracesAlone() {
+        var at = Instant.parse("2026-10-01T08:00:00Z");
+        var call = new LlmCallRecord(1, "claude-haiku-4-5-20251001", 100, 20, 0, 0, 500, StopReason.END_TURN,
+                LlmCallRecord.Outcome.OK, null, at);
+        var tool = new ToolCallRecord(1, "search_units", "{}", "3 units", false, 12, at);
+        var result = new AgentResult("answer", new Usage(100, 20), 1, 1, AgentResult.Status.OK, null, List.of(call),
+                List.of(tool));
+        var id = UUID.randomUUID();
+        runs.save(new ChatRun(id, at, "a question", "anthropic", "claude-haiku-4-5-20251001", result, List.of("search_units"),
+                500, new BigDecimal("0.0003")));
+
+        demo.reset();
+
+        try {
+            assertThat(count("chat_runs where id = '" + id + "'")).isEqualTo(1);
+            assertThat(count("run_llm_calls where run_id = '" + id + "'")).isEqualTo(1);
+            assertThat(count("run_tool_calls where run_id = '" + id + "'")).isEqualTo(1);
+        } finally {
+            jdbc.update("delete from chat_runs where id = ?", id);
+        }
     }
 
     @Test
