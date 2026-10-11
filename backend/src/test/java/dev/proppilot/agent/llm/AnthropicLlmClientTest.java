@@ -57,6 +57,11 @@ class AnthropicLlmClientTest {
 
             """;
 
+    private static final String CACHED_ANSWER_STREAM = ANSWER_STREAM.replace(
+            "\"usage\":{\"input_tokens\":12,\"output_tokens\":1}",
+            "\"usage\":{\"input_tokens\":12,\"cache_creation_input_tokens\":300,\"cache_read_input_tokens\":4000,"
+                    + "\"output_tokens\":1}");
+
     private static final String OVERLOADED_EVENT =
             "event: error\ndata: {\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\",\"message\":\"Overloaded\"}}\n\n";
 
@@ -171,6 +176,15 @@ class AnthropicLlmClientTest {
         assertThat(response.stopReason()).isEqualTo(StopReason.END_TURN);
         assertThat(response.usage()).isEqualTo(new Usage(12, 3));
         assertThat(deltas).containsExactly("Hello ", "there");
+    }
+
+    @Test
+    void reportsTheCacheTokensTheApiReportsApartFromTheInputTokens() {
+        replies.add(Reply.stream(CACHED_ANSWER_STREAM));
+
+        var response = complete();
+
+        assertThat(response.usage()).isEqualTo(new Usage(12, 3, 4000, 300));
     }
 
     @Test

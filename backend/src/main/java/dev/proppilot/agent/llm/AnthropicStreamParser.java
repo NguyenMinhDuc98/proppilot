@@ -32,6 +32,8 @@ final class AnthropicStreamParser {
 
     private int inputTokens;
     private int outputTokens;
+    private int cacheReadTokens;
+    private int cacheWriteTokens;
     private StopReason stopReason = StopReason.OTHER;
 
     AnthropicStreamParser(ObjectMapper json, Consumer<String> onTextDelta) {
@@ -50,24 +52,19 @@ final class AnthropicStreamParser {
         if (toolInputIncomplete && stopReason != StopReason.MAX_TOKENS) {
             throw new LlmException("Claude sent a tool call with incomplete JSON", ErrorCode.LLM_ERROR);
         }
-        return new LlmResponse(List.copyOf(blocks), stopReason, new Usage(inputTokens, outputTokens));
+        return new LlmResponse(List.copyOf(blocks), stopReason,
+                new Usage(inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens));
     }
 
     private void handle(JsonNode event) {
         switch (event.path("type").asText()) {
-            case "message_start" -> {
-                var usage = event.path("message").path("usage");
-                inputTokens = usage.path("input_tokens").asInt()
-                        + usage.path("cache_creation_input_tokens").asInt()
-                        + usage.path("cache_read_input_tokens").asInt();
-                outputTokens = usage.path("output_tokens").asInt();
-            }
+            case "message_start" -> readUsage(event.path("message").path("usage"));
             case "content_block_start" -> startBlock(event.path("content_block"));
             case "content_block_delta" -> applyDelta(event.path("delta"));
             case "content_block_stop" -> finishBlock();
             case "message_delta" -> {
                 stopReason = mapStopReason(event.path("delta").path("stop_reason").asText());
-                outputTokens = event.path("usage").path("output_tokens").asInt(outputTokens);
+                readUsage(event.path("usage"));
             }
             case "error" -> {
                 var error = event.path("error");
@@ -76,6 +73,17 @@ final class AnthropicStreamParser {
             }
             default -> { }
         }
+    }
+
+    /**
+     * Takes the counts a usage object carries and keeps the earlier value of the ones it leaves out: the later events
+     * of a stream hold running totals. The API reports cached input apart from {@code input_tokens}, and so do we.
+     */
+    private void readUsage(JsonNode usage) {
+        inputTokens = usage.path("input_tokens").asInt(inputTokens);
+        outputTokens = usage.path("output_tokens").asInt(outputTokens);
+        cacheReadTokens = usage.path("cache_read_input_tokens").asInt(cacheReadTokens);
+        cacheWriteTokens = usage.path("cache_creation_input_tokens").asInt(cacheWriteTokens);
     }
 
     private void startBlock(JsonNode block) {
