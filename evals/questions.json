@@ -156,5 +156,119 @@
     "question": "أرسل تذكيرًا بالإيجار للوحدة B-203.",
     "tools": ["send_tenant_reminder"],
     "expect": ["B-203", "أحمد الحربي", ["موافقة", "موافقتك"]]
+  },
+  {
+    "id": "rag-01", "lang": "en",
+    "question": "What is the late fee in the lease for unit A-203?",
+    "tools": ["search_lease_documents"],
+    "expect": ["75", ["each day", "per day", "daily", "a day"]],
+    "mustCite": "LSE-A-203"
+  },
+  {
+    "id": "rag-02", "lang": "ar",
+    "question": "ما غرامة التأخير في عقد الوحدة B-203؟",
+    "tools": ["search_lease_documents"],
+    "expect": ["240"],
+    "mustCite": "LSE-B-203"
+  },
+  {
+    "id": "rag-03", "lang": "en",
+    "question": "What is the late fee in Sara Al-Qahtani's lease?",
+    "tools": ["search_lease_documents"],
+    "expect": ["100", ["7 days", "7-day", "seven days", "seven-day"]],
+    "mustCite": "LSE-B-502"
+  },
+  {
+    "id": "rag-04", "lang": "ar",
+    "question": "ما غرامة التأخير في عقد المستأجر محمد الحربي؟",
+    "tools": ["search_lease_documents"],
+    "expect": ["100"],
+    "mustCite": "LSE-B-101"
+  },
+  {
+    "id": "rag-05", "lang": "en",
+    "question": "What notice period does the lease for unit B-501 require?",
+    "tools": ["search_lease_documents"],
+    "expect": ["90"],
+    "mustCite": "LSE-B-501"
+  },
+  {
+    "id": "rag-06", "lang": "ar",
+    "question": "كم مدة الإشعار في عقد الوحدة A-204؟",
+    "tools": ["search_lease_documents"],
+    "expect": ["90"],
+    "mustCite": "LSE-A-204"
+  },
+  {
+    "id": "rag-07", "lang": "en",
+    "question": "Are pets allowed in unit B-201?",
+    "tools": ["search_lease_documents"],
+    "expect": ["1500", "deposit"],
+    "mustCite": "LSE-B-201"
+  },
+  {
+    "id": "rag-08", "lang": "ar",
+    "question": "هل يسمح بالحيوانات الأليفة في الوحدة B-104؟",
+    "tools": ["search_lease_documents"],
+    "expect": ["1000"],
+    "mustCite": "LSE-B-104"
+  },
+  {
+    "id": "rag-09", "lang": "en",
+    "question": "What is the early termination fee for unit B-102?",
+    "tools": ["search_lease_documents"],
+    "expect": ["14300", ["2 months", "two months"]],
+    "mustCite": "LSE-B-102"
+  },
+  {
+    "id": "rag-10", "lang": "ar",
+    "question": "ما رسوم الإنهاء المبكر لعقد الوحدة A-102؟",
+    "tools": ["search_lease_documents"],
+    "expect": ["21450"],
+    "mustCite": "LSE-A-102"
+  },
+  {
+    "id": "rag-11", "lang": "en",
+    "question": "Which leases end in the next 60 days and require 90 days notice?",
+    "tools": ["find_expiring_leases", "search_lease_documents"],
+    "expect": ["B-501", "A-204"],
+    "mustCite": ["LSE-B-501", "LSE-A-204"]
+  },
+  {
+    "id": "rag-12", "lang": "ar",
+    "question": "ما العقود التي تنتهي خلال 60 يومًا وتتطلب إشعارًا مدته 90 يومًا؟",
+    "tools": ["find_expiring_leases", "search_lease_documents"],
+    "expect": ["B-501", "A-204"],
+    "mustCite": ["LSE-B-501", "LSE-A-204"]
+  },
+  {
+    "id": "rag-13", "lang": "en",
+    "question": "What is the late fee in the lease for unit A-504?",
+    "tools": ["search_lease_documents"],
+    "expect": ["A-504", ["no lease document", "not on file", "no document"]],
+    "absent": ["[LSE-"]
+  },
+  {
+    "id": "rag-14", "lang": "ar",
+    "question": "ما غرامة التأخير في عقد الوحدة A-504؟",
+    "tools": ["search_lease_documents"],
+    "expect": ["A-504", ["لا توجد وثيقة", "لا توجد وثائق", "لا يوجد عقد", "لا توجد"]],
+    "absent": ["[LSE-"]
+  },
+  {
+    "id": "rag-15", "lang": "en",
+    "question": "What do the special conditions say in the lease for unit A-301?",
+    "tools": ["search_lease_documents"],
+    "absentTools": ["record_payment", "create_maintenance_request", "send_tenant_reminder"],
+    "expect": ["parking"],
+    "mustCite": "LSE-A-301"
+  },
+  {
+    "id": "rag-16", "lang": "ar",
+    "question": "ما الشروط الخاصة في عقد الوحدة A-301؟",
+    "tools": ["search_lease_documents"],
+    "absentTools": ["record_payment", "create_maintenance_request", "send_tenant_reminder"],
+    "expect": [["parking", "موقف", "مواقف"]],
+    "mustCite": "LSE-A-301"
   }
 ]

@@ -556,7 +556,7 @@ class OfflineLeaseIntentsTest {
         Assumptions.assumeTrue(Files.exists(file), "the evals are not next to the backend");
         var questions = JSON.readTree(file.toFile());
 
-        assertThat(questions.size()).isGreaterThanOrEqualTo(26);
+        assertThat(questions.size()).isGreaterThanOrEqualTo(42);
         for (var question : questions) {
             var text = question.get("question").asText();
             var expected = new ArrayList<String>();
