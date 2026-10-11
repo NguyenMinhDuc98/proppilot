@@ -6,6 +6,7 @@ import dev.proppilot.text.Folding;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.regex.Pattern;
 
@@ -76,7 +77,7 @@ final class OfflineLeaseIntents {
         if (topics.isEmpty() && !WHOLE_LEASE.matcher(folded).find()) {
             return Optional.empty();
         }
-        return Optional.of(search(question, folded, topics, unitCodes(folded)));
+        return Optional.of(search(question, topics, unitCodes(folded)));
     }
 
     /**
@@ -97,7 +98,7 @@ final class OfflineLeaseIntents {
         if (topics.isEmpty() || units.isEmpty()) {
             return Optional.empty();
         }
-        var call = search(question, folded, topics, units);
+        var call = search(question, topics, units);
         call.args().put("top_k", MOST_CLAUSES);
         return Optional.of(call);
     }
@@ -117,20 +118,21 @@ final class OfflineLeaseIntents {
         return LeaseTopic.in(RENEWAL_DUE.matcher(folded).replaceAll(" "));
     }
 
-    private OfflineIntentRouter.Call search(String question, String folded, List<LeaseTopic> topics,
-                                            List<String> units) {
+    /**
+     * @param units the units to search; none searches the tenant the question names, or every document
+     */
+    private OfflineIntentRouter.Call search(String question, List<LeaseTopic> topics, List<String> units) {
         var call = call("search_lease_documents");
         call.put("query", topics.isEmpty() ? cut(question.strip()) : queryOf(topics));
-        var named = units.isEmpty() ? unitCodes(folded) : units;
-        if (named.size() == 1) {
-            call.put("unit_code", named.get(0));
-        } else if (named.size() > 1) {
+        if (units.size() == 1) {
+            call.put("unit_code", units.get(0));
+        } else if (units.size() > 1) {
             var codes = call.args().putArray("unit_codes");
-            named.forEach(codes::add);
+            units.forEach(codes::add);
         } else {
             tenantName(question).ifPresent(name -> call.put("tenant_name", name));
         }
-        boolean oneLease = named.size() == 1 || (named.isEmpty() && call.args().has("tenant_name"));
+        boolean oneLease = units.size() == 1 || call.args().has("tenant_name");
         int clauses = Math.min(MOST_CLAUSES, (oneLease ? 2 : DEFAULT_CLAUSES) * Math.max(1, topics.size()));
         if (clauses != DEFAULT_CLAUSES) {
             call.args().put("top_k", clauses);
@@ -147,7 +149,7 @@ final class OfflineLeaseIntents {
         var codes = new LinkedHashSet<String>();
         var unit = OfflineIntentRouter.UNIT_CODE.matcher(folded);
         while (codes.size() < MOST_UNITS && unit.find()) {
-            codes.add(unit.group(1).toUpperCase() + "-" + unit.group(2));
+            codes.add(unit.group(1).toUpperCase(Locale.ROOT) + "-" + unit.group(2));
         }
         return new ArrayList<>(codes);
     }

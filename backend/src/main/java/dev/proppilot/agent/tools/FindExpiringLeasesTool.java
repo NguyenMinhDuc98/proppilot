@@ -16,7 +16,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class FindExpiringLeasesTool implements Tool {
 
-    static final int SHOWN = 15;
+    private static final int SHOWN = 15;
     private static final int DEFAULT_WITHIN_DAYS = 60;
     private static final int MAX_WITHIN_DAYS = 365;
 

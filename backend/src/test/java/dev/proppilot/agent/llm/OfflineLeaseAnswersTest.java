@@ -8,6 +8,7 @@ import dev.proppilot.rag.CitationRefs;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 /** The answers the offline assistant writes from the results of the lease tools. */
@@ -247,6 +248,20 @@ class OfflineLeaseAnswersTest {
                 .contains("[LSE-A-203#4] From unit A-203 (Ahmed Al-Otaibi), lease document LSE-A-203, page 1.")
                 .contains("No lease document is on file for unit(s): B-305.")
                 .endsWith("I searched only the 2 leases that end first, out of 3.");
+    }
+
+    @Test
+    void aHostileQuotedTextIsWrittenQuickly() {
+        var text = "[LSE-A-504#7".repeat(20_000) + "\n".repeat(20_000) + "[LSE-A-504#7]".repeat(5_000);
+        var hostile = JSON.createObjectNode();
+        hostile.putArray("results").addObject().put("ref", "LSE-A-504#7").put("document", "LSE-A-504")
+                .put("unit", "A-504").put("section", "7. Pets").put("page", 1).put("text", text)
+                .putObject("tenant").put("en", "Khalid").put("ar", "خالد");
+
+        var response = Assertions.assertTimeoutPreemptively(Duration.ofSeconds(5),
+                () -> answerAfter("Are pets allowed in unit A-504?", "search_lease_documents", hostile.toString()));
+
+        assertThat(markersIn(response.text())).containsExactly("[LSE-A-504#7]");
     }
 
     @Test

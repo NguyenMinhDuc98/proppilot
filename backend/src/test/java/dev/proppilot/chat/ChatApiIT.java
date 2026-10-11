@@ -316,7 +316,16 @@ class ChatApiIT extends CorpusIntegrationTest {
         assertThat(answer).startsWith("7 lease(s) end within the next 60 days.")
                 .contains("| Unit | Tenant | Ends | Days left | Rent (SAR/mo) | Lease document |")
                 .contains("No lease document is on file for unit(s): " + String.join(", ", without) + ".");
-        assertThat(markersIn(answer)).isNotEmpty();
+        var markers = markersIn(answer);
+        assertThat(markers).isNotEmpty();
+        var documented = jdbc.queryForList("""
+                select u.code from leases l join units u on u.id = l.unit_id
+                where l.active and l.end_date between ? and ?
+                  and l.id in (select lease_id from lease_documents)""", String.class, LocalDate.now(),
+                LocalDate.now().plusDays(60));
+        assertThat(documented).isNotEmpty();
+        assertThat(markers).as("the notice period clause of every lease that has a document")
+                .containsAll(documented.stream().map(unit -> "LSE-" + unit + "#4").toList());
         var done = events.get(events.size() - 1).data();
         assertThat(done.get("toolCalls").asInt()).isEqualTo(2);
         assertThat(done.get("iterations").asInt()).isEqualTo(3);

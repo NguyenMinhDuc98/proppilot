@@ -1,5 +1,6 @@
 package dev.proppilot.agent.tools;
 
+import dev.proppilot.domain.Lease;
 import dev.proppilot.domain.LeaseRepository;
 import dev.proppilot.rag.LeaseDocumentCatalog;
 import dev.proppilot.units.UnitService;
@@ -74,7 +75,7 @@ class LeaseScopeResolver {
                         + "(building letter A-F, then floor and number).");
             }
             var unitCode = unit.get().code();
-            var leaseId = leases.findActiveByUnitCode(unitCode).map(lease -> lease.getId()).orElse(null);
+            var leaseId = leases.findActiveByUnitCode(unitCode).map(Lease::getId).orElse(null);
             named.put(unitCode, new NamedUnit(unitCode, leaseId));
         }
         if (tenantName.isPresent()) {

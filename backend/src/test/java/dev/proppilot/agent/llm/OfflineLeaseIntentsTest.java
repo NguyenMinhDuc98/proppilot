@@ -5,11 +5,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.proppilot.agent.llm.offline.OfflineLlmClient;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -343,11 +346,29 @@ class OfflineLeaseIntentsTest {
         assertThat(route(question).name()).isEqualTo(tool);
     }
 
+    @Test
+    void everyQuestionOfTheEvalsStillGoesToTheToolItExpects() throws Exception {
+        var file = Path.of("..", "evals", "questions.json");
+        Assumptions.assumeTrue(Files.exists(file), "the evals are not next to the backend");
+        var questions = JSON.readTree(file.toFile());
+
+        assertThat(questions.size()).isGreaterThanOrEqualTo(26);
+        for (var question : questions) {
+            var text = question.get("question").asText();
+            var expected = new ArrayList<String>();
+            question.get("tools").forEach(tool -> expected.add(tool.asText()));
+            var response = ask(List.of(Message.user(text)));
+            assertThat(response.toolUses()).as("%s: %s", question.get("id").asText(), text).isNotEmpty();
+            assertThat(expected).as("%s: %s", question.get("id").asText(), text)
+                    .contains(response.toolUses().get(0).name());
+        }
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {"notice ", "renew ", "leases ", "leases ending in the next ", "penalty, ", "عقود ",
             "غرامة ", "tenant A", "pets pets pets ", "lease ", "ـ"})
     void aLongHostileQuestionIsRoutedQuickly(String unit) {
-        var hostile = unit.repeat(500 / unit.length());
+        var hostile = unit.repeat(20_000 / unit.length());
 
         var response = Assertions.assertTimeoutPreemptively(Duration.ofSeconds(2),
                 () -> ask(List.of(Message.user(hostile))));
@@ -357,6 +378,18 @@ class OfflineLeaseIntentsTest {
             var query = use.input().path("query").asText("");
             assertThat(query.length()).isLessThanOrEqualTo(500);
         });
+    }
+
+    @Test
+    void aLongQuestionThatNamesEveryTermAndWindowIsRoutedQuickly() {
+        var hostile = ("Which leases end in the next 60 days: late fee, notice period, renewal, repairs, pets, "
+                + "early termination, deposit, sublet, inspection, house rules, governing law, special conditions "
+                + "for tenant Ahmed Al-Harbi in unit A-203, B-101, C-105. ").repeat(150);
+
+        var response = Assertions.assertTimeoutPreemptively(Duration.ofSeconds(2),
+                () -> ask(List.of(Message.user(hostile))));
+
+        assertThat(response.toolUses()).extracting(ContentBlock.ToolUse::name).containsExactly("find_expiring_leases");
     }
 
     @Test
