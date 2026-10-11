@@ -1,7 +1,7 @@
 // node --test evals/text.test.mjs
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { compact, fold, mentionsAny, normalize } from './text.mjs'
+import { compact, fold, mentionsAny, normalize, unifySpelling } from './text.mjs'
 
 test('numbers lose their thousands separators and their Arabic digits', () => {
   assert.equal(normalize('SAR 4,800 / ٤٨٠٠ / ٤٬٨٠٠'), 'sar 4800 / 4800 / 4800')
@@ -31,6 +31,12 @@ test('Arabic is compared without vowel marks, tatweel and the variants of alef, 
 
 test('apostrophes are straight', () => {
   assert.equal(fold('I can’t'), "i can't")
+})
+
+test('spelling is unified without lowering case or touching numbers, so a pattern can be read the same way', () => {
+  assert.equal(unifySpelling("I’ve A-1,000 \\bأحمد\\b"), "I've A-1,000 \\bاحمد\\b")
+  assert.equal(unifySpelling('الدفعةُ'), 'الدفعه')
+  assert.equal(fold("I’VE ٤٬٨٠٠"), "i've 4800")
 })
 
 test('mentionsAny folds both sides', () => {

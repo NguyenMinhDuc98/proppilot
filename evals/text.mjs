@@ -16,16 +16,24 @@ export function normalize(text) {
 }
 
 /**
- * The text as it is compared with the marker words of a language: normalised as above, apostrophes straight, and
- * Arabic without its marks, with the forms of alef (أ إ آ) as one and ى as ي, so a word matches however it was typed.
+ * The text with one spelling for what is written in more than one way: apostrophes straight, and Arabic without its
+ * marks, with the forms of alef (أ إ آ) as one, ى as ي and ة as ه. Case and number formatting are normalize's.
  */
-export function fold(text) {
-  return normalize(text)
+export function unifySpelling(text) {
+  return String(text)
     .replace(/[‘’ʼ]/g, "'")
     .replace(ARABIC_MARKS, '')
     .replace(/[أإآٱ]/g, 'ا')
     .replace(/ى/g, 'ي')
     .replace(/ة/g, 'ه')
+}
+
+/**
+ * The text as every comparison of the grading reads it: normalised as above and with one spelling of each word, so a
+ * fact, a marker word or a name matches however an answer typed it.
+ */
+export function fold(text) {
+  return unifySpelling(normalize(text))
 }
 
 /** Whether the folded text holds any of the folded words. */
