@@ -1,7 +1,7 @@
 # docker compose up --build   ->  app on http://localhost:3000 , API on http://localhost:8080
 services:
   db:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg16
     environment:
       POSTGRES_DB: proppilot
       POSTGRES_USER: proppilot

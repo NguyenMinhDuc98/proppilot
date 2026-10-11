@@ -4,15 +4,18 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.utility.DockerImageName;
 
 /**
  * Base class: boots the full app against a throwaway PostgreSQL with the real Flyway migrations + seed.
- * One container is shared by the whole test run because Spring caches application contexts across classes.
+ * One container is shared by the whole test run because Spring caches application contexts across classes. The image is
+ * PostgreSQL with the pgvector extension, which the lease corpus needs.
  */
 @SpringBootTest
 public abstract class PostgresIntegrationTest {
 
-    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16-alpine");
+    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>(
+            DockerImageName.parse("pgvector/pgvector:pg16").asCompatibleSubstituteFor("postgres"));
 
     static {
         POSTGRES.start();

@@ -14,6 +14,6 @@ WORKDIR /app
 COPY --from=build /app/app.jar app.jar
 USER proppilot
 EXPOSE 8080
-# Small-heap, fast-start JVM flags so it fits free-tier hosts (512 MB RAM).
-ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=70 -XX:+UseSerialGC -XX:TieredStopAtLevel=1"
+# Small-heap, fast-start JVM flags so it fits free-tier hosts (512 MB RAM). Headless: PDFBox must never look for a display.
+ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=70 -XX:+UseSerialGC -XX:TieredStopAtLevel=1 -Djava.awt.headless=true"
 ENTRYPOINT ["java", "-jar", "app.jar"]
