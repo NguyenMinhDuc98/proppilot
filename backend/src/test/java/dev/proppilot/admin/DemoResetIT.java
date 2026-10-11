@@ -132,7 +132,7 @@ class DemoResetIT extends PostgresIntegrationTest {
         var at = Instant.parse("2026-10-01T08:00:00Z");
         var call = new LlmCallRecord(1, "claude-haiku-4-5-20251001", 100, 20, 0, 0, 500, StopReason.END_TURN,
                 LlmCallRecord.Outcome.OK, null, at);
-        var tool = new ToolCallRecord(1, "search_units", "{}", "3 units", false, 12, at);
+        var tool = new ToolCallRecord(1, 1, "search_units", "{}", "3 units", false, 12, at);
         var result = new AgentResult("answer", new Usage(100, 20), 1, 1, AgentResult.Status.OK, null, List.of(call),
                 List.of(tool), ModelRoute.byDefault("claude-haiku-4-5-20251001"), null);
         var id = UUID.randomUUID();

@@ -350,8 +350,9 @@ public class AgentLoop {
                 var result = execute(call);
                 toolResultTexts.add(result.evidence());
                 rememberRefs(result.ui());
-                toolCallRecords.add(new ToolCallRecord(toolCallRecords.size() + 1, call.name(), call.input().toString(),
-                        result.summary(), result.error(), millisSince(startedAt), startedAt));
+                // The call that asked for these tools is the one that was answered last.
+                toolCallRecords.add(new ToolCallRecord(toolCallRecords.size() + 1, llmCalls.size(), call.name(),
+                        call.input().toString(), result.summary(), result.error(), millisSince(startedAt), startedAt));
                 events.accept(new AgentEvent.ToolResultEvent(call.name(), result.summary(), result.error(), result.ui()));
                 results.add(new ContentBlock.ToolResult(call.id(), result.content(), result.error()));
             }

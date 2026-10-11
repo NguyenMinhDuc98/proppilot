@@ -267,7 +267,7 @@ class AdminRunsApiIT extends PostgresIntegrationTest {
     void servesTheTraceOfARunWithItsQuestion() throws Exception {
         var llmCall = new LlmCallRecord(1, HAIKU, 120, 45, 0, 0, 640, StopReason.END_TURN, LlmCallRecord.Outcome.OK, null,
                 T0);
-        var toolCall = new ToolCallRecord(1, "search_units", "{\"city\":\"Riyadh\"}", "3 units", false, 25, T0);
+        var toolCall = new ToolCallRecord(1, 1, "search_units", "{\"city\":\"Riyadh\"}", "3 units", false, 25, T0);
         var result = new AgentResult("answer", new Usage(120, 45), 1, 1, AgentResult.Status.OK, null, List.of(llmCall),
                 List.of(toolCall), ModelRoute.byDefault(HAIKU), null);
         var id = UUID.randomUUID();

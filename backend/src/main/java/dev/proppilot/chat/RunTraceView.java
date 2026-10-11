@@ -46,7 +46,8 @@ public record RunTraceView(
                           Instant startedAt) {
     }
 
-    public record ToolCall(int seq, String name, boolean error, long latencyMs) {
+    /** {@code llmSeq} is the {@code seq} of the model call that asked for the tool; null for a run stored before it. */
+    public record ToolCall(int seq, Integer llmSeq, String name, boolean error, long latencyMs) {
     }
 
     /** Call inside the transaction: the calls of the run are loaded when they are read here. */
@@ -77,6 +78,6 @@ public record RunTraceView(
     }
 
     private static ToolCall toolCall(RunToolCall call) {
-        return new ToolCall(call.sequence(), call.toolName(), call.error(), call.latencyMs());
+        return new ToolCall(call.sequence(), call.llmSequence(), call.toolName(), call.error(), call.latencyMs());
     }
 }

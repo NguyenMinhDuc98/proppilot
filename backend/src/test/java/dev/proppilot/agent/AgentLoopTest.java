@@ -546,9 +546,23 @@ class AgentLoopTest {
         assertThat(result.llmCallRecords()).extracting(LlmCallRecord::startedAt)
                 .containsExactly(START, START.plusMillis(140), START.plusMillis(280));
         assertThat(result.toolCallRecords()).containsExactly(
-                new ToolCallRecord(1, "echo", "{\"text\":\"ping\"}", "echoed", false, 40, START.plusMillis(100)),
-                new ToolCallRecord(2, "echo", "{\"text\":\"pong\"}", "echoed", false, 40, START.plusMillis(240)));
+                new ToolCallRecord(1, 1, "echo", "{\"text\":\"ping\"}", "echoed", false, 40, START.plusMillis(100)),
+                new ToolCallRecord(2, 2, "echo", "{\"text\":\"pong\"}", "echoed", false, 40, START.plusMillis(240)));
         assertThat(result.toolCalls()).isEqualTo(2);
+    }
+
+    @Test
+    void recordsWhichModelCallAskedForEachTool() {
+        var llm = new ScriptedLlmClient()
+                .then(new LlmResponse(List.of(use("t1", "echo", "a"), use("t2", "echo", "b")), StopReason.TOOL_USE,
+                        new Usage(50, 10)))
+                .thenToolCall("t3", "echo", "{\"text\":\"c\"}")
+                .thenText("Done");
+
+        var result = loop(llm, 6).run(ask("go", List.of()), e -> { }, NEVER);
+
+        assertThat(result.toolCallRecords()).extracting(ToolCallRecord::sequence).containsExactly(1, 2, 3);
+        assertThat(result.toolCallRecords()).extracting(ToolCallRecord::llmSequence).containsExactly(1, 1, 2);
     }
 
     @Test

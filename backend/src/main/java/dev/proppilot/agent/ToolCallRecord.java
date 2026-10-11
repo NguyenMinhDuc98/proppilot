@@ -9,12 +9,14 @@ import java.time.Instant;
  * control characters become spaces.
  *
  * @param sequence 1 for the first tool execution of the run
+ * @param llmSequence the {@link LlmCallRecord#sequence() sequence} of the model call that asked for the tool, so a
+ *                    trace can show each tool under the call it belongs to
  * @param args the arguments as compact JSON; cut off, so no longer JSON, when they exceed the cap
  * @param summary the one line the user saw for the result
  * @param startedAt when the tool began, for placing its span; it is not stored
  */
-public record ToolCallRecord(int sequence, String toolName, String args, String summary, boolean error, long latencyMs,
-                             Instant startedAt) {
+public record ToolCallRecord(int sequence, int llmSequence, String toolName, String args, String summary, boolean error,
+                             long latencyMs, Instant startedAt) {
 
     public static final int MAX_ARGS_LENGTH = 2000;
     public static final int MAX_SUMMARY_LENGTH = 300;

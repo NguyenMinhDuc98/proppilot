@@ -1,6 +1,7 @@
 package dev.proppilot.chat;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.Matchers.hasSize;
@@ -71,7 +72,7 @@ class RunTraceApiIT extends CorpusIntegrationTest {
                 T0);
         var second = new LlmCallRecord(2, MODEL, 40, 160, 3000, 0, 710, StopReason.END_TURN, LlmCallRecord.Outcome.OK, null,
                 T0.plusMillis(700));
-        var tool = new ToolCallRecord(1, "search_units", "{\"city\":\"Riyadh\"}", "3 units found", false, 25,
+        var tool = new ToolCallRecord(1, 1, "search_units", "{\"city\":\"Riyadh\"}", "3 units found", false, 25,
                 T0.plusMillis(650));
         return new AgentResult(ANSWER, new Usage(1240, 205, 3000, 3000), 1, 2, AgentResult.Status.OK, null,
                 List.of(first, second), List.of(tool), ModelRoute.byDefault(MODEL), null);
@@ -118,9 +119,40 @@ class RunTraceApiIT extends CorpusIntegrationTest {
                 .andExpect(jsonPath("$.llmCalls[1].stopReason").value("END_TURN"))
                 .andExpect(jsonPath("$.toolCalls", hasSize(1)))
                 .andExpect(jsonPath("$.toolCalls[0].seq").value(1))
+                .andExpect(jsonPath("$.toolCalls[0].llmSeq").value(1))
                 .andExpect(jsonPath("$.toolCalls[0].name").value("search_units"))
                 .andExpect(jsonPath("$.toolCalls[0].error").value(false))
                 .andExpect(jsonPath("$.toolCalls[0].latencyMs").value(25));
+    }
+
+    @Test
+    void saysWhichModelCallAskedForATool() throws Exception {
+        var first = new LlmCallRecord(1, MODEL, 100, 20, 0, 0, 300, StopReason.TOOL_USE, LlmCallRecord.Outcome.OK, null, T0);
+        var second = new LlmCallRecord(2, MODEL, 120, 20, 0, 0, 300, StopReason.TOOL_USE, LlmCallRecord.Outcome.OK, null,
+                T0.plusMillis(400));
+        var third = new LlmCallRecord(3, MODEL, 140, 60, 0, 0, 500, StopReason.END_TURN, LlmCallRecord.Outcome.OK, null,
+                T0.plusMillis(800));
+        var tools = List.of(
+                new ToolCallRecord(1, 1, "search_units", "{}", "3 units", false, 20, T0.plusMillis(300)),
+                new ToolCallRecord(2, 1, "get_unit_details", "{}", "a unit", false, 15, T0.plusMillis(320)),
+                new ToolCallRecord(3, 2, "find_overdue_tenants", "{}", "4 tenants", false, 30, T0.plusMillis(700)));
+        var id = save(new AgentResult(ANSWER, new Usage(360, 100), 3, 3, AgentResult.Status.OK, null,
+                List.of(first, second, third), tools, ModelRoute.byDefault(MODEL), null));
+
+        mvc.perform(get("/api/runs/{id}/trace", id))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.toolCalls[*].llmSeq").value(contains(1, 1, 2)));
+    }
+
+    @Test
+    void aToolStoredBeforeTheModelCallWasKnownHasNoModelCall() throws Exception {
+        var id = save(aRunThatSearchedOnceWithTheCache());
+        jdbc.update("update run_tool_calls set llm_seq = null where run_id = ?", id);
+
+        mvc.perform(get("/api/runs/{id}/trace", id))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.toolCalls[0].seq").value(1))
+                .andExpect(jsonPath("$.toolCalls[0].llmSeq").value(nullValue()));
     }
 
     @Test
@@ -181,7 +213,7 @@ class RunTraceApiIT extends CorpusIntegrationTest {
 
     @Test
     void neverCarriesTheWordsOfTheQuestionThatTheToolsWereAsked() throws Exception {
-        var tool = new ToolCallRecord(1, "search_lease_documents",
+        var tool = new ToolCallRecord(1, 1, "search_lease_documents",
                 "{\"query\":\"private question marker: who owes rent in B-12?\",\"unit_code\":\"B-12\"}",
                 "No tenant matches 'private question marker'", true, 25, T0.plusMillis(650));
         var id = save(new AgentResult(ANSWER, new Usage(100, 20), 1, 1, AgentResult.Status.OK, null, List.of(),

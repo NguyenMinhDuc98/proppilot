@@ -184,6 +184,18 @@ class AgentLoopRoutingTest {
     }
 
     @Test
+    void aToolIsRecordedUnderTheCallThatWasAnsweredNotUnderTheOneThatFailedBeforeIt() {
+        llm.thenFail(ErrorCode.LLM_OVERLOADED, "Claude API returned 529").thenToolCall("t1", "echo", "{\"text\":\"a\"}")
+                .thenText("Three tenants.");
+
+        var result = ask(SIMPLE);
+
+        assertThat(result.llmCallRecords()).extracting(LlmCallRecord::outcome)
+                .containsExactly(LlmCallRecord.Outcome.ERROR, LlmCallRecord.Outcome.OK, LlmCallRecord.Outcome.OK);
+        assertThat(result.toolCallRecords()).extracting(ToolCallRecord::llmSequence).containsExactly(2);
+    }
+
+    @Test
     void anOverloadOfTheLargerModelFallsBackToTheDefaultOne() {
         llm.thenFail(ErrorCode.LLM_OVERLOADED, "Claude API returned 529").thenText("Two leases.");
 

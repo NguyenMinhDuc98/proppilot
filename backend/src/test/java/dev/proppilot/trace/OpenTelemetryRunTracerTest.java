@@ -54,7 +54,7 @@ class OpenTelemetryRunTracerTest {
     private static TracedRun anOrdinaryRun() {
         var first = okCall(1, T0, 640, StopReason.TOOL_USE);
         var second = okCall(2, T0.plusMillis(700), 710, StopReason.END_TURN);
-        var tool = new ToolCallRecord(1, "search_units", "{\"city\":\"Riyadh\"}", "3 units found", false, 25,
+        var tool = new ToolCallRecord(1, 1, "search_units", "{\"city\":\"Riyadh\"}", "3 units found", false, 25,
                 T0.plusMillis(650));
         return run(AgentResult.Status.OK, null, List.of(first, second), List.of(tool));
     }
@@ -187,7 +187,7 @@ class OpenTelemetryRunTracerTest {
 
     @Test
     void aToolThatFailedIsMarkedAsAnError() {
-        var tool = new ToolCallRecord(1, "get_unit_details", "{}", "Invalid input", true, 3, T0);
+        var tool = new ToolCallRecord(1, 1, "get_unit_details", "{}", "Invalid input", true, 3, T0);
         tracer.record(run(AgentResult.Status.OK, null, List.of(okCall(1, T0, 100, StopReason.END_TURN)), List.of(tool)));
 
         var span = span("tool get_unit_details");
@@ -208,7 +208,7 @@ class OpenTelemetryRunTracerTest {
 
     @Test
     void noSpanHoldsWhatAToolWasAskedOrAnswered() {
-        var tool = new ToolCallRecord(1, "get_unit_details", "{\"unit_code\":\"SECRET-ARGUMENT\"}",
+        var tool = new ToolCallRecord(1, 1, "get_unit_details", "{\"unit_code\":\"SECRET-ARGUMENT\"}",
                 "SECRET-SUMMARY of tenant Ahmed", false, 3, T0);
         tracer.record(run(AgentResult.Status.OK, null, List.of(okCall(1, T0, 100, StopReason.END_TURN)), List.of(tool)));
 

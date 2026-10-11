@@ -14,7 +14,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
 
-/** What V7 and V8 added: the columns of a run and the tables of its calls. Rolled back after each test. */
+/** What V7, V8 and V10 added: the columns of a run and the tables of its calls. Rolled back after each test. */
 @Transactional
 class TracesSchemaIT extends PostgresIntegrationTest {
 
@@ -127,8 +127,18 @@ class TracesSchemaIT extends PostgresIntegrationTest {
                 Map.entry("tool_name", "character varying(64), not null"),
                 Map.entry("args", "text, not null"),
                 Map.entry("summary", "text, not null"),
+                Map.entry("llm_seq", "integer, null"),
                 Map.entry("error", "boolean, not null"),
                 Map.entry("latency_ms", "bigint, not null"));
+    }
+
+    @Test
+    void aToolCallRowStoredWithoutTheModelCallKeepsNullThere() {
+        insertToolCall(RUN, 1);
+
+        var row = jdbc.queryForMap("select llm_seq from run_tool_calls where run_id = ?", RUN);
+
+        assertThat(row).containsEntry("llm_seq", null);
     }
 
     @Test
