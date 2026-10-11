@@ -23,6 +23,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.OptionalInt;
 import java.util.UUID;
 import java.util.function.BooleanSupplier;
 import org.junit.jupiter.api.Test;
@@ -68,6 +69,19 @@ class AgentLoopTest {
             proposalContexts.add(context);
             return ToolResult.ok(JSON, java.util.Map.of("status", "PROPOSED"), "proposed").withUi(CARD);
         }
+    };
+
+    /** Stands in for a tool that costs something on every call, so it may be called twice in a reply. */
+    private final Tool metered = new Tool() {
+        public String name() { return "metered"; }
+        public String description() { return "Costs something per call"; }
+        public JsonNode inputSchema() { return ToolSchema.object().string("text", "text").build(); }
+        public ToolResult execute(JsonNode input) {
+            executedWith.add("metered:" + input.path("text").asText());
+            return ToolResult.ok(JSON, java.util.Map.of("ran", true), "ran");
+        }
+        @Override
+        public OptionalInt maxCallsPerRun() { return OptionalInt.of(2); }
     };
 
     private AgentLoop loop(ScriptedLlmClient llm, int maxIterations, Tool... more) {
@@ -423,5 +437,60 @@ class AgentLoopTest {
         loop(llm, 6, propose).run(ask("hi", List.of()), e -> { }, NEVER);
 
         assertThat(llm.requests.get(0).tools()).extracting(t -> t.name()).containsExactlyInAnyOrder("echo", "propose");
+    }
+
+    private static ContentBlock.ToolUse use(String id, String tool, String text) {
+        return new ContentBlock.ToolUse(id, tool, JSON.createObjectNode().put("text", text));
+    }
+
+    @Test
+    void aToolCalledMoreOftenInOneRunThanItAllowsIsNotRunBeyondTheLimit() {
+        var llm = new ScriptedLlmClient()
+                .then(new LlmResponse(List.of(use("t1", "metered", "a"), use("t2", "metered", "b"),
+                        use("t3", "metered", "c"), use("t4", "metered", "d")), StopReason.TOOL_USE, new Usage(50, 10)))
+                .thenText("Answered from two results");
+        var events = new ArrayList<AgentEvent>();
+
+        var result = loop(llm, 6, metered).run(ask("go", List.of()), events::add, NEVER);
+
+        assertThat(executedWith).containsExactly("metered:a", "metered:b");
+        assertThat(result.status()).isEqualTo(AgentResult.Status.OK);
+        assertThat(result.toolCalls()).as("a refused call is still a call the model made").isEqualTo(4);
+        var sent = llm.requests.get(1).messages();
+        var results = sent.get(sent.size() - 1).content().stream().map(ContentBlock.ToolResult.class::cast).toList();
+        assertThat(results).extracting(ContentBlock.ToolResult::error).containsExactly(false, false, true, true);
+        assertThat(results.get(2).content()).contains("at most 2 times", "was not run");
+        var shown = events.stream().filter(AgentEvent.ToolResultEvent.class::isInstance)
+                .map(AgentEvent.ToolResultEvent.class::cast).toList();
+        assertThat(shown).extracting(AgentEvent.ToolResultEvent::error).containsExactly(false, false, true, true);
+    }
+
+    @Test
+    void theLimitCountsTheCallsOfAllTheModelRoundsOfTheRun() {
+        var llm = new ScriptedLlmClient()
+                .thenToolCall("t1", "metered", "{\"text\":\"a\"}")
+                .thenToolCall("t2", "metered", "{\"text\":\"b\"}")
+                .thenToolCall("t3", "metered", "{\"text\":\"c\"}")
+                .thenText("done");
+
+        loop(llm, 6, metered).run(ask("go", List.of()), e -> { }, NEVER);
+
+        assertThat(executedWith).containsExactly("metered:a", "metered:b");
+    }
+
+    @Test
+    void theLimitIsPerRunAndPerToolSoAnotherQuestionOrAnotherToolIsNotAffected() {
+        var firstRun = new ScriptedLlmClient()
+                .then(new LlmResponse(List.of(use("t1", "metered", "a"), use("t2", "metered", "b"),
+                        use("t3", "echo", "x"), use("t4", "echo", "y")), StopReason.TOOL_USE, new Usage(50, 10)))
+                .thenText("ok");
+        var secondRun = new ScriptedLlmClient()
+                .then(new LlmResponse(List.of(use("t5", "metered", "c")), StopReason.TOOL_USE, new Usage(50, 10)))
+                .thenText("ok");
+
+        loop(firstRun, 6, metered).run(ask("go", List.of()), e -> { }, NEVER);
+        loop(secondRun, 6, metered).run(ask("again", List.of()), e -> { }, NEVER);
+
+        assertThat(executedWith).containsExactly("metered:a", "metered:b", "x", "y", "metered:c");
     }
 }

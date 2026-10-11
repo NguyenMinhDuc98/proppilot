@@ -5,6 +5,7 @@ import dev.proppilot.agent.llm.ToolSpec;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.OptionalInt;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -36,6 +37,12 @@ public class ToolRegistry {
         return tools.values().stream()
                 .map(t -> new ToolSpec(t.name(), t.description(), t.inputSchema()))
                 .toList();
+    }
+
+    /** The most times one run may call the tool; empty when it has no limit or no tool has that name. */
+    public OptionalInt maxCallsPerRun(String name) {
+        var tool = tools.get(name);
+        return tool == null ? OptionalInt.empty() : tool.maxCallsPerRun();
     }
 
     public ToolResult execute(String name, JsonNode input) {

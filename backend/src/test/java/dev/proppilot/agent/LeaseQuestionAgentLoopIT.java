@@ -5,6 +5,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.proppilot.agent.llm.ContentBlock;
+import dev.proppilot.agent.llm.LlmResponse;
+import dev.proppilot.agent.llm.StopReason;
+import dev.proppilot.agent.llm.Usage;
 import dev.proppilot.agent.tools.ToolRegistry;
 import dev.proppilot.agent.tools.ToolResult;
 import dev.proppilot.config.AgentProperties;
@@ -135,6 +138,31 @@ class LeaseQuestionAgentLoopIT extends FakeEmbeddingIntegrationTest {
         assertThat(search.get("note").asText()).contains("No lease document is on file for");
         assertThat(toolResult(0).ui()).isNull();
         assertThat(toolResult(1).ui().get("sources")).isNotEmpty();
+    }
+
+    @Test
+    void aReplyThatAsksForManySearchesGetsThreeAndThePaidEmbeddingIsSpentOnThoseOnly() {
+        var unit = unitOf("en");
+        var searches = new ArrayList<ContentBlock>();
+        for (int i = 1; i <= 6; i++) {
+            searches.add(new ContentBlock.ToolUse("t" + i, "search_lease_documents", json.createObjectNode()
+                    .put("query", "scripted search number " + i).put("unit_code", unit)));
+        }
+        llm.then(new LlmResponse(searches, StopReason.TOOL_USE, new Usage(50, 10)))
+                .thenText("Here is what the first three searches found.");
+
+        var result = ask("Compare everything in the lease of unit " + unit + ".");
+
+        assertThat(result.status()).isEqualTo(AgentResult.Status.OK);
+        assertThat(fake.queryCalls).containsExactly("scripted search number 1", "scripted search number 2",
+                "scripted search number 3");
+        var sent = llm.requests.get(1).messages();
+        var results = sent.get(sent.size() - 1).content();
+        assertThat(results).extracting(block -> ((ContentBlock.ToolResult) block).error())
+                .containsExactly(false, false, false, true, true, true);
+        assertThat(((ContentBlock.ToolResult) results.get(3)).content()).contains("at most 3 times", "was not run");
+        assertThat(toolResult(3).error()).isTrue();
+        assertThat(toolResult(3).ui()).isNull();
     }
 
     private JsonNode parse(String content) {

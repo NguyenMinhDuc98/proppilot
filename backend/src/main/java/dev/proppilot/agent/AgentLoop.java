@@ -18,7 +18,9 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
@@ -71,6 +73,7 @@ public class AgentLoop {
         private final List<ToolSpec> toolSpecs;
         private final ToolContext context;
         private final Instant deadline = clock.instant().plus(props.runTimeout());
+        private final Map<String, Integer> callsByTool = new HashMap<>();
         private Usage usage = Usage.ZERO;
         private int toolCalls;
         private int iterations;
@@ -147,10 +150,22 @@ public class AgentLoop {
             return Optional.empty();
         }
 
-        /** A run that offered no tools runs none, even if the model asks for one. */
+        /**
+         * A run that offered no tools runs none, even if the model asks for one. A tool that limits its calls per run
+         * is not run beyond that: the call is answered with an error that tells the model to work with what it has.
+         */
         private ToolResult execute(ContentBlock.ToolUse call) {
             if (!toolsOffered) {
                 return ToolResult.error("No tools are available for this reply.");
+            }
+            int calls = callsByTool.merge(call.name(), 1, Integer::sum);
+            var limit = tools.maxCallsPerRun(call.name());
+            if (limit.isPresent() && calls > limit.getAsInt()) {
+                log.warn("Tool {} was called {} times in one run, over its limit of {}", call.name(), calls,
+                        limit.getAsInt());
+                return ToolResult.error("This reply may call " + call.name() + " at most " + limit.getAsInt()
+                        + " times and this call was not run. Answer from the results you already have, and say plainly "
+                        + "what was left out.");
             }
             return tools.execute(call.name(), call.input(), context);
         }
