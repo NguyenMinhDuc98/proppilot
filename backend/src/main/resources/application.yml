@@ -66,5 +66,5 @@ proppilot:
     max-proposals-per-run: ${ACTION_MAX_PROPOSALS_PER_RUN:3}
     max-proposals-per-day: ${ACTION_MAX_PROPOSALS_PER_DAY:200}
   rag:
-    document-count: 30
+    document-count: ${RAG_DOCUMENT_COUNT:30}
     seed-on-startup: ${RAG_SEED_ON_STARTUP:true}
