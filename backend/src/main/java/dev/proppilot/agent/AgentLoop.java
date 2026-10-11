@@ -24,6 +24,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import org.slf4j.Logger;
@@ -36,7 +37,8 @@ import org.springframework.stereotype.Service;
  * the run deadline. Every model call and tool execution is measured with the injected clock and returned in the
  * result, whatever became of the run.
  *
- * <p>The router picks the model of the run before it starts, and every call of the run goes to it.
+ * <p>The router picks the model of the run before it starts. A call that fails because that model is overloaded or too
+ * slow is made again, once per run, on the other model, when there is one and the call had streamed nothing.
  */
 @Service
 public class AgentLoop {
@@ -79,13 +81,15 @@ public class AgentLoop {
         private final boolean toolsOffered;
         private final List<ToolSpec> toolSpecs;
         private final ToolContext context;
-        private final ModelRoute route;
         private final Instant deadline = clock.instant().plus(props.runTimeout());
         private final Map<String, Integer> callsByTool = new HashMap<>();
         private final List<LlmCallRecord> llmCalls = new ArrayList<>();
         private final List<ToolCallRecord> toolCallRecords = new ArrayList<>();
         private Usage usage = Usage.ZERO;
         private int iterations;
+        private ModelRoute route;
+        /** The code of the failure that sent the run to the other model. Set once: a run falls back only once. */
+        private ErrorCode fellBackFrom;
 
         Run(AgentRequest request, Consumer<AgentEvent> events, BooleanSupplier cancelled) {
             this.events = events;
@@ -118,17 +122,19 @@ public class AgentLoop {
             }
             iterations++;
             var startedAt = clock.instant();
+            var streamedText = new AtomicBoolean();
             LlmResponse response;
             try {
                 response = llm.complete(
                         new LlmRequest(system, List.copyOf(messages), toolSpecs, timeLeft(), route.model()),
-                        text -> events.accept(new AgentEvent.Token(text)));
+                        text -> {
+                            if (!text.isEmpty()) {
+                                streamedText.set(true);
+                            }
+                            events.accept(new AgentEvent.Token(text));
+                        });
             } catch (LlmException e) {
-                log.warn("LLM call failed on iteration {} ({}): {}", iterations, e.code(), e.getMessage());
-                var code = failureCode(e);
-                llmCalls.add(LlmCallRecord.failed(llmCalls.size() + 1, route.model(), startedAt,
-                        millisSince(startedAt), code));
-                return Optional.of(failed(code));
+                return afterFailedCall(e, startedAt, streamedText.get());
             }
             llmCalls.add(LlmCallRecord.succeeded(llmCalls.size() + 1, route.model(), startedAt, millisSince(startedAt),
                     response));
@@ -148,6 +154,37 @@ public class AgentLoop {
                 return Optional.of(result(AgentResult.Status.OK, response.text()));
             }
             return runTools(requested);
+        }
+
+        /**
+         * The model call failed. That ends the run, unless the call can be made again on the other model: only for an
+         * overload or a timeout, only once, only while the run has iterations and time left, and only when none of its
+         * text reached the client, which would otherwise read the answer twice.
+         */
+        private Optional<AgentResult> afterFailedCall(LlmException failure, Instant startedAt, boolean streamedText) {
+            log.warn("LLM call failed on iteration {} ({}): {}", iterations, failure.code(), failure.getMessage());
+            var code = failureCode(failure);
+            llmCalls.add(LlmCallRecord.failed(llmCalls.size() + 1, route.model(), startedAt, millisSince(startedAt),
+                    code));
+            var fallback = fallbackAfter(code, streamedText);
+            if (fallback.isEmpty()) {
+                // The fallback only ever turns a failure into an answer: a run that fails after it fails as it would
+                // have without it, with the code of the first failure.
+                return Optional.of(failed(fellBackFrom != null ? fellBackFrom : code));
+            }
+            log.warn("Falling back from {} to {} after {}", route.model(), fallback.get().model(), code.code());
+            fellBackFrom = code;
+            route = fallback.get();
+            return Optional.empty();
+        }
+
+        private Optional<ModelRoute> fallbackAfter(ErrorCode code, boolean streamedText) {
+            boolean transientFailure = code == ErrorCode.LLM_OVERLOADED || code == ErrorCode.LLM_TIMEOUT;
+            boolean callsLeft = iterations < props.maxIterations() && timeLeft().isPositive();
+            if (fellBackFrom != null || !transientFailure || streamedText || !callsLeft) {
+                return Optional.empty();
+            }
+            return router.fallbackFrom(route);
         }
 
         /** Runs the tools and queues their results for the next model call; a result is returned only if interrupted. */

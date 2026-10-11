@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import dev.proppilot.PostgresIntegrationTest;
+import dev.proppilot.agent.ErrorCode;
 import dev.proppilot.agent.ScriptedLlmClient;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -28,7 +29,7 @@ import org.springframework.test.web.servlet.ResultActions;
 
 /**
  * A run with a larger model configured, end to end: which model answered and why, in the stream, the stored run and its
- * public trace, and what it was paid for.
+ * public trace, and what each model was paid for.
  */
 @AutoConfigureMockMvc
 @TestPropertySource(properties = "proppilot.llm.large-model=" + ModelRoutingIT.LARGE)
@@ -130,5 +131,45 @@ class ModelRoutingIT extends PostgresIntegrationTest {
         assertThat(run.getCostUsd()).isEqualByComparingTo("0.000200");
         traceOf(question).andExpect(jsonPath("$.complexity.score").value(0))
                 .andExpect(jsonPath("$.complexity.rules", hasSize(0)));
+    }
+
+    @Test
+    void anOverloadFallsBackToTheOtherModelAndTheRunIsPaidForEachCallAtItsOwnModelsPrice() throws Exception {
+        var question = "Who is more than 30 days late on rent? (fallback)";
+        llm.thenToolCall("t1", "get_occupancy_summary", "{}")
+                .thenFail(ErrorCode.LLM_OVERLOADED, "Claude API returned 529: upstream-secret")
+                .thenText("Three tenants.");
+
+        var sse = chat(question);
+
+        assertThat(sse).doesNotContain("event:error").doesNotContain("upstream-secret")
+                .contains("\"status\":\"OK\"").contains("\"model\":\"" + LARGE + "\"")
+                .contains("\"routedReason\":\"FALLBACK\"").contains("\"iterations\":3");
+        // the default model's 50 input and 10 output tokens: 100; the larger model's 100 and 20: 600
+        assertThat(recordedRun(question).getCostUsd()).isEqualByComparingTo("0.000700");
+        traceOf(question)
+                .andExpect(jsonPath("$.routedReason").value("FALLBACK"))
+                .andExpect(jsonPath("$.llmCalls", hasSize(3)))
+                .andExpect(jsonPath("$.llmCalls[0].model").value(SMALL))
+                .andExpect(jsonPath("$.llmCalls[0].outcome").value("OK"))
+                .andExpect(jsonPath("$.llmCalls[1].model").value(SMALL))
+                .andExpect(jsonPath("$.llmCalls[1].outcome").value("ERROR"))
+                .andExpect(jsonPath("$.llmCalls[1].errorCode").value("llm_overloaded"))
+                .andExpect(jsonPath("$.llmCalls[2].model").value(LARGE))
+                .andExpect(jsonPath("$.llmCalls[2].outcome").value("OK"));
+    }
+
+    @Test
+    void anOverloadOfBothModelsReachesTheBrowserAsTheOriginalCode() throws Exception {
+        var question = "Who is more than 30 days late on rent? (both overloaded)";
+        llm.thenFail(ErrorCode.LLM_OVERLOADED, "Claude API returned 529: upstream-secret")
+                .thenFail(ErrorCode.LLM_OVERLOADED, "Claude API returned 529: upstream-secret");
+
+        var sse = chat(question);
+
+        assertThat(sse).contains("event:error").contains("\"code\":\"llm_overloaded\"").contains("\"status\":\"ERROR\"")
+                .doesNotContain("upstream-secret");
+        assertThat(recordedRun(question).getCostUsd()).isEqualByComparingTo("0");
+        traceOf(question).andExpect(jsonPath("$.llmCalls", hasSize(2)));
     }
 }
