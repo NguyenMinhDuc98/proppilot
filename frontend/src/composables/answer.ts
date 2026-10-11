@@ -22,14 +22,22 @@ const MARKER = /\[(LSE-[A-Z]{1,8}-\d{1,5}#(?:0|[1-9]\d?)[a-z]{0,4})\]/g
 /** Elements nested deeper than any answer has are shown as their text, so the depth of the tree is bounded. */
 const MAX_DEPTH = 24
 
+/** A table gets a scrollable wrapper, so it reads as a data card and never overflows a phone screen. */
+const tableCard = (table: AnswerNode): AnswerNode => ({
+  kind: 'element',
+  tag: 'div',
+  attrs: { class: 'table-wrap' },
+  children: [table],
+})
+
 /**
  * Renders the Markdown of an answer and turns each citation marker that names one of `sources` into a citation node.
  * A marker that names nothing the search returned stays the text it is, so a chip never points at a clause the answer
  * was not given. Links are left alone: a chip must not sit inside one.
  *
- * The tree is built from the sanitised HTML, so it holds nothing the sanitiser dropped, and it is rendered without
- * `v-html`. The text may be any text the model was led to write: one that nests deeper than the Markdown parser can
- * follow is shown as the text it is.
+ * The tree is built from the sanitised nodes themselves, so it holds nothing the sanitiser dropped, and it is rendered
+ * without `v-html`. The text may be any text the model was led to write: one that nests deeper than the Markdown
+ * parser can follow is shown as the text it is.
  */
 export function buildAnswer(markdown: string, sources: readonly LeaseSource[]): Answer {
   const known = new Map(sources.map((source) => [source.ref, source]))
@@ -64,23 +72,25 @@ export function buildAnswer(markdown: string, sources: readonly LeaseSource[]): 
         nodes.push(...textOf(child.textContent ?? '', inLink))
       } else if (child instanceof Element) {
         const tag = child.localName
-        nodes.push({
+        const element: AnswerNode = {
           kind: 'element',
           tag,
           attrs: Object.fromEntries(Array.from(child.attributes, (attr) => [attr.name, attr.value])),
           children: convert(child, inLink || tag === 'a', depth + 1),
-        })
+        }
+        nodes.push(tag === 'table' ? tableCard(element) : element)
       }
     }
     return nodes
   }
 
-  const template = document.createElement('template')
+  let tree: DocumentFragment
   try {
-    template.innerHTML = renderMarkdown(markdown)
+    tree = renderMarkdown(markdown)
   } catch {
     // The Markdown parser recurses once for each level of nesting and ran out of stack.
-    template.content.replaceChildren(markdown)
+    tree = document.createDocumentFragment()
+    tree.append(markdown)
   }
-  return { nodes: convert(template.content, false, 0), cited: [...cited.values()] }
+  return { nodes: convert(tree, false, 0), cited: [...cited.values()] }
 }

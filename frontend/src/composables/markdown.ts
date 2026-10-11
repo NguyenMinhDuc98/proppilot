@@ -4,12 +4,12 @@ import { marked } from 'marked'
 marked.setOptions({ gfm: true, breaks: true })
 
 /**
- * Renders model output (Markdown) to safe HTML. The text can include tenant-supplied strings that reached the model
- * through tool results, so it is never trusted: everything goes through DOMPurify before reaching v-html.
+ * Renders model output (Markdown) to a tree of safe nodes. The text can include tenant-supplied strings that reached
+ * the model through tool results, so it is never trusted: everything goes through DOMPurify. The sanitised tree is
+ * returned as it is rather than as a string, because editing a string of HTML (or parsing it a second time) is how
+ * markup that sat inside an attribute value comes back as elements.
  */
-export function renderMarkdown(text: string): string {
+export function renderMarkdown(text: string): DocumentFragment {
   const html = marked.parse(text, { async: false })
-  const safe = DOMPurify.sanitize(html, { USE_PROFILES: { html: true } })
-  // Tables get a scrollable, rounded wrapper so they read as a data card and never overflow a phone screen.
-  return safe.replaceAll('<table>', '<div class="table-wrap"><table>').replaceAll('</table>', '</table></div>')
+  return DOMPurify.sanitize(html, { USE_PROFILES: { html: true }, RETURN_DOM_FRAGMENT: true })
 }

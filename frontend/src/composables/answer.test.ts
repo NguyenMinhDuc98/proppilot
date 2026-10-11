@@ -98,6 +98,19 @@ describe('buildAnswer', () => {
     expect(items.map((item) => written(item.children))).toEqual(['Fee: 3% {LSE-A-504#5}', 'Notice: 60 days {LSE-A-504#4a}'])
   })
 
+  it('puts a table in a wrapper that scrolls it, and puts nothing around text that only reads <table>', () => {
+    const { nodes } = buildAnswer('| Unit | Fee |\n|---|---|\n| A-504 | 3% |\n\nThe tag `<table>` and &lt;table&gt; are text.', sources)
+
+    expect(nodes[0]).toMatchObject({
+      kind: 'element',
+      tag: 'div',
+      attrs: { class: 'table-wrap' },
+      children: [{ kind: 'element', tag: 'table' }],
+    })
+    expect(elements(nodes).filter((element) => element.attrs.class === 'table-wrap')).toHaveLength(1)
+    expect(elements(nodes).filter((element) => element.tag === 'table')).toHaveLength(1)
+  })
+
   it('finds markers in the cells of a table', () => {
     const { nodes } = buildAnswer(
       '| Unit | Late fee |\n|---|---|\n| A-504 | 3% [LSE-A-504#5] |\n| A-203 | 3% [LSE-A-203#5] |',
@@ -172,6 +185,15 @@ describe('buildAnswer', () => {
       const { nodes } = buildAnswer('<!-- [LSE-A-504#5] -->\\[LSE-A-504#4a\\]', sources)
 
       expect(citations(nodes)).toEqual([])
+    })
+
+    it('keeps markup that is written inside the value of an attribute as the text of that attribute', () => {
+      const { nodes } = buildAnswer('<span title="<table><img src=x onerror=alert(1)>">x</span>', sources)
+
+      const everyElement = elements(nodes)
+      expect(everyElement.map((element) => element.tag)).toEqual(['p', 'span'])
+      expect(everyElement.flatMap((element) => Object.keys(element.attrs)).filter((name) => name.startsWith('on'))).toEqual([])
+      expect(everyElement.find((element) => element.tag === 'span')?.attrs.title).toBe('<table><img src=x onerror=alert(1)>')
     })
 
     it('shows the text of an element name or attribute that a marker was written inside as text', () => {

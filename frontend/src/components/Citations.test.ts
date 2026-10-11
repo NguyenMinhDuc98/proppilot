@@ -155,6 +155,16 @@ describe('citation chips and untrusted text', () => {
     expect(wrapper.html()).not.toMatch(/<script|javascript:|onclick/)
   })
 
+  it('keeps markup written inside an attribute from becoming elements with handlers', () => {
+    const wrapper = render('<span title="<table><img src=x onerror=alert(1)>">fee</span> [LSE-A-504#5]')
+
+    const everyElement = [...wrapper.element.querySelectorAll('*')]
+    expect(everyElement.flatMap((element) => element.getAttributeNames()).filter((name) => name.startsWith('on'))).toEqual([])
+    expect(wrapper.find('img').exists()).toBe(false)
+    expect(wrapper.find('span[title]').attributes('title')).toBe('<table><img src=x onerror=alert(1)>')
+    expect(inline(wrapper)).toHaveLength(1)
+  })
+
   it('shows a source whose fields are markup as text, in the chip, the row and the drawer', async () => {
     const hostile: LeaseSource = {
       ...lateFee,
