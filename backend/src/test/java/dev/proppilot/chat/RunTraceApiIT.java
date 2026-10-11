@@ -22,6 +22,8 @@ import dev.proppilot.agent.ToolCallRecord;
 import dev.proppilot.agent.llm.StopReason;
 import dev.proppilot.agent.llm.Usage;
 import dev.proppilot.rag.CorpusIntegrationTest;
+import dev.proppilot.trace.NoopRunTracer;
+import dev.proppilot.trace.RunTracer;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -50,6 +52,8 @@ class RunTraceApiIT extends CorpusIntegrationTest {
     ChatRunRepository runs;
     @Autowired
     ObjectMapper json;
+    @Autowired
+    RunTracer tracer;
 
     private UUID save(AgentResult result) {
         var id = UUID.randomUUID();
@@ -114,6 +118,11 @@ class RunTraceApiIT extends CorpusIntegrationTest {
                 .andExpect(jsonPath("$.toolCalls[0].summary").value("3 units found"))
                 .andExpect(jsonPath("$.toolCalls[0].error").value(false))
                 .andExpect(jsonPath("$.toolCalls[0].latencyMs").value(25));
+    }
+
+    @Test
+    void theApplicationStartsWithNoTracingUnlessItIsSwitchedOn() {
+        assertThat(tracer).isInstanceOf(NoopRunTracer.class);
     }
 
     @Test

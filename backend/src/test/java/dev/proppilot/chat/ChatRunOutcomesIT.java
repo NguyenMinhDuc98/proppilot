@@ -21,6 +21,15 @@ import dev.proppilot.agent.llm.LlmResponse;
 import dev.proppilot.agent.llm.StopReason;
 import dev.proppilot.agent.llm.Usage;
 import dev.proppilot.config.AgentProperties;
+import dev.proppilot.trace.OpenTelemetryRunTracer;
+import dev.proppilot.trace.RunTracer;
+import io.opentelemetry.api.common.AttributeKey;
+import io.opentelemetry.api.trace.StatusCode;
+import io.opentelemetry.sdk.OpenTelemetrySdk;
+import io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter;
+import io.opentelemetry.sdk.trace.SdkTracerProvider;
+import io.opentelemetry.sdk.trace.data.SpanData;
+import io.opentelemetry.sdk.trace.export.SimpleSpanProcessor;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
@@ -47,6 +56,18 @@ class ChatRunOutcomesIT extends PostgresIntegrationTest {
         ScriptedLlmClient scriptedLlm() {
             return new ScriptedLlmClient();
         }
+
+        @Bean
+        InMemorySpanExporter exportedSpans() {
+            return InMemorySpanExporter.create();
+        }
+
+        @Bean
+        @Primary
+        RunTracer exportingRunTracer(InMemorySpanExporter exportedSpans) {
+            var provider = SdkTracerProvider.builder().addSpanProcessor(SimpleSpanProcessor.create(exportedSpans)).build();
+            return new OpenTelemetryRunTracer(OpenTelemetrySdk.builder().setTracerProvider(provider).build());
+        }
     }
 
     @Autowired
@@ -63,6 +84,9 @@ class ChatRunOutcomesIT extends PostgresIntegrationTest {
 
     @Autowired
     AgentProperties agentProps;
+
+    @Autowired
+    InMemorySpanExporter exportedSpans;
 
     @BeforeEach
     void resetScript() {
@@ -288,5 +312,46 @@ class ChatRunOutcomesIT extends PostgresIntegrationTest {
                 .andExpect(jsonPath("$.toolCalls[0].name").value("no_such_tool"))
                 .andExpect(jsonPath("$.toolCalls[0].args").value("{\"a\":1}"))
                 .andExpect(jsonPath("$.toolCalls[0].error").value(true));
+    }
+
+    private List<SpanData> spansOf(ChatRun run) {
+        var spans = exportedSpans.getFinishedSpanItems();
+        var root = spans.stream()
+                .filter(span -> run.getId().toString().equals(span.getAttributes().get(
+                        AttributeKey.stringKey("run.id"))))
+                .findFirst().orElseThrow(() -> new AssertionError("no span was exported for run " + run.getId()));
+        return spans.stream().filter(span -> span.getTraceId().equals(root.getTraceId())).toList();
+    }
+
+    @Test
+    void exportsTheRunAsSpansWhenOpenTelemetryIsOn() throws Exception {
+        llm.thenToolCall("t1", "get_occupancy_summary", "{}").thenText("There are 150 units.");
+
+        chat("otel: one tool");
+
+        var spans = spansOf(recordedRun("otel: one tool"));
+        assertThat(spans).extracting(SpanData::getName)
+                .containsExactlyInAnyOrder("proppilot.run", "chat test", "chat test", "tool get_occupancy_summary");
+        var root = spans.stream().filter(span -> span.getName().equals("proppilot.run")).findFirst().orElseThrow();
+        assertThat(root.getAttributes().get(AttributeKey.stringKey("run.status")))
+                .isEqualTo("OK");
+        assertThat(root.getAttributes().get(AttributeKey.longKey("run.iterations")))
+                .isEqualTo(2L);
+        assertThat(spans.stream().filter(span -> !span.getName().equals("proppilot.run")))
+                .allSatisfy(child -> assertThat(child.getParentSpanId()).isEqualTo(root.getSpanId()));
+        assertThat(spans.toString()).doesNotContain("otel: one tool").doesNotContain("There are 150 units.");
+    }
+
+    @Test
+    void exportsAFailedRunWithAnErrorStatus() throws Exception {
+        llm.thenFail(ErrorCode.LLM_OVERLOADED, "Claude API returned 529: upstream-secret");
+
+        chat("otel: failure");
+
+        var spans = spansOf(recordedRun("otel: failure"));
+        assertThat(spans).extracting(span -> span.getStatus().getStatusCode())
+                .containsExactlyInAnyOrder(StatusCode.ERROR,
+                        StatusCode.ERROR);
+        assertThat(spans.toString()).doesNotContain("upstream-secret");
     }
 }

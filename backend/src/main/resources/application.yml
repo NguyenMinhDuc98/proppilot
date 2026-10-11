@@ -53,6 +53,8 @@ proppilot:
     run-timeout-seconds: ${AGENT_RUN_TIMEOUT_SECONDS:90}
   admin:
     token: ${ADMIN_TOKEN:}
+  otel:
+    enabled: ${OTEL_ENABLED:false}
   chat:
     max-message-length: ${CHAT_MAX_MESSAGE_LENGTH:500}
     max-history-items: ${CHAT_MAX_HISTORY_ITEMS:20}

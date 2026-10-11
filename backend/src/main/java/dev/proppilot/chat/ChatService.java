@@ -11,6 +11,8 @@ import dev.proppilot.agent.ErrorCode;
 import dev.proppilot.agent.llm.LlmClient;
 import dev.proppilot.agent.tools.ToolResult;
 import dev.proppilot.config.AgentProperties;
+import dev.proppilot.trace.RunTracer;
+import dev.proppilot.trace.TracedRun;
 import jakarta.annotation.PreDestroy;
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -57,18 +59,21 @@ public class ChatService {
     private final LlmClient llm;
     private final CostCalculator costs;
     private final ChatRunRepository runs;
+    private final RunTracer tracer;
     private final ObjectMapper json;
     private final Clock clock;
     private final long emitterTimeoutMs;
     private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
 
     public ChatService(AgentLoop agent, ActionFollowUp followUp, LlmClient llm, CostCalculator costs,
-                       ChatRunRepository runs, ObjectMapper json, Clock clock, AgentProperties agentProps) {
+                       ChatRunRepository runs, RunTracer tracer, ObjectMapper json, Clock clock,
+                       AgentProperties agentProps) {
         this.agent = agent;
         this.followUp = followUp;
         this.llm = llm;
         this.costs = costs;
         this.runs = runs;
+        this.tracer = tracer;
         this.json = json;
         this.clock = clock;
         this.emitterTimeoutMs = agentProps.runTimeout().plus(EMITTER_GRACE).toMillis();
@@ -99,12 +104,14 @@ public class ChatService {
 
     /** @param confirming the action whose decision this run confirms, or null when it answers a question */
     private void runAndStream(AgentRequest turn, UUID confirming, ClientStream client) {
+        var startedAt = Instant.now(clock);
         var started = System.nanoTime();
         var toolNames = new ArrayList<String>();
         try {
             var result = runAgent(turn, confirming, client, toolNames);
             long latencyMs = Duration.ofNanos(System.nanoTime() - started).toMillis();
             var run = record(turn, result, toolNames, latencyMs);
+            tracer.record(traced(run, result, startedAt));
             if (!client.isGone()) {
                 finish(client, result, run);
             }
@@ -156,6 +163,13 @@ public class ChatService {
         var run = new ChatRun(turn.runId(), Instant.now(clock), truncate(turn.message()), llm.provider(), llm.model(),
                 result, toolNames, latencyMs, cost);
         return runs.save(run);
+    }
+
+    private static TracedRun traced(ChatRun run, AgentResult result, Instant startedAt) {
+        return new TracedRun(run.getId(), run.getProvider(), run.getModel(), result.status(), result.errorCode(),
+                run.getRoutedReason(), run.getGuardrailStatus(), result.iterations(), result.toolCalls(), startedAt,
+                run.getLatencyMs(), result.llmCallRecords(),
+                result.toolCallRecords().stream().map(TracedRun.Tool::of).toList());
     }
 
     private static String truncate(String question) {
