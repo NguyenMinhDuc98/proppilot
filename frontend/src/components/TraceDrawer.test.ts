@@ -14,6 +14,7 @@ const message: ChatMessage = {
   preamble: 'Let me check the units.',
   tools: [{ name: 'search_units', args: {}, status: 'done', summary: '6 units found' }],
   actions: [],
+  sources: [],
   streaming: false,
 }
 

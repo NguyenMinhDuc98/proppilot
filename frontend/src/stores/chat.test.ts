@@ -3,8 +3,9 @@ import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
 import { ApiError } from '../api/http'
-import type { ActionView, AppInfo, ChatEvent } from '../api/types'
+import type { ActionView, AppInfo, ChatEvent, LeaseSource } from '../api/types'
 import { paymentAction } from '../test/actionFixtures'
+import { lateFee, noticePart } from '../test/leaseFixtures'
 import { useChatStore } from './chat'
 
 const streamChat = vi.fn()
@@ -335,6 +336,82 @@ describe('chat store', () => {
     chat.clear()
 
     expect(chat.messages).toEqual([])
+  })
+})
+
+describe('chat store lease sources', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    streamChat.mockReset()
+    streamConfirmation.mockReset()
+    info.value = null
+  })
+
+  const search = (sources?: LeaseSource[], error = false): ChatEvent[] => [
+    { type: 'tool_call', name: 'search_lease_documents', args: { query: 'late fee' } },
+    { type: 'tool_result', name: 'search_lease_documents', summary: 'clauses', error, ...(sources ? { sources } : {}) },
+  ]
+
+  it('collects the clauses of a lease search into the answer it belongs to', async () => {
+    script([...search([lateFee, noticePart]), { type: 'token', text: 'Fee [LSE-A-504#5].' }, done])
+    const chat = useChatStore()
+
+    await chat.send('late fee for A-504?')
+
+    expect(chat.messages[1].sources).toEqual([lateFee, noticePart])
+    expect(chat.messages[0].sources).toEqual([])
+  })
+
+  it('keeps a clause that two searches both returned once, and the first copy of it', async () => {
+    const again = { ...lateFee, text: 'a copy of the clause' }
+    script([...search([lateFee]), ...search([again, noticePart]), done])
+    const chat = useChatStore()
+
+    await chat.send('fee and notice for A-504')
+
+    expect(chat.messages[1].sources.map((source) => source.ref)).toEqual(['LSE-A-504#5', 'LSE-A-504#4a'])
+    expect(chat.messages[1].sources[0].text).toBe(lateFee.text)
+  })
+
+  it('keeps the sources of one answer apart from those of the next', async () => {
+    script([...search([lateFee]), done])
+    script([...search([noticePart]), done])
+    const chat = useChatStore()
+
+    await chat.send('late fee?')
+    await chat.send('notice period?')
+
+    expect(chat.messages[1].sources).toEqual([lateFee])
+    expect(chat.messages[3].sources).toEqual([noticePart])
+  })
+
+  it('has no sources for a tool that sends none, or one that failed', async () => {
+    script([
+      { type: 'tool_call', name: 'search_units', args: {} },
+      { type: 'tool_result', name: 'search_units', summary: '6 units', error: false },
+      ...search(undefined, true),
+      done,
+    ])
+    const chat = useChatStore()
+
+    await chat.send('units')
+
+    expect(chat.messages[1].sources).toEqual([])
+  })
+
+  it('keeps them for the whole conversation and sends only plain text back to the server as history', async () => {
+    script([...search([lateFee]), { type: 'token', text: 'The fee is 3% [LSE-A-504#5].' }, done])
+    script([{ type: 'token', text: 'ok' }, done])
+    const chat = useChatStore()
+
+    await chat.send('late fee for A-504?')
+    await chat.send('thanks')
+
+    expect(chat.messages[1].sources).toEqual([lateFee])
+    expect(streamChat.mock.calls[1][1]).toEqual([
+      { role: 'user', text: 'late fee for A-504?' },
+      { role: 'assistant', text: 'The fee is 3% [LSE-A-504#5].' },
+    ])
   })
 })
 

@@ -11,7 +11,7 @@ import MessageBubble from './MessageBubble.vue'
 const errorCodes: ErrorCode[] = ['llm_overloaded', 'llm_timeout', 'llm_auth', 'llm_error', 'run_timeout']
 
 function render(overrides: Partial<ChatMessage>) {
-  const message: ChatMessage = { id: 1, role: 'assistant', text: '', tools: [], actions: [], streaming: false, ...overrides }
+  const message: ChatMessage = { id: 1, role: 'assistant', text: '', tools: [], actions: [], sources: [], streaming: false, ...overrides }
   return mount(MessageBubble, { props: { message }, global: { plugins: [i18n] } })
 }
 

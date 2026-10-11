@@ -3,7 +3,7 @@ import { computed, ref } from 'vue'
 import { newIdempotencyKey } from '../api/actions'
 import { streamChat, streamConfirmation } from '../api/chat'
 import { ApiError } from '../api/http'
-import type { ActionView, ChatEvent, DonePayload, ErrorCode, HistoryTurn } from '../api/types'
+import type { ActionView, ChatEvent, DonePayload, ErrorCode, HistoryTurn, LeaseSource } from '../api/types'
 import { useAppInfo } from '../composables/useAppInfo'
 
 export interface ToolChip {
@@ -23,6 +23,8 @@ export interface ChatMessage {
   tools: ToolChip[]
   /** Changes this answer proposed. Each waits for a person to approve or reject it. */
   actions: ActionView[]
+  /** The lease clauses its searches returned, each once. A citation in the answer is a chip only for one of these. */
+  sources: LeaseSource[]
   usage?: DonePayload
   error?: string
   /** Set when the server reported the failure; the UI shows localised text for it instead of `error`. */
@@ -99,6 +101,7 @@ export const useChatStore = defineStore('chat', () => {
           chip.status = event.error ? 'failed' : 'done'
           chip.summary = event.summary
         }
+        addSources(message, event.sources)
         break
       }
       case 'action_proposed': {
@@ -121,9 +124,16 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
+  /** A clause that two searches both return is one source. */
+  function addSources(message: ChatMessage, found: LeaseSource[] = []) {
+    for (const source of found) {
+      if (!message.sources.some((known) => known.ref === source.ref)) message.sources.push(source)
+    }
+  }
+
   /** Adds a message and returns it as the store holds it, so that later changes to it are seen by the UI. */
   function append(role: ChatMessage['role'], text = '', streaming = false): ChatMessage {
-    messages.value.push({ id: nextId++, role, text, tools: [], actions: [], streaming })
+    messages.value.push({ id: nextId++, role, text, tools: [], actions: [], sources: [], streaming })
     return messages.value[messages.value.length - 1]
   }
 
