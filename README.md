@@ -485,7 +485,7 @@ A case is a question (or a conversation, for the follow-up cases) with what a go
 | Writes executed by a run | 0 |
 | LLM judge | not run |
 
-**What this proves:** the data, the tools, the streaming, the citation and proposal checks and the grading agree with each other on the cases the offline assistant is built for, and nothing a run did changed data. **What it does not prove:** anything about Claude. The offline assistant is a keyword router written against these question shapes, so 100% is the expected result and says nothing about tool choice, language, tone, grounding, cost, latency, prompt caching, routing or how often the guardrail flags a free-form answer. It also skips the ten cases above, which exist to be hard.
+**What this proves:** the data, the tools, the streaming, the citation and proposal checks and the grading agree with each other on the cases the offline assistant is built for, and nothing a run did changed data. **What it does not prove:** anything about Claude. The offline assistant is a keyword router written against these question shapes, so 100% is the expected result and says nothing about tool choice, language, tone, grounding, cost, latency, prompt caching, routing or how often the guardrail flags a free-form answer. It also skips the ten cases above, which only a real model can pass.
 
 ### Against real Claude: what exists and what does not
 
