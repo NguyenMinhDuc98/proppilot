@@ -3,7 +3,6 @@ package dev.proppilot.admin;
 import dev.proppilot.agent.AgentResult;
 import dev.proppilot.chat.ChatRunRepository;
 import dev.proppilot.chat.RunIds;
-import dev.proppilot.chat.RunTraceView;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Size;
@@ -48,13 +47,16 @@ public class AdminRunsController {
                 .stream().map(AdminRunView::of).toList();
     }
 
-    /** One run with its trace and its question; 404 for a run that is unknown and for an id that is not a UUID. */
+    /**
+     * One run with its trace, its question and what its tools were asked and said; 404 for a run that is unknown and
+     * for an id that is not a UUID.
+     */
     @GetMapping("/runs/{id}")
     @Transactional(readOnly = true)
     public ResponseEntity<AdminRunDetailView> run(@PathVariable String id) {
         return RunIds.parse(id)
                 .flatMap(runs::findById)
-                .map(run -> ResponseEntity.ok(new AdminRunDetailView(run.getQuestion(), RunTraceView.of(run))))
+                .map(run -> ResponseEntity.ok(AdminRunDetailView.of(run)))
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
 }

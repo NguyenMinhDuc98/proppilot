@@ -114,10 +114,20 @@ class RunTraceApiIT extends CorpusIntegrationTest {
                 .andExpect(jsonPath("$.toolCalls", hasSize(1)))
                 .andExpect(jsonPath("$.toolCalls[0].seq").value(1))
                 .andExpect(jsonPath("$.toolCalls[0].name").value("search_units"))
-                .andExpect(jsonPath("$.toolCalls[0].args").value("{\"city\":\"Riyadh\"}"))
-                .andExpect(jsonPath("$.toolCalls[0].summary").value("3 units found"))
                 .andExpect(jsonPath("$.toolCalls[0].error").value(false))
                 .andExpect(jsonPath("$.toolCalls[0].latencyMs").value(25));
+    }
+
+    @Test
+    void aToolCallShowsNeitherItsArgumentsNorItsResult() throws Exception {
+        var id = save(aRunThatSearchedOnceWithTheCache());
+
+        mvc.perform(get("/api/runs/{id}/trace", id))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.toolCalls[0].args").doesNotExist())
+                .andExpect(jsonPath("$.toolCalls[0].summary").doesNotExist())
+                .andExpect(content().string(not(containsString("Riyadh"))))
+                .andExpect(content().string(not(containsString("3 units found"))));
     }
 
     @Test
@@ -135,6 +145,21 @@ class RunTraceApiIT extends CorpusIntegrationTest {
                 .andExpect(jsonPath("$.answer").doesNotExist())
                 .andExpect(content().string(not(containsString("private question marker"))))
                 .andExpect(content().string(not(containsString("private answer marker"))));
+    }
+
+    @Test
+    void neverCarriesTheWordsOfTheQuestionThatTheToolsWereAsked() throws Exception {
+        var tool = new ToolCallRecord(1, "search_lease_documents",
+                "{\"query\":\"private question marker: who owes rent in B-12?\",\"unit_code\":\"B-12\"}",
+                "No tenant matches 'private question marker'", true, 25, T0.plusMillis(650));
+        var id = save(new AgentResult(ANSWER, new Usage(100, 20), 1, 1, AgentResult.Status.OK, null, List.of(),
+                List.of(tool)));
+
+        mvc.perform(get("/api/runs/{id}/trace", id))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.toolCalls[0].name").value("search_lease_documents"))
+                .andExpect(content().string(not(containsString("private question marker"))))
+                .andExpect(content().string(not(containsString("B-12"))));
     }
 
     @Test
@@ -254,8 +279,22 @@ class RunTraceApiIT extends CorpusIntegrationTest {
                 .andExpect(jsonPath("$.toolCalls", hasSize(1)))
                 .andExpect(jsonPath("$.toolCalls[0].name").value("search_units"))
                 .andExpect(jsonPath("$.toolCalls[0].error").value(false))
-                .andExpect(jsonPath("$.toolCalls[0].summary").isNotEmpty())
                 .andExpect(content().string(not(containsString("offline trace"))));
+    }
+
+    @Test
+    void aLeaseQuestionIsInTheStoredSearchArgumentsButNotInThePublicTrace() throws Exception {
+        var wording = "marmalade quartz zebra";
+        var id = runIdOf(chat("What does the lease agreement for A-203 say about " + wording + "?"));
+
+        var stored = jdbc.queryForObject("select args from run_tool_calls where run_id = ? and tool_name = "
+                + "'search_lease_documents'", String.class, id);
+        assertThat(stored).contains(wording);
+        mvc.perform(get("/api/runs/{id}/trace", id))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.toolCalls[0].name").value("search_lease_documents"))
+                .andExpect(content().string(not(containsString("marmalade"))))
+                .andExpect(content().string(not(containsString("A-203"))));
     }
 
     @Test

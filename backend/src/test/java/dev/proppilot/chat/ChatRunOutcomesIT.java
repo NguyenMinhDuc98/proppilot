@@ -11,7 +11,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.proppilot.PostgresIntegrationTest;
 import dev.proppilot.agent.AgentResult;
 import dev.proppilot.agent.ErrorCode;
@@ -231,9 +230,11 @@ class ChatRunOutcomesIT extends PostgresIntegrationTest {
                 .andExpect(jsonPath("$.llmCalls[1].outputTokens").value(20))
                 .andExpect(jsonPath("$.toolCalls", hasSize(1)))
                 .andExpect(jsonPath("$.toolCalls[0].name").value("get_occupancy_summary"))
-                .andExpect(jsonPath("$.toolCalls[0].args").value("{}"))
-                .andExpect(jsonPath("$.toolCalls[0].error").value(false))
-                .andExpect(jsonPath("$.toolCalls[0].summary").isNotEmpty());
+                .andExpect(jsonPath("$.toolCalls[0].error").value(false));
+        var stored = jdbc.queryForMap("select args, summary from run_tool_calls where run_id = ?",
+                recordedRun("trace: one tool").getId());
+        assertThat(stored).containsEntry("args", "{}");
+        assertThat((String) stored.get("summary")).isNotEmpty();
     }
 
     @Test
@@ -308,10 +309,10 @@ class ChatRunOutcomesIT extends PostgresIntegrationTest {
 
         chat("trace: long arguments");
 
-        var body = traceOf("trace: long arguments").andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
-        var call = new ObjectMapper().readTree(body).at("/toolCalls/0");
-        assertThat(call.get("args").asText()).hasSize(2000).endsWith("\u2026");
-        assertThat(call.get("summary").asText().length()).isLessThanOrEqualTo(300);
+        var stored = jdbc.queryForMap("select args, summary from run_tool_calls where run_id = ?",
+                recordedRun("trace: long arguments").getId());
+        assertThat((String) stored.get("args")).hasSize(2000).endsWith("\u2026");
+        assertThat(((String) stored.get("summary")).length()).isLessThanOrEqualTo(300);
     }
 
     @Test
@@ -322,8 +323,9 @@ class ChatRunOutcomesIT extends PostgresIntegrationTest {
 
         traceOf("trace: unknown tool")
                 .andExpect(jsonPath("$.toolCalls[0].name").value("no_such_tool"))
-                .andExpect(jsonPath("$.toolCalls[0].args").value("{\"a\":1}"))
                 .andExpect(jsonPath("$.toolCalls[0].error").value(true));
+        assertThat(jdbc.queryForObject("select args from run_tool_calls where run_id = ?", String.class,
+                recordedRun("trace: unknown tool").getId())).isEqualTo("{\"a\":1}");
     }
 
     private List<String> storedToolNames(String question) {

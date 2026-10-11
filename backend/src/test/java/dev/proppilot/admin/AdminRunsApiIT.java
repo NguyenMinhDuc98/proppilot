@@ -281,7 +281,13 @@ class AdminRunsApiIT extends PostgresIntegrationTest {
                 .andExpect(jsonPath("$.totals.inputTokens").value(120))
                 .andExpect(jsonPath("$.guardrail.violations").value(0))
                 .andExpect(jsonPath("$.llmCalls[0].latencyMs").value(640))
+                .andExpect(jsonPath("$.toolCalls[0].seq").value(1))
                 .andExpect(jsonPath("$.toolCalls[0].name").value("search_units"))
+                .andExpect(jsonPath("$.toolCalls[0].args").doesNotExist())
+                .andExpect(jsonPath("$.toolCallDetails", hasSize(1)))
+                .andExpect(jsonPath("$.toolCallDetails[0].seq").value(1))
+                .andExpect(jsonPath("$.toolCallDetails[0].args").value("{\"city\":\"Riyadh\"}"))
+                .andExpect(jsonPath("$.toolCallDetails[0].summary").value("3 units"))
                 .andExpect(jsonPath("$.trace").doesNotExist());
     }
 

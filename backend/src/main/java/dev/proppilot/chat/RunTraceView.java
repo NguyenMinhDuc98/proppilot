@@ -6,8 +6,10 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * The stored trace of one run: its models, its tools, its figures. It holds no question and no answer, so the run's id
- * may be shared; the arguments and result summaries of the tool calls are the only text in it.
+ * The stored trace of one run: its models, its tools, its figures. It holds no free text: not the question, not the
+ * answer, and not what a tool was asked or said, because those carry the words of the visitor (a lease search is
+ * asked in the words of the question). Only identifiers, names, counts, timings and outcomes are in it, so it may be
+ * public. What the tools were asked and said is in the admin's detail of the run.
  *
  * @param model the model that gave the final answer
  */
@@ -36,7 +38,7 @@ public record RunTraceView(
                           Instant startedAt) {
     }
 
-    public record ToolCall(int seq, String name, String args, String summary, boolean error, long latencyMs) {
+    public record ToolCall(int seq, String name, boolean error, long latencyMs) {
     }
 
     /** Call inside the transaction: the calls of the run are loaded when they are read here. */
@@ -58,7 +60,6 @@ public record RunTraceView(
     }
 
     private static ToolCall toolCall(RunToolCall call) {
-        return new ToolCall(call.sequence(), call.toolName(), call.args(), call.summary(), call.error(),
-                call.latencyMs());
+        return new ToolCall(call.sequence(), call.toolName(), call.error(), call.latencyMs());
     }
 }

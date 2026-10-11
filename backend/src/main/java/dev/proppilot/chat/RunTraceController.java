@@ -8,8 +8,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * How a run was answered. Public, like the stream that announces the run's id: the id is a random UUID that only the
- * visitor who asked has seen, and the trace holds neither the question nor the answer.
+ * How a run was answered. Public, like the stream that announces the run's id. The id is not a secret (the public
+ * list of actions names the run that proposed each one), so the trace holds nothing a visitor typed: neither the
+ * question, nor the answer, nor the arguments and results of the tools.
  */
 @RestController
 @RequestMapping("/api/runs")
