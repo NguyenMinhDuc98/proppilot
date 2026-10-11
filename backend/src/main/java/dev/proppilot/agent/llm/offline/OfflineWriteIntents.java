@@ -36,11 +36,17 @@ final class OfflineWriteIntents {
      * A sentence or clause that comes before the command: "Hi, ..." or "For unit A-203: ...". It ends in a run of
      * punctuation and the quantifiers do not give anything back, so the text splits into clauses in one way only and a
      * long run of punctuation cannot make the match slow.
+     * <p>
+     * The regex engine recurses once for each round of a repeated group, so the rounds are capped too: a long run of
+     * ", , , ," or "so so so" would otherwise overflow the thread's stack. No real request has more clauses or filler
+     * words than the caps in front of its command.
      */
     private static final String EARLIER_CLAUSE = "[^.!?;:,،؛؟\\n]{0,80}+[.!?;:,،؛؟]++";
-    private static final String LEAD_IN = "^(?:" + EARLIER_CLAUSE + ")*?\\W*+(?:(?:"
+    private static final int MOST_EARLIER_CLAUSES = 8;
+    private static final int MOST_FILLERS = 12;
+    private static final String LEAD_IN = "^(?:" + EARLIER_CLAUSE + "){0," + MOST_EARLIER_CLAUSES + "}?\\W*+(?:(?:"
             + String.join("|", FILLERS.stream().map(filler -> filler.replace(" ", "\\s+")).toList()) + ")" + WORD_END
-            + "\\W*+)*";
+            + "\\W*+){0," + MOST_FILLERS + "}";
 
     /** A word that ends a run of modifiers: what follows is no longer the object of the verb. */
     private static final String BREAKER = "for|in|at|on|from|to|of|about|with|by|as|because|regarding|that|which|and|or"

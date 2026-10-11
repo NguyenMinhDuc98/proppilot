@@ -265,7 +265,7 @@ LLM_PROVIDER=anthropic ANTHROPIC_API_KEY=sk-ant-... docker compose up --build
 ## Tests
 
 ```bash
-cd backend && ./mvnw verify      # 654 tests; integration tests start PostgreSQL via Testcontainers (needs Docker)
+cd backend && ./mvnw verify      # 660 tests; integration tests start PostgreSQL via Testcontainers (needs Docker)
 cd frontend && npm test          # 223 Vitest tests in 19 files: SSE parser, chat store, approval card, Activity page, Markdown sanitising, trace builder, error codes, info badge, matching English and Arabic message keys
 ```
 

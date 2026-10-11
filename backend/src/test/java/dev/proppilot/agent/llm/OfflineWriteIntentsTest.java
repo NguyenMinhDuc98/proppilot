@@ -373,7 +373,7 @@ class OfflineWriteIntentsTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {".", ", ", ": ", ".,;:!? ", "a. "})
+    @ValueSource(strings = {".", ", ", ": ", ".,;:!? ", "a. ", "so ", "so, ", "hi. ", "a.b", "a-b ", "record "})
     void aLongRunOfPunctuationIsAnsweredQuickly(String unit) {
         var hostile = unit.repeat(5000 / unit.length()) + " Show me unit A-203";
 
