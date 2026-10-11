@@ -20,7 +20,7 @@ enum LeaseTopic {
                     + "|penalt(?:y|ies)|grace period|(?:fees?|charges?) for (?:late|overdue|delayed)",
             "غرام[هات]|رسوم (?:ال)?تاخير|التاخير في (?:ال)?(?:سداد|دفع)|عقوبه (?:ال)?تاخير|مهله السماح"),
 
-    NOTICE("notice period written notice", "مدة الإشعار",
+    NOTICE("notice period", "مدة الإشعار",
             "notices?|non-renewal",
             "اشعار|اخطار"),
 
