@@ -6,6 +6,7 @@ import { describeComparison } from './compare.mjs'
 
 const LANGUAGES = { en: 'English', ar: 'Arabic' }
 const MOST_REASON_LENGTH = 240
+const VERDICT_ORDER = ['OK', 'RETRIED_OK', 'FLAGGED', 'RETRIED_FLAGGED']
 
 const percent = (value) => `${(value * 100).toFixed(1)}%`
 const money = (value) => `$${value.toFixed(5)}`
@@ -63,6 +64,13 @@ function offlineNote(results) {
     + 'characters each, and no prompt cache was involved.'
 }
 
+/** The guardrail's verdicts with their counts, such as `OK 61, RETRIED_OK 2, FLAGGED 1`; `none` when it checked nothing. */
+function verdicts(byStatus) {
+  const rank = (status) => (VERDICT_ORDER.includes(status) ? VERDICT_ORDER.indexOf(status) : VERDICT_ORDER.length)
+  const statuses = Object.keys(byStatus).sort((a, b) => rank(a) - rank(b))
+  return statuses.length ? statuses.map((status) => `${status} ${byStatus[status]}`).join(', ') : 'none'
+}
+
 function overall(a) {
   return table(['Measure', 'Value'], [
     ['Pass rate (mean over runs)', `${percent(a.passRate)} (${a.passedTrials}/${a.trials} runs of cases)`],
@@ -79,6 +87,7 @@ function overall(a) {
     ['Cache read / write tokens', `${a.tokens.cacheRead} / ${a.tokens.cacheWrite}`],
     ['Input / output tokens', `${a.tokens.input} / ${a.tokens.output}`],
     ['Answers the guardrail flagged', a.guardrail.flagged],
+    ['Guardrail verdicts', verdicts(a.guardrail.byStatus)],
     ['Writes executed by a run', a.writesExecuted],
   ])
 }

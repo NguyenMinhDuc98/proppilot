@@ -81,6 +81,24 @@ test('the overall table holds the pass rate, the deviation, the flaky cases, the
   assert.match(summary, /Total cost \| \$0\.00000/)
 })
 
+test('the overall table counts the guardrail verdicts, so that an answer a retry made clean shows', () => {
+  const retried = results({ cases: [item('en-01', 'read', 'en',
+    trial(true), trial(true), trial(true, { guardrailStatus: 'RETRIED_FLAGGED' }),
+    trial(true, { guardrailStatus: 'FLAGGED' }), trial(true, { guardrailStatus: 'RETRIED_OK' }),
+    trial(true, { guardrailStatus: null }))] })
+
+  const summary = renderSummary(retried)
+
+  assert.match(summary, /\| Answers the guardrail flagged \| 2 \|/)
+  assert.match(summary, /\| Guardrail verdicts \| OK 2, RETRIED_OK 1, FLAGGED 1, RETRIED_FLAGGED 1 \|/)
+})
+
+test('a run in which the guardrail checked nothing says so', () => {
+  const unchecked = results({ cases: [item('en-01', 'read', 'en', trial(true, { guardrailStatus: null }))] })
+
+  assert.match(renderSummary(unchecked), /\| Guardrail verdicts \| none \|/)
+})
+
 test('a run that more than one model answered has a table of what each of them did', () => {
   const mixed = results({
     provider: 'anthropic',

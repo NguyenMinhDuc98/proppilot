@@ -29,6 +29,7 @@
 | Cache read / write tokens | 0 / 0 |
 | Input / output tokens | 48030 / 25104 |
 | Answers the guardrail flagged | 0 |
+| Guardrail verdicts | OK 162 |
 | Writes executed by a run | 0 |
 
 ## By category
