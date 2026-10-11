@@ -172,4 +172,36 @@ class ModelRoutingIT extends PostgresIntegrationTest {
         assertThat(recordedRun(question).getCostUsd()).isEqualByComparingTo("0");
         traceOf(question).andExpect(jsonPath("$.llmCalls", hasSize(2)));
     }
+
+    @Test
+    void aRunNoModelAnsweredIsStoredUnderTheModelItWasSentTo() throws Exception {
+        var question = "Who is more than 30 days late on rent? (nobody answered)";
+        llm.thenFail(ErrorCode.LLM_OVERLOADED, "Claude API returned 529").thenFail(ErrorCode.LLM_OVERLOADED, "again");
+
+        var sse = chat(question);
+
+        assertThat(sse).contains("\"model\":\"" + SMALL + "\"").contains("\"routedReason\":\"DEFAULT\"");
+        var run = recordedRun(question);
+        assertThat(run.getModel()).isEqualTo(SMALL);
+        assertThat(run.getRoutedReason()).isEqualTo("DEFAULT");
+        traceOf(question).andExpect(jsonPath("$.model").value(SMALL))
+                .andExpect(jsonPath("$.routedReason").value("DEFAULT"));
+    }
+
+    @Test
+    void aFallbackThatFailsLeavesTheRunUnderTheModelThatAnsweredAndPaidForItsCalls() throws Exception {
+        var question = "Who is more than 30 days late on rent? (fallback failed)";
+        llm.thenToolCall("t1", "get_occupancy_summary", "{}")
+                .thenFail(ErrorCode.LLM_OVERLOADED, "Claude API returned 529")
+                .thenFail(ErrorCode.LLM_ERROR, "Claude API returned 400");
+
+        var sse = chat(question);
+
+        assertThat(sse).contains("\"status\":\"ERROR\"").contains("\"code\":\"llm_overloaded\"")
+                .contains("\"model\":\"" + SMALL + "\"").contains("\"routedReason\":\"DEFAULT\"");
+        var run = recordedRun(question);
+        assertThat(run.getModel()).isEqualTo(SMALL);
+        // only the first call of the default model reported usage: 50 input and 10 output tokens
+        assertThat(run.getCostUsd()).isEqualByComparingTo("0.000100");
+    }
 }

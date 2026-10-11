@@ -38,7 +38,8 @@ import org.springframework.stereotype.Service;
  * result, whatever became of the run.
  *
  * <p>The router picks the model of the run before it starts. A call that fails because that model is overloaded or too
- * slow is made again, once per run, on the other model, when there is one and the call had streamed nothing.
+ * slow is made again, once per run, on the other model, when there is one and the call had streamed nothing. The
+ * result names the model of the last call that was answered, not the one the loop was about to try.
  */
 @Service
 public class AgentLoop {
@@ -87,7 +88,10 @@ public class AgentLoop {
         private final List<ToolCallRecord> toolCallRecords = new ArrayList<>();
         private Usage usage = Usage.ZERO;
         private int iterations;
+        /** Where the next call goes. */
         private ModelRoute route;
+        /** Where the last call that was answered went, or where the run was sent while none was: what the result reports. */
+        private ModelRoute answeredBy;
         /** The code of the failure that sent the run to the other model. Set once: a run falls back only once. */
         private ErrorCode fellBackFrom;
 
@@ -100,6 +104,7 @@ public class AgentLoop {
             messages.addAll(conversationSoFar(request.history()));
             // A confirmation only words an outcome that is settled, so it has no question to score.
             this.route = toolsOffered ? router.route(request.message(), messages.size()) : router.defaultRoute();
+            this.answeredBy = route;
             messages.add(Message.user(request.message()));
         }
 
@@ -138,6 +143,7 @@ public class AgentLoop {
             }
             llmCalls.add(LlmCallRecord.succeeded(llmCalls.size() + 1, route.model(), startedAt, millisSince(startedAt),
                     response));
+            answeredBy = route;
             usage = usage.plus(response.usage());
             if (cancelled.getAsBoolean()) {
                 // The client left while the reply was streaming, so nobody received it.
@@ -259,12 +265,12 @@ public class AgentLoop {
 
         private AgentResult result(AgentResult.Status status, String answer) {
             return new AgentResult(answer, usage, toolCallRecords.size(), iterations, status, null, llmCalls,
-                    toolCallRecords, route);
+                    toolCallRecords, answeredBy);
         }
 
         private AgentResult failed(ErrorCode code) {
             return AgentResult.failed(code, usage, toolCallRecords.size(), iterations, llmCalls, toolCallRecords,
-                    route);
+                    answeredBy);
         }
     }
 

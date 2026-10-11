@@ -10,8 +10,9 @@ import java.util.List;
  *
  * @param llmCallRecords every model call the run made, in order, whatever became of the run
  * @param toolCallRecords every tool execution of the run, in order
- * @param route the model of the run's last call (or the one it was sent to, when it made none), why it went there and
- *              how the question scored
+ * @param route where the run's last answered call went: the model that answered and why it was chosen, with how the
+ *              question scored. The route the run was sent to when no call was answered, as a model that failed
+ *              answered nothing
  */
 public record AgentResult(String answer, Usage usage, int toolCalls, int iterations, Status status, ErrorCode errorCode,
                           List<LlmCallRecord> llmCallRecords, List<ToolCallRecord> toolCallRecords, ModelRoute route) {

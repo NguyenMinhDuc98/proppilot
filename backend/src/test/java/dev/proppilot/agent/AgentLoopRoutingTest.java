@@ -216,6 +216,43 @@ class AgentLoopRoutingTest {
     }
 
     @Test
+    void whenNoCallWasAnsweredTheRunIsReportedWhereItWasSent() {
+        llm.thenFail(ErrorCode.LLM_OVERLOADED, "first").thenFail(ErrorCode.LLM_OVERLOADED, "second");
+
+        var result = ask(SIMPLE);
+
+        assertThat(result.route().model()).isEqualTo(SMALL);
+        assertThat(result.route().reason()).isEqualTo(RoutedReason.DEFAULT);
+    }
+
+    @Test
+    void aFallbackThatWasDecidedButNeverMadeIsNotTheModelOfTheRun() {
+        llm.thenFail(ErrorCode.LLM_OVERLOADED, "busy").thenText("never asked for");
+
+        var result = loop(6, true).run(AgentRequest.question(SIMPLE, List.of(), UUID.randomUUID()), events::add,
+                () -> llm.requests.size() >= 1);
+
+        assertThat(result.status()).isEqualTo(AgentResult.Status.ABORTED);
+        assertThat(llm.requests).hasSize(1);
+        assertThat(result.route().model()).isEqualTo(SMALL);
+        assertThat(result.route().reason()).isEqualTo(RoutedReason.DEFAULT);
+    }
+
+    @Test
+    void aFallbackCallThatFailsLeavesTheRunWithTheModelThatAnsweredBefore() {
+        llm.thenToolCall("t1", "echo", "{\"text\":\"one\"}")
+                .thenFail(ErrorCode.LLM_OVERLOADED, "busy")
+                .thenFail(ErrorCode.LLM_ERROR, "the larger model failed too");
+
+        var result = ask(SIMPLE);
+
+        assertThat(modelsAsked()).containsExactly(SMALL, SMALL, LARGE);
+        assertThat(result.errorCode()).isEqualTo(ErrorCode.LLM_OVERLOADED);
+        assertThat(result.route().model()).isEqualTo(SMALL);
+        assertThat(result.route().reason()).isEqualTo(RoutedReason.DEFAULT);
+    }
+
+    @Test
     void aRunThatFailsAfterFallingBackFailsWithTheCodeOfTheFirstFailure() {
         llm.thenFail(ErrorCode.LLM_OVERLOADED, "first").thenFail(ErrorCode.LLM_ERROR, "second");
 
@@ -224,6 +261,7 @@ class AgentLoopRoutingTest {
         assertThat(result.errorCode()).isEqualTo(ErrorCode.LLM_OVERLOADED);
         assertThat(result.llmCallRecords()).extracting(LlmCallRecord::errorCode)
                 .containsExactly(ErrorCode.LLM_OVERLOADED, ErrorCode.LLM_ERROR);
+        assertThat(result.route().model()).isEqualTo(SMALL);
     }
 
     @Test
@@ -276,6 +314,8 @@ class AgentLoopRoutingTest {
 
         assertThat(modelsAsked()).containsExactly(SMALL, SMALL, LARGE, LARGE);
         assertThat(result.errorCode()).isEqualTo(ErrorCode.LLM_OVERLOADED);
+        // the larger model answered the second call, so it is the model of the run although its last call failed
+        assertThat(result.route().model()).isEqualTo(LARGE);
         assertThat(result.route().reason()).isEqualTo(RoutedReason.FALLBACK);
         assertThat(result.iterations()).isEqualTo(4);
     }
