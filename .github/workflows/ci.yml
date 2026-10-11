@@ -46,7 +46,7 @@ jobs:
         with:
           node-version: 22
       - run: node --check evals/run.mjs
-      - run: node --test evals/grade.test.mjs
+      - run: node --test evals/*.test.mjs
 
   docker:
     runs-on: ubuntu-latest

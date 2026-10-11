@@ -19,6 +19,7 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { grade } from './grade.mjs'
+import { summarize, summarizeByModel } from './summary.mjs'
 
 const args = new Map()
 for (let i = 2; i < process.argv.length; i++) {
@@ -98,24 +99,19 @@ for (const item of questions) {
   if (delayMs) await new Promise((resolve) => setTimeout(resolve, delayMs))
 }
 
-const avg = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0)
-const summarize = (rows) => ({
-  total: rows.length,
-  passed: rows.filter((r) => r.pass).length,
-  passRate: rows.length ? rows.filter((r) => r.pass).length / rows.length : 0,
-  avgCostUsd: avg(rows.map((r) => r.costUsd)),
-  avgLatencyMs: avg(rows.map((r) => r.latencyMs)),
-})
 const overall = summarize(results)
-const meta = results.find((r) => r.provider) ?? {}
+const provider = results.find((r) => r.provider)?.provider
+const models = summarizeByModel(results)
 const rows = [['All', overall], ['English', summarize(results.filter((r) => r.lang === 'en'))], ['Arabic', summarize(results.filter((r) => r.lang === 'ar'))]]
+// With more than one model answering, each one's averages are shown: the rows above mix them.
+if (Object.keys(models).length > 1) rows.push(...Object.entries(models))
 
-console.log(`\nProvider: ${meta.provider ?? '?'} (${meta.model ?? '?'})`)
+console.log(`\nProvider: ${provider ?? '?'} (${Object.keys(models).join(', ') || '?'})`)
 console.log('| Set | Passed | Pass rate | Avg cost / question | Avg latency |')
 console.log('|---|---|---|---|---|')
 for (const [name, s] of rows) {
   console.log(`| ${name} | ${s.passed}/${s.total} | ${(s.passRate * 100).toFixed(0)}% | $${s.avgCostUsd.toFixed(5)} | ${Math.round(s.avgLatencyMs)} ms |`)
 }
 
-await writeFile(join(dir, 'results.json'), JSON.stringify({ ranAt: new Date().toISOString(), provider: meta.provider, model: meta.model, overall, results }, null, 2))
+await writeFile(join(dir, 'results.json'), JSON.stringify({ ranAt: new Date().toISOString(), provider, models, overall, results }, null, 2))
 process.exit(overall.passed === overall.total ? 0 : 1)
