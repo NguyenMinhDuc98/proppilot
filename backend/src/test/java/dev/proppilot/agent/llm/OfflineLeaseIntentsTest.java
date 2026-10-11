@@ -550,6 +550,11 @@ class OfflineLeaseIntentsTest {
         assertThat(route(question).name()).isEqualTo(tool);
     }
 
+    /**
+     * The cases of the evals that the offline assistant is expected to pass (every case that is not marked
+     * {@code "offline": false}). One that expects tools is routed to one of them first; one that expects a refusal is
+     * not routed to any.
+     */
     @Test
     void everyQuestionOfTheEvalsStillGoesToTheToolItExpects() throws Exception {
         var file = Path.of("..", "evals", "questions.json");
@@ -558,13 +563,21 @@ class OfflineLeaseIntentsTest {
 
         assertThat(questions.size()).isGreaterThanOrEqualTo(42);
         for (var question : questions) {
+            if (!question.path("offline").asBoolean(true)) {
+                continue;
+            }
+            var id = question.get("id").asText();
             var text = question.get("question").asText();
-            var expected = new ArrayList<String>();
-            question.get("tools").forEach(tool -> expected.add(tool.asText()));
             var response = ask(List.of(Message.user(text)));
-            assertThat(response.toolUses()).as("%s: %s", question.get("id").asText(), text).isNotEmpty();
-            assertThat(expected).as("%s: %s", question.get("id").asText(), text)
-                    .contains(response.toolUses().get(0).name());
+            if (question.path("refuses").asBoolean(false)) {
+                assertThat(response.toolUses()).as("%s: %s", id, text).isEmpty();
+            }
+            if (question.has("tools")) {
+                var expected = new ArrayList<String>();
+                question.get("tools").forEach(tool -> expected.add(tool.asText()));
+                assertThat(response.toolUses()).as("%s: %s", id, text).isNotEmpty();
+                assertThat(expected).as("%s: %s", id, text).contains(response.toolUses().get(0).name());
+            }
         }
     }
 
