@@ -11,7 +11,9 @@ import java.util.regex.Pattern;
  * requires, is not read: only a number that a word like "in" or "within" leads in is.
  *
  * <p>The text is folded (see {@link Folding}). A run of white space is taken by one quantifier only, and a quantifier
- * that follows it never gives it back, so each pattern costs time in proportion to the question.
+ * that follows it never gives it back, so each pattern costs time in proportion to the question. A number is written
+ * in ASCII digits: folding turns the digits of the Basic Multilingual Plane into them one char at a time, and the
+ * digits outside it (the mathematical ones, for a start) stay as they are, which no number is read from.
  */
 public final class ExpiryWindow {
 
@@ -32,12 +34,12 @@ public final class ExpiryWindow {
 
     private static final Pattern ENGLISH_COUNT = Pattern.compile(WORD_START
             + "(?:next|within|in|over|during|coming|upcoming|following)\\s+(?:the\\s+)?"
-            + "(?:(?:next|coming|upcoming|following)\\s+)?(\\d{1,9}|a|an|one|two|three|four|five|six|seven|eight|nine"
+            + "(?:(?:next|coming|upcoming|following)\\s+)?([0-9]{1,9}|a|an|one|two|three|four|five|six|seven|eight|nine"
             + "|ten|eleven|twelve)[- ]*(days?|weeks?|months?)" + WORD_END, Pattern.UNICODE_CHARACTER_CLASS);
     private static final Pattern ENGLISH_PERIOD = Pattern.compile(WORD_START
             + "(?:this|next|coming|upcoming)\\s+(month|week|quarter|year)" + WORD_END, Pattern.UNICODE_CHARACTER_CLASS);
     private static final Pattern ARABIC_COUNT = Pattern.compile(
-            "(?:خلال|في|بعد|مدى|الي|القادمه?|المقبله?)\\s*+(?:ال\\s*+)?(\\d{1,9})\\s*+(?:ال\\s*+)?"
+            "(?:خلال|في|بعد|مدى|الي|القادمه?|المقبله?)\\s*+(?:ال\\s*+)?([0-9]{1,9})\\s*+(?:ال\\s*+)?"
                     + "(يوما|يوم|ايام|اسبوعا|اسبوع|اسابيع|شهرا|شهر|اشهر|شهور)", Pattern.UNICODE_CHARACTER_CLASS);
     private static final Pattern ARABIC_DUAL = Pattern.compile(
             "(?:خلال|في|بعد|مدى|الي)\\s*+(?:ال\\s*+)?(يومين|اسبوعين|شهرين)", Pattern.UNICODE_CHARACTER_CLASS);

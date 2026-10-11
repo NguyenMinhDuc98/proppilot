@@ -44,12 +44,27 @@ public class ModelRouter {
         if (!enabled()) {
             return defaultRoute();
         }
-        var complexity = assessor.assess(question, earlierMessages);
+        var scored = score(question, earlierMessages);
+        if (scored.isEmpty()) {
+            return defaultRoute();
+        }
+        var complexity = scored.get();
         boolean complex = complexity.score() >= props.complexityThreshold();
         log.debug("Question scored {} (a score of {} goes to the larger model): {}", complexity.score(),
                 props.complexityThreshold(), complexity.rules());
         var reason = complex ? RoutedReason.COMPLEX : RoutedReason.DEFAULT;
         return new ModelRoute(complex ? props.largeModel() : llm.model(), reason, complexity);
+    }
+
+    /** Scoring is a heuristic and must never fail a question: whatever goes wrong in it, the default model answers. */
+    private Optional<Complexity> score(String question, int earlierMessages) {
+        try {
+            return Optional.of(assessor.assess(question, earlierMessages));
+        } catch (RuntimeException e) {
+            // The class only: the message of an exception can quote the question.
+            log.warn("A question could not be scored ({}), so the default model takes it", e.getClass().getName());
+            return Optional.empty();
+        }
     }
 
     /** The route to take after a call on {@code failed} could not be answered; empty when there is no other model. */

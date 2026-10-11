@@ -1,6 +1,10 @@
 package dev.proppilot.agent.routing;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.proppilot.agent.ScriptedLlmClient;
@@ -92,6 +96,29 @@ class ModelRouterTest {
 
         assertThat(route).isEqualTo(ModelRoute.byDefault("rule-based"));
         assertThat(router.fallbackFrom(route)).isEmpty();
+    }
+
+    @Test
+    void aQuestionThatCannotBeScoredGoesToTheDefaultModelInsteadOfFailing() {
+        var failing = mock(ComplexityAssessor.class);
+        when(failing.assess(anyString(), anyInt())).thenThrow(new NumberFormatException("For input string: \"secret\""));
+        var props = TestLlmProperties.defaults().model(SMALL).largeModel(LARGE).build();
+
+        var route = new ModelRouter(anthropic, props, failing).route(COMPLEX, 0);
+
+        assertThat(route).isEqualTo(ModelRoute.byDefault(SMALL));
+        assertThat(route.complexity()).isNull();
+    }
+
+    @Test
+    void aQuestionWithADigitOutsideTheBasicMultilingualPlaneIsRoutedLikeAnyOther() {
+        var router = router(TestLlmProperties.defaults().largeModel(LARGE));
+        var fiveInMathematicalDigits = new String(Character.toChars(0x1D7D3));
+
+        var route = router.route("Which leases end within " + fiveInMathematicalDigits + " days?", 0);
+
+        assertThat(route.reason()).isEqualTo(RoutedReason.DEFAULT);
+        assertThat(route.complexity()).isNotNull();
     }
 
     @Test
