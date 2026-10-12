@@ -4,14 +4,14 @@ import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonToken;
 import java.io.IOException;
 import java.math.BigDecimal;
-import java.util.ArrayDeque;
 import java.util.function.IntConsumer;
 
 /**
  * Reads what a tool result states. A result is JSON, and a comma in it separates two values, where in a sentence it may
  * be the thousands separator of a figure: so the result is read value by value, and only the strings, the numbers
  * and the names of fields are scanned for figures and codes. The length of every array is a figure too: "12 units" is
- * grounded by a result with twelve of them, whether or not the number 12 is written in it.
+ * grounded by a result with twelve of them, whether or not the number 12 is written in it. What follows from the
+ * rows of an array and from a fraction is read for {@link DerivedFigures}.
  *
  * <p>A number is read as its plain digits: Jackson writes a whole amount of a tool as {@code 4.8E+3}, which is 4800.
  *
@@ -21,8 +21,6 @@ import java.util.function.IntConsumer;
 final class ToolResultReader {
 
     private static final JsonFactory JSON = new JsonFactory();
-    /** Stands for an object on the stack of open containers: its fields are not elements of an array. */
-    private static final int[] OBJECT = new int[0];
     /** A number written longer than this, or with a larger exponent, is no figure of the data: it is read as text. */
     private static final int MAX_NUMBER_LENGTH = 40;
     private static final int MAX_EXPONENT = 30;
@@ -30,31 +28,26 @@ final class ToolResultReader {
     private ToolResultReader() {
     }
 
-    static void read(String content, ClaimScanner.Claims claims, IntConsumer arrayLengths) {
+    static void read(String content, ClaimScanner.Claims claims, IntConsumer arrayLengths, DerivedFigures derived) {
         try (var parser = JSON.createParser(content)) {
-            var open = new ArrayDeque<int[]>();
+            var open = new OpenContainers(arrayLengths, derived);
             for (JsonToken token = parser.nextToken(); token != null; token = parser.nextToken()) {
                 switch (token) {
-                    case START_ARRAY -> {
-                        countElement(open);
-                        open.push(new int[1]);
-                    }
-                    case START_OBJECT -> {
-                        countElement(open);
-                        open.push(OBJECT);
-                    }
-                    case END_ARRAY -> arrayLengths.accept(open.pop()[0]);
-                    case END_OBJECT -> open.pop();
+                    case START_ARRAY -> open.startArray();
+                    case START_OBJECT -> open.startObject();
+                    case END_ARRAY -> open.endArray();
+                    case END_OBJECT -> open.endObject();
                     case FIELD_NAME -> ClaimScanner.ofEvidence(parser.currentName(), claims);
                     case VALUE_STRING -> {
-                        countElement(open);
-                        ClaimScanner.ofEvidence(parser.getText(), claims);
+                        var text = parser.getText();
+                        open.scalar(parser.currentName(), text);
+                        ClaimScanner.ofEvidence(text, claims);
                     }
-                    case VALUE_NUMBER_INT, VALUE_NUMBER_FLOAT -> {
-                        countElement(open);
-                        ClaimScanner.ofEvidence(plain(parser.getText()), claims);
-                    }
-                    default -> countElement(open);
+                    case VALUE_NUMBER_INT, VALUE_NUMBER_FLOAT ->
+                            number(parser.getText(), parser.currentName(), open, derived, claims);
+                    case VALUE_TRUE -> open.scalar(parser.currentName(), Boolean.TRUE);
+                    case VALUE_FALSE -> open.scalar(parser.currentName(), Boolean.FALSE);
+                    default -> open.scalar(parser.currentName(), RowTable.NONE);
                 }
             }
         } catch (IOException | RuntimeException unreadable) {
@@ -63,23 +56,33 @@ final class ToolResultReader {
         }
     }
 
-    /** {@code 4.8E+3} as {@code 4800}; any other number as it is. */
-    private static String plain(String number) {
-        boolean exponent = number.indexOf('E') >= 0 || number.indexOf('e') >= 0;
-        if (!exponent || number.length() > MAX_NUMBER_LENGTH) {
-            return number;
+    private static void number(String text, String field, OpenContainers open, DerivedFigures derived,
+                               ClaimScanner.Claims claims) {
+        var value = figureOf(text);
+        if (value == null) {
+            open.scalar(field, text);
+            ClaimScanner.ofEvidence(text, claims);
+            return;
+        }
+        derived.ofRate(value);
+        open.scalar(field, value.stripTrailingZeros());
+        ClaimScanner.ofEvidence(hasExponent(text) ? value.toPlainString() : text, claims);
+    }
+
+    /** The value of a number, or null when it is no figure of the data: too long, or with too large an exponent. */
+    private static BigDecimal figureOf(String number) {
+        if (number.length() > MAX_NUMBER_LENGTH) {
+            return null;
         }
         try {
             var value = new BigDecimal(number);
-            return Math.abs(value.scale()) > MAX_EXPONENT ? number : value.toPlainString();
+            return Math.abs(value.scale()) > MAX_EXPONENT ? null : value;
         } catch (NumberFormatException notANumber) {
-            return number;
+            return null;
         }
     }
 
-    private static void countElement(ArrayDeque<int[]> open) {
-        if (!open.isEmpty() && open.peek() != OBJECT) {
-            open.peek()[0]++;
-        }
+    private static boolean hasExponent(String number) {
+        return number.indexOf('E') >= 0 || number.indexOf('e') >= 0;
     }
 }

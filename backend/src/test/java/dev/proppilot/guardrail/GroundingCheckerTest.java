@@ -97,13 +97,14 @@ class GroundingCheckerTest {
     }
 
     @Test
-    void aPercentageIsGroundedByItsNumberAndNotByItsFraction() {
+    void aPercentageIsGroundedByItsNumberAndAFractionByItsPercentage() {
         var result = "{\"occupancyRatePercent\":\"80.0\",\"collectionRatePercent\":0.85}";
 
         assertThat(check("Occupancy is 80% this month.", result)).isEmpty();
         assertThat(check("الإشغال ٨٠٪ هذا الشهر", result)).isEmpty();
+        assertThat(check("Collection is 85%.", result)).isEmpty();
         assertThat(values(check("Occupancy is 80.5% this month.", result))).containsExactly("80.5");
-        assertThat(values(check("Collection is 85%.", result))).containsExactly("85");
+        assertThat(values(check("Collection is 86%.", result))).containsExactly("86");
     }
 
     @Test

@@ -18,7 +18,9 @@ import java.util.List;
  *       of 101, 102 and 103; a date written {@code 31.12.2025} is read as the figures 31, 12 and 2025. A whole number
  *       up to {@value #SMALL_NUMBER} is never reported (a list is numbered, a question asks for the top 3), and
  *       neither is the number of an item of a list. The digits of a unit code or of a citation are not figures of
- *       their own</li>
+ *       their own. A figure that follows from the rows of a result is grounded too (see {@link DerivedFigures}): the
+ *       number of rows that share a value, a sum of an amount over the rows or over such a group, and a fraction
+ *       as a percentage</li>
  *   <li>{@link ClaimKind#UNIT_CODE}: every code such as A-203 must be in the evidence</li>
  *   <li>{@link ClaimKind#TENANT_NAME}: a tenant that the answer names must be named in the evidence, in either
  *       language</li>

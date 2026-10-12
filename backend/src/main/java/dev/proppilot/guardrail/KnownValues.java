@@ -6,8 +6,9 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * Every figure, unit code and tenant name that the evidence of a run states, for an answer to be held against. Built
- * once for each check.
+ * Every figure, unit code and tenant name that the evidence of a run states, for an answer to be held against, and the
+ * figures that follow from the rows of its tool results (see {@link DerivedFigures}). A derived figure is a figure of
+ * the answer and nothing else: it never makes a unit code or a tenant name known. Built once for each check.
  */
 final class KnownValues {
 
@@ -26,8 +27,9 @@ final class KnownValues {
         for (var text : evidence.context()) {
             ClaimScanner.ofEvidence(text, this::learn);
         }
+        var derived = new DerivedFigures(figures::add);
         for (var result : evidence.toolResults()) {
-            ToolResultReader.read(result, this::learn, length -> figures.add(Integer.toString(length)));
+            ToolResultReader.read(result, this::learn, length -> figures.add(Integer.toString(length)), derived);
         }
     }
 
