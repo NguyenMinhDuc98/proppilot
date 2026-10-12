@@ -11,9 +11,23 @@ import java.util.List;
  * @param retryTimeouts whether the client may try a call that timed out again. False when another model takes the call
  *                      next: a model that stalled is likely to stall again, and the retries would use the time the
  *                      other model needs
+ * @param iteration which model call of its run this is, counted from 1. A client that caches the conversation does so
+ *                  only from the third call: the cache pays off only when another call of the run follows, which is
+ *                  rare after the second and common after the third. A client that has no cache ignores it
  */
 public record LlmRequest(String system, List<Message> messages, List<ToolSpec> tools, Duration timeout, String model,
-                         boolean retryTimeouts) {
+                         boolean retryTimeouts, int iteration) {
+
+    public LlmRequest {
+        if (iteration < 1) {
+            throw new IllegalArgumentException("iteration counts from 1, not " + iteration);
+        }
+    }
+
+    public LlmRequest(String system, List<Message> messages, List<ToolSpec> tools, Duration timeout, String model,
+                      boolean retryTimeouts) {
+        this(system, messages, tools, timeout, model, retryTimeouts, 1);
+    }
 
     public LlmRequest(String system, List<Message> messages, List<ToolSpec> tools, Duration timeout, String model) {
         this(system, messages, tools, timeout, model, true);

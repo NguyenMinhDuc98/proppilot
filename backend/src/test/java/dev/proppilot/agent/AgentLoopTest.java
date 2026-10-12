@@ -136,6 +136,19 @@ class AgentLoopTest {
     }
 
     @Test
+    void tellsTheModelClientWhichCallOfTheRunItIsMaking() {
+        var llm = new ScriptedLlmClient()
+                .thenToolCall("t1", "echo", "{\"text\":\"one\"}")
+                .thenToolCall("t2", "echo", "{\"text\":\"two\"}")
+                .thenText("Done");
+
+        var result = loop(llm, 6).run(ask("say twice", List.of()), event -> { }, NEVER);
+
+        assertThat(result.iterations()).isEqualTo(3);
+        assertThat(llm.requests).extracting(LlmRequest::iteration).containsExactly(1, 2, 3);
+    }
+
+    @Test
     void invalidToolInputIsReturnedToTheModelAsAnError() {
         var llm = new ScriptedLlmClient()
                 .thenToolCall("t1", "echo", "{}")

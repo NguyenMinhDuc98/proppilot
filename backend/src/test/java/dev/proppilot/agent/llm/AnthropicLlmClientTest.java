@@ -28,6 +28,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /** The real HTTP client against an in-process server that plays back scripted Claude responses. */
 class AnthropicLlmClientTest {
@@ -198,11 +200,36 @@ class AnthropicLlmClientTest {
         assertThat(JSON.readTree(bodies.get(1)).get("model").asText()).isEqualTo("test-model");
     }
 
-    @Test
-    void marksTheLastToolTheSystemPromptAndTheLastMessageBlockForCachingByDefault() throws Exception {
+    /** The same request as the model's {@code iteration}th call of its run. */
+    private static LlmRequest atIteration(LlmRequest request, int iteration) {
+        return new LlmRequest(request.system(), request.messages(), request.tools(), request.timeout(),
+                request.model(), request.retryTimeouts(), iteration);
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {1, 2})
+    void marksOnlyTheLastToolAndTheSystemPromptInTheFirstTwoCallsOfARun(int iteration) throws Exception {
         replies.add(Reply.stream(ANSWER_STREAM));
 
-        client(server.getAddress().getPort()).complete(CONVERSATION, deltas::add);
+        clientWithCaching(true).complete(atIteration(CONVERSATION, iteration), deltas::add);
+
+        var body = JSON.readTree(bodies.get(0));
+        var ephemeral = JSON.readTree("{\"type\":\"ephemeral\"}");
+        assertThat(body.get("system")).isEqualTo(JSON.readTree(
+                "[{\"type\":\"text\",\"text\":\"system\",\"cache_control\":{\"type\":\"ephemeral\"}}]"));
+        assertThat(body.get("tools").get(0).has("cache_control")).isFalse();
+        assertThat(body.get("tools").get(1).get("cache_control")).isEqualTo(ephemeral);
+        body.get("messages").forEach(message -> assertThat(message.get("content"))
+                .allSatisfy(block -> assertThat(block.has("cache_control")).isFalse()));
+        assertThat(body.findValues("cache_control")).hasSize(2);
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {3, 4, 6})
+    void marksTheLastToolTheSystemPromptAndTheLastMessageBlockFromTheThirdCallOfARun(int iteration) throws Exception {
+        replies.add(Reply.stream(ANSWER_STREAM));
+
+        clientWithCaching(true).complete(atIteration(CONVERSATION, iteration), deltas::add);
 
         var body = JSON.readTree(bodies.get(0));
         var ephemeral = JSON.readTree("{\"type\":\"ephemeral\"}");
@@ -218,10 +245,26 @@ class AnthropicLlmClientTest {
     }
 
     @Test
-    void sendsTheRequestWithNoCacheMarksWhenPromptCachingIsOff() {
+    void aRequestThatSaysNothingOfItsIterationIsTheFirstCallOfARun() throws Exception {
         replies.add(Reply.stream(ANSWER_STREAM));
 
-        clientWithCaching(false).complete(CONVERSATION, deltas::add);
+        clientWithCaching(true).complete(CONVERSATION, deltas::add);
+
+        assertThat(CONVERSATION.iteration()).isEqualTo(1);
+        assertThat(JSON.readTree(bodies.get(0)).findValues("cache_control")).hasSize(2);
+    }
+
+    @Test
+    void aRunCountsFromTheFirstCall() {
+        assertThatThrownBy(() -> atIteration(CONVERSATION, 0)).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {1, 2, 3, 5})
+    void sendsTheRequestWithNoCacheMarksWhenPromptCachingIsOffWhateverTheIteration(int iteration) {
+        replies.add(Reply.stream(ANSWER_STREAM));
+
+        clientWithCaching(false).complete(atIteration(CONVERSATION, iteration), deltas::add);
 
         assertThat(bodies.get(0)).isEqualTo("{\"model\":\"test-model\",\"max_tokens\":1024,\"stream\":true,"
                 + "\"system\":\"system\",\"tools\":["
@@ -239,9 +282,10 @@ class AnthropicLlmClientTest {
     void promptCachingChangesNothingInTheRequestButTheMarks() throws Exception {
         replies.add(Reply.stream(ANSWER_STREAM));
         replies.add(Reply.stream(ANSWER_STREAM));
+        var thirdCall = atIteration(CONVERSATION, 3);
 
-        clientWithCaching(false).complete(CONVERSATION, deltas::add);
-        clientWithCaching(true).complete(CONVERSATION, deltas::add);
+        clientWithCaching(false).complete(thirdCall, deltas::add);
+        clientWithCaching(true).complete(thirdCall, deltas::add);
 
         var off = JSON.readTree(bodies.get(0));
         var on = JSON.readTree(bodies.get(1));
@@ -251,16 +295,23 @@ class AnthropicLlmClientTest {
     }
 
     @Test
-    void marksOnlyTheSystemPromptAndTheConversationWhenNoToolsAreOffered() throws Exception {
+    void marksOnlyTheSystemPromptWhenNoToolsAreOfferedAndTheConversationFromTheThirdCall() throws Exception {
+        replies.add(Reply.stream(ANSWER_STREAM));
         replies.add(Reply.stream(ANSWER_STREAM));
 
         clientWithCaching(true).complete(REQUEST, deltas::add);
+        clientWithCaching(true).complete(atIteration(REQUEST, 3), deltas::add);
 
-        var body = JSON.readTree(bodies.get(0));
-        assertThat(body.has("tools")).isFalse();
-        assertThat(body.get("system").get(0).has("cache_control")).isTrue();
-        assertThat(body.get("messages").get(0).get("content").get(0).has("cache_control")).isTrue();
-        assertThat(body.findValues("cache_control")).hasSize(2);
+        var first = JSON.readTree(bodies.get(0));
+        assertThat(first.has("tools")).isFalse();
+        assertThat(first.get("system").get(0).has("cache_control")).isTrue();
+        assertThat(first.get("messages").get(0).get("content").get(0).has("cache_control")).isFalse();
+        assertThat(first.findValues("cache_control")).hasSize(1);
+        var third = JSON.readTree(bodies.get(1));
+        assertThat(third.has("tools")).isFalse();
+        assertThat(third.get("system").get(0).has("cache_control")).isTrue();
+        assertThat(third.get("messages").get(0).get("content").get(0).has("cache_control")).isTrue();
+        assertThat(third.findValues("cache_control")).hasSize(2);
     }
 
     /** The request as it would have been without caching: the system prompt a plain string and no marks. */

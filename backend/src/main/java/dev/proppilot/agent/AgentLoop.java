@@ -190,7 +190,7 @@ public class AgentLoop {
             try {
                 response = llm.complete(
                         new LlmRequest(system, List.copyOf(messages), toolSpecs, timeLeft(), route.model(),
-                                retryTimeouts),
+                                retryTimeouts, iterations),
                         text -> {
                             if (!text.isEmpty()) {
                                 streamedText.set(true);

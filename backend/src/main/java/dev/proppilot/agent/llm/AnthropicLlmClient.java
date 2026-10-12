@@ -33,6 +33,12 @@ public class AnthropicLlmClient implements LlmClient {
     private static final Logger log = LoggerFactory.getLogger(AnthropicLlmClient.class);
     private static final String API_VERSION = "2023-06-01";
     private static final int LOGGED_ERROR_BODY_BYTES = 500;
+    /**
+     * The conversation is marked for caching from this model call of a run. What a call writes is read only by a
+     * call that follows it, which after the second is rare and from the third common: an earlier mark would mostly
+     * be a write, at 1.25 times the input price, that nothing reads.
+     */
+    private static final int FIRST_CACHED_CONVERSATION_ITERATION = 3;
 
     private final LlmProperties props;
     private final ObjectMapper json;
@@ -162,23 +168,22 @@ public class AnthropicLlmClient implements LlmClient {
             addBlocks(node.putArray("content"), message);
         }
         if (props.promptCaching()) {
-            markCacheBreakpoints(body);
+            markCacheBreakpoints(body, request.iteration());
         }
         return body;
     }
 
     /**
-     * Marks where the prompt may be cached up to: the end of the tools, of the system prompt and of the conversation so
-     * far. A later call of the same run then reads what an earlier one wrote, and so does the next question, because
-     * the tools and the system prompt are the same from one to the next. That is three of the four breakpoints a
-     * request may have.
+     * Marks where the prompt may be cached up to: the end of the tools and of the system prompt, which are the same
+     * from one call and one question to the next, and from the third call of a run the end of the conversation so far,
+     * which the next call of the run then reads. That is at most three of the four breakpoints a request may have.
      *
      * <p>The API caches a prefix only when it is longer than a minimum that depends on the model (512 to 4096 tokens
      * at the time of writing) and otherwise silently does not: the request is accepted and nothing is written. A marked
      * request may therefore still be billed in full, which is why the cache tokens the API reports are recorded and
      * priced, and why nothing here may assume a hit.
      */
-    private void markCacheBreakpoints(ObjectNode body) {
+    private void markCacheBreakpoints(ObjectNode body, int iteration) {
         var system = body.get("system").asText();
         body.putArray("system").addObject().put("type", "text").put("text", system)
                 .set("cache_control", cacheControl());
@@ -186,9 +191,11 @@ public class AnthropicLlmClient implements LlmClient {
         if (tools.isArray()) {
             ((ObjectNode) tools.get(tools.size() - 1)).set("cache_control", cacheControl());
         }
-        var messages = body.get("messages");
-        var lastContent = (ArrayNode) messages.get(messages.size() - 1).get("content");
-        ((ObjectNode) lastContent.get(lastContent.size() - 1)).set("cache_control", cacheControl());
+        if (iteration >= FIRST_CACHED_CONVERSATION_ITERATION) {
+            var messages = body.get("messages");
+            var lastContent = (ArrayNode) messages.get(messages.size() - 1).get("content");
+            ((ObjectNode) lastContent.get(lastContent.size() - 1)).set("cache_control", cacheControl());
+        }
     }
 
     private ObjectNode cacheControl() {
