@@ -77,7 +77,7 @@ Three views, one for each thing that is easy to get wrong when reading the code:
 
 ### The request path
 
-One question, from the browser to the stored run. Steps 3 to 6 repeat for every model call of a run, the guardrail reads only the final answer, and the SSE events are the only way the browser hears of any of it ([events](#sse-events), [routing](#model-routing-and-fallback), [guardrail](#grounding-guardrail), [traces](#tracing-and-observability)).
+One question, from the browser to the stored run. Steps 4 to 6 repeat for every model call of a run (the model is chosen in step 3 before the first call, and again only for a guardrail retry or a fallback), the guardrail reads only the final answer, and the SSE events are the only way the browser hears of any of it ([events](#sse-events), [routing](#model-routing-and-fallback), [guardrail](#grounding-guardrail), [traces](#tracing-and-observability)).
 
 ```mermaid
 flowchart LR
