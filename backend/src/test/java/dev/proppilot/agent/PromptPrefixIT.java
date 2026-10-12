@@ -26,7 +26,7 @@ class PromptPrefixIT extends PostgresIntegrationTest {
 
     /**
      * What the prefix has to be at the ratio below: a little over the minimum, so that a prefix a few tokens denser
-     * than this estimate still crosses it. The margin is small on purpose: the prefix is only 4,252 tokens.
+     * than this estimate still crosses it. The margin is small on purpose: the prefix is only about 4,850 tokens.
      */
     private static final int REQUIRED_ESTIMATED_TOKENS = 4_200;
 
@@ -36,7 +36,9 @@ class PromptPrefixIT extends PostgresIntegrationTest {
      * tokens, which is 3.60 characters per token. It is a ratio of this mix of JSON and prose, not a tokenizer. The
      * estimate made before that measurement, 3.22 characters per token from the 3,660-token prefix of the first live
      * run, was too low a ratio for what was added (prose is less dense than JSON) and put the prefix at 4,760 tokens,
-     * 12 percent more than it was.
+     * 12 percent more than it was. With find_tenant (12 tool definitions) the prefix is 17,638 characters, and the
+     * cache read of 9,712 tokens over the two model calls of a run on 2026-10-12 makes it 4,856 tokens, 3.63
+     * characters per token: this ratio estimates 0.9 percent more than that, which the margin over the minimum covers.
      */
     private static final double CHARS_PER_TOKEN = 15_311 / 4_252.0;
 
