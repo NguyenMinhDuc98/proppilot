@@ -360,7 +360,7 @@ The result of `search_lease_documents` carries the clauses it found next to the 
 | `GET /api/lease-documents` | The stored documents: `code`, `title`, `language`, `unitCode`, tenant names, `pageCount`, `chunkCount` |
 | `GET /api/lease-documents/{code}/pdf` | The PDF, inline, cacheable for an hour. 404 for a code with no document, 400 for a malformed code |
 | `POST /api/admin/rag/reindex` | Needs `X-Admin-Token`. Writes the missing or outdated documents, embeds the chunks that need it, and answers `{documents, chunks, embedded, failed}` when done; 409 while another run is going |
-| `GET /api/info` | Also reports `retrieval` (`keyword` or `hybrid`) and `leaseDocuments` |
+| `GET /api/info` | Also reports `retrieval` (`keyword` or `hybrid`), `leaseDocuments` and `demoReset` (whether this deployment can be reset, which is what lets the Activity page promise a nightly reset: it is true once `ADMIN_TOKEN` is set) |
 
 The documents are public on purpose: every one is generated from fake demo data.
 
@@ -753,8 +753,8 @@ A host may pass a variable on empty, or as only spaces. For `LLM_PRICE_INPUT_PER
 ## Tests
 
 ```bash
-cd backend && ./mvnw verify      # 2128 tests in 137 classes; 56 of them are integration tests (`*IT`) that start PostgreSQL (pgvector) via Testcontainers, so Docker is needed
-cd frontend && npm test          # 490 Vitest tests in 29 files: SSE parser, chat store, approval card, Activity page, Markdown sanitising, citation chips and the clause drawer, trace builder and drawer, guardrail badge, admin traces page, Usage page, error codes, info badge, matching English and Arabic message keys
+cd backend && ./mvnw verify      # 2129 tests in 137 classes; 56 of them are integration tests (`*IT`) that start PostgreSQL (pgvector) via Testcontainers, so Docker is needed
+cd frontend && npm test          # 491 Vitest tests in 29 files: SSE parser, chat store, approval card, Activity page, Markdown sanitising, citation chips and the clause drawer, trace builder and drawer, guardrail badge, admin traces page, Usage page, error codes, info badge, matching English and Arabic message keys
 node --test evals/*.test.mjs     # 172 tests in 15 files: the eval harness (runner, grading, claims, judge, aggregation, report) and the shape of every case in questions.json
 ```
 

@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import dev.proppilot.agent.llm.LlmClient;
+import dev.proppilot.config.AdminProperties;
 import dev.proppilot.config.ChatProperties;
 import dev.proppilot.rag.CorpusCounts;
 import dev.proppilot.rag.LeaseDocumentStore;
@@ -18,7 +19,8 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 class InfoControllerTest {
 
-    private MockMvc mvcFor(ChatProperties chat, String provider, String model, boolean embeddings, int documents) {
+    private MockMvc mvcFor(ChatProperties chat, String provider, String model, boolean embeddings, int documents,
+                           String adminToken) {
         var llm = mock(LlmClient.class);
         when(llm.provider()).thenReturn(provider);
         when(llm.model()).thenReturn(model);
@@ -26,11 +28,12 @@ class InfoControllerTest {
         when(embedding.enabled()).thenReturn(embeddings);
         var store = mock(LeaseDocumentStore.class);
         when(store.counts()).thenReturn(new CorpusCounts(documents, documents * 14));
-        return MockMvcBuilders.standaloneSetup(new InfoController(llm, chat, embedding, store)).build();
+        return MockMvcBuilders.standaloneSetup(
+                new InfoController(llm, chat, embedding, store, new AdminProperties(adminToken))).build();
     }
 
     private MockMvc mvcFor(String provider, String model, int maxHistoryItems, boolean embeddings, int documents) {
-        return mvcFor(new ChatProperties(500, maxHistoryItems, 4000, 10, 500), provider, model, embeddings, documents);
+        return mvcFor(new ChatProperties(500, maxHistoryItems, 4000, 10, 500), provider, model, embeddings, documents, "");
     }
 
     private MockMvc mvcFor(String provider, String model, int maxHistoryItems) {
@@ -43,7 +46,7 @@ class InfoControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(content().json("""
                         {"mode":"offline","provider":"offline","model":"rule-based","maxHistoryItems":20,
-                         "maxHistoryTurnLength":4000,"retrieval":"keyword","leaseDocuments":0}""", true));
+                         "maxHistoryTurnLength":4000,"retrieval":"keyword","leaseDocuments":0,"demoReset":false}""", true));
     }
 
     @Test
@@ -52,7 +55,7 @@ class InfoControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(content().json("""
                         {"mode":"claude","provider":"anthropic","model":"claude-haiku-4-5-20251001",
-                         "maxHistoryItems":20,"maxHistoryTurnLength":4000,"retrieval":"keyword","leaseDocuments":0}""",
+                         "maxHistoryItems":20,"maxHistoryTurnLength":4000,"retrieval":"keyword","leaseDocuments":0,"demoReset":false}""",
                         true));
     }
 
@@ -67,7 +70,7 @@ class InfoControllerTest {
     void reportsTheLongestHistoryTurnTheChatEndpointEnforces() throws Exception {
         var chat = new ChatProperties(500, 20, 1500, 10, 500);
 
-        mvcFor(chat, "offline", "rule-based", false, 0).perform(get("/api/info"))
+        mvcFor(chat, "offline", "rule-based", false, 0, "").perform(get("/api/info"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.maxHistoryTurnLength").value(1500));
     }
@@ -84,5 +87,18 @@ class InfoControllerTest {
     void countsTheStoredLeaseDocuments() throws Exception {
         mvcFor("offline", "rule-based", 20, false, 30).perform(get("/api/info"))
                 .andExpect(jsonPath("$.leaseDocuments").value(30));
+    }
+
+    @Test
+    void saysADemoCanBeResetOnlyWhenTheAdminEndpointsExist() throws Exception {
+        var chat = new ChatProperties(500, 20, 4000, 10, 500);
+
+        mvcFor(chat, "anthropic", "claude-haiku-4-5-20251001", false, 0, "a-token-of-at-least-24-characters")
+                .perform(get("/api/info"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.demoReset").value(true));
+        mvcFor(chat, "anthropic", "claude-haiku-4-5-20251001", false, 0, "")
+                .perform(get("/api/info"))
+                .andExpect(jsonPath("$.demoReset").value(false));
     }
 }

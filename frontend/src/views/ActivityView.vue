@@ -2,10 +2,12 @@
 import { onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { fetchActions } from '../api/actions'
+import { useAppInfo } from '../composables/useAppInfo'
 import type { ActionView } from '../api/types'
 import ActivityItem from '../components/ActivityItem.vue'
 
 const { t } = useI18n()
+const { info } = useAppInfo()
 const actions = ref<ActionView[]>([])
 const loading = ref(true)
 const failed = ref(false)
@@ -35,7 +37,7 @@ onMounted(load)
       <button type="button" class="pp-button" :disabled="loading" @click="load">{{ t('activity.refresh') }}</button>
     </div>
 
-    <p class="banner" role="note">{{ t('activity.banner') }}</p>
+    <p class="banner" role="note">{{ info?.demoReset ? t('activity.banner') : t('activity.bannerNoReset') }}</p>
 
     <p v-if="loading && !actions.length" class="muted" role="status">{{ t('activity.loading') }}</p>
 

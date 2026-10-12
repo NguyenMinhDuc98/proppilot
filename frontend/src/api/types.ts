@@ -91,6 +91,8 @@ export interface AppInfo {
   maxHistoryItems: number
   /** The most characters the server accepts in one history turn. */
   maxHistoryTurnLength: number
+  /** Whether this deployment can be reset to its seed data, so the page may say that it is. */
+  demoReset?: boolean
 }
 
 export interface Unit {

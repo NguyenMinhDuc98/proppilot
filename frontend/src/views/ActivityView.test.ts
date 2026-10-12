@@ -7,9 +7,18 @@ import ar from '../i18n/ar'
 import en from '../i18n/en'
 import { auditEntry, maintenanceAction, paymentAction } from '../test/actionFixtures'
 import ActivityView from './ActivityView.vue'
+import * as appInfo from '../composables/useAppInfo'
 
 const fetchActions = vi.fn()
 const fetchAudit = vi.fn()
+vi.mock('../composables/useAppInfo', async () => {
+  const { ref } = await import('vue')
+  const info = ref<{ demoReset?: boolean } | null>(null)
+  return { infoForTest: info, useAppInfo: () => ({ info }) }
+})
+
+const infoForTest = (appInfo as unknown as { infoForTest: { value: { demoReset?: boolean } | null } }).infoForTest
+
 vi.mock('../api/actions', () => ({
   fetchActions: () => fetchActions(),
   fetchAudit: (...args: unknown[]) => fetchAudit(...args),
@@ -29,6 +38,7 @@ const approvedPayment = paymentAction({
 const waitingRequest = maintenanceAction()
 
 beforeEach(() => {
+  infoForTest.value = null
   fetchActions.mockReset()
   fetchAudit.mockReset()
 })
@@ -38,8 +48,9 @@ afterEach(() => {
 })
 
 describe('ActivityView', () => {
-  it('tells visitors that the demo resets every night and that others see the entries', async () => {
+  it('promises a nightly reset only when the deployment can be reset', async () => {
     fetchActions.mockResolvedValue([])
+    infoForTest.value = { demoReset: true }
 
     const wrapper = await render()
 
@@ -49,6 +60,23 @@ describe('ActivityView', () => {
     i18n.global.locale.value = 'ar'
     await nextTick()
     expect(wrapper.get('[role="note"]').text()).toBe(ar.activity.banner)
+  })
+
+  it('does not promise a reset when the deployment cannot be reset, or before it is known', async () => {
+    fetchActions.mockResolvedValue([])
+
+    for (const info of [{ demoReset: false }, {}, null]) {
+      infoForTest.value = info
+      const wrapper = await render()
+
+      expect(wrapper.get('[role="note"]').text()).toBe(en.activity.bannerNoReset)
+      expect(wrapper.get('[role="note"]').text()).not.toContain('every night')
+    }
+
+    i18n.global.locale.value = 'ar'
+    infoForTest.value = { demoReset: false }
+    const arabic = await render()
+    expect(arabic.get('[role="note"]').text()).toBe(ar.activity.bannerNoReset)
   })
 
   it('lists each action with its status, kind, summary, time and who decided', async () => {

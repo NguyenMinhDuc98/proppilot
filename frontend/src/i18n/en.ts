@@ -348,6 +348,7 @@ export default {
     title: 'Activity',
     subtitle: 'Changes the assistant proposed and what people decided. Nothing changes until someone approves it.',
     banner: 'Demo data resets every night; other visitors may see these entries.',
+    bannerNoReset: 'Other visitors may see these entries, and this deployment is not reset automatically.',
     refresh: 'Refresh',
     loading: 'Loading activity…',
     empty: 'No activity yet. Ask the assistant to record a payment, open a maintenance request or queue a reminder.',
