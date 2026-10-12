@@ -17,6 +17,8 @@ import java.util.List;
  * ({@code 101,102,103}) is one number, and also the list of its groups: the claim carries both readings, and
  * which one the writer meant is for the check to settle against the evidence.
  *
+ * <p>A unit code that the answer gives as an example ("such as A-203") is no claim, see {@link ExampleCues}.
+ *
  * <p>Two modes: the text of an answer, in which a citation marker is a claim of its own and the digits of a unit code
  * or a marker are not read as a figure; and evidence, in which every digit run is a figure and there are no markers,
  * because a marker inside a lease clause is quoted text, not a clause that was returned.
@@ -49,6 +51,8 @@ final class ClaimScanner {
     private final Claims claims;
     private int at;
     private boolean atLineStart = true;
+    /** Where the last unit code given as an example ends, so the codes that follow it in a list are examples too. */
+    private int exampleEnd = -1;
 
     private ClaimScanner(String text, boolean answer, Claims claims) {
         this.text = text;
@@ -151,6 +155,11 @@ final class ClaimScanner {
         if (end < text.length() && Character.digit(text.charAt(end), 10) >= 0) {
             return false;
         }
+        if (answer && isExample(at)) {
+            exampleEnd = end;
+            at = end;
+            return true;
+        }
         claims.found(ClaimKind.UNIT_CODE, text.substring(at, end), code.toString(), List.of(), at);
         at = answer ? end : at + 1;
         return true;
@@ -158,6 +167,9 @@ final class ClaimScanner {
 
     private void figure(boolean startsLine) {
         int start = at;
+        if (answer && digitsOfAnExampleCode(start)) {
+            return;
+        }
         var whole = new StringBuilder();
         int firstGroupEnd = digits(start, whole);
         int end = firstGroupEnd;
@@ -182,6 +194,26 @@ final class ClaimScanner {
         }
         var separately = decimals.length() == 0 ? groupsAsFigures(start, firstGroupEnd, groups) : List.<String>of();
         claims.found(ClaimKind.NUMBER, text.substring(start, end), normal(whole, decimals), separately, start);
+    }
+
+    /** A code as an example, in a script that {@link #unitCode()} does not read: {@code مثل أ-٢٠٣}. */
+    private boolean digitsOfAnExampleCode(int start) {
+        if (start < 2 || text.charAt(start - 1) != '-' || !Character.isLetter(text.charAt(start - 2))) {
+            return false;
+        }
+        var digits = new StringBuilder();
+        int end = digits(start, digits);
+        boolean code = digits.length() == CODE_DIGITS && !isGroupAt(end) && !isDecimalPointAt(end);
+        if (!code || !isExample(start - 2)) {
+            return false;
+        }
+        exampleEnd = end;
+        at = end;
+        return true;
+    }
+
+    private boolean isExample(int codeStart) {
+        return ExampleCues.introduces(text, codeStart) || ExampleCues.continuesList(text, exampleEnd, codeStart);
     }
 
     /**

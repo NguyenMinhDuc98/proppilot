@@ -217,6 +217,58 @@ class GroundingCheckerTest {
         assertThat(values(check("The fee is 31.12 SAR.", result))).containsExactly("31.12");
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "That is not a valid unit code. For example, A-203 is a valid code.",
+            "Could you give the unit code (such as A-203, with a building letter A to F and three digits)?",
+            "It should look something like A-203, B-415, C-101, and so on.",
+            "Unit codes look like A-203 or B-415.",
+            "Please give the unit, e.g. A-203.",
+            "هل يمكنك تزويدي برقم الوحدة (مثل A-203) أو الاسم الكامل؟",
+            "رمز الوحدة (بصيغة مثل: A-203)",
+            "الرمز يتكون من حرف المبنى ثم ثلاثة أرقام، مثل: أ-٢٠٣",
+            "على سبيل المثال A-203 و B-415"})
+    void aUnitCodeGivenAsAnExampleIsNoClaim(String answer) {
+        assertThat(check(answer)).isEmpty();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "Unit A-203 is rented by someone.",
+            "For example this is fine. A-203 is rented by someone.",
+            "Such cases are rare.\nA-203 is rented by someone.",
+            "A-203 is a unit such as the ones you asked about.",
+            "Is it A-203? For example is not the point here, B-415 is.",
+            "مثل هذا يحدث؟ A-203 مؤجرة"})
+    void aUnitCodeThatNoExampleCueIntroducesIsStillAClaim(String answer) {
+        assertThat(check(answer)).extracting(Violation::kind).contains(ClaimKind.UNIT_CODE);
+    }
+
+    @Test
+    void theFiguresAroundAnExampleAreStillHeldAgainstTheEvidence() {
+        var violations = check("For example, A-203 pays SAR 5,200 a month.");
+
+        assertThat(values(violations)).containsExactly("5,200");
+    }
+
+    @Test
+    void anExampleThatIsNotAnExampleOfTheCodeGroundsNothingElse() {
+        // The code is an example, so it needs no evidence; a code of the same sentence that is not one still does.
+        var violations = check("Do you mean A-203, or the unit that the tenant has, which is C-499?");
+
+        assertThat(values(violations)).contains("A-203", "C-499");
+    }
+
+    @Test
+    void manyCuesAndCodesAreReadInTimeProportionalToTheText() {
+        var text = "for example A-203, such as B-415 and ".repeat(50_000);
+
+        var violations = org.junit.jupiter.api.Assertions.assertTimeoutPreemptively(
+                java.time.Duration.ofSeconds(5), () -> check(text));
+
+        assertThat(violations).isEmpty();
+    }
+
     @Test
     void aNumberThatIsPartOfAnUnitCodeIsNotReportedBesideTheCode() {
         var violations = check("Unit A-204 is vacant.", "{\"units\":[\"A-203\"]}");

@@ -459,7 +459,7 @@ An answer from a model can state a figure that no tool returned. The guardrail h
 | Kind | Grounded when |
 |---|---|
 | `NUMBER` | The same figure is in the evidence, or follows from the rows of one tool result by a rule under *Derived figures*. `4,950`, `4950.00` and `٤٩٥٠` are one figure; so is a figure with decimals rounded as an answer writes it (49.8 as 50), and a rounded one that no result states is another. A whole number up to 10, a list number, and the digits of a unit code or a citation are never reported. A date such as `31.12.2025` is read as the figures 31, 12 and 2025 |
-| `UNIT_CODE` | A code such as `A-203` is in the evidence |
+| `UNIT_CODE` | A code such as `A-203` is in the evidence, unless the answer gives it as an example ("for example A-203", "مثل A-203", and the codes that follow one in a list) when it asks the user for a code, which states nothing about a unit |
 | `TENANT_NAME` | A tenant that the answer names in full, in English or in Arabic, is named in the evidence |
 | `CITATION` | A marker such as `[LSE-A-203#5]` is a clause that a lease search of this run returned. A marker inside the text of a clause is quoted text and makes nothing real |
 
@@ -753,7 +753,7 @@ A host may pass a variable on empty, or as only spaces. For `LLM_PRICE_INPUT_PER
 ## Tests
 
 ```bash
-cd backend && ./mvnw verify      # 2135 tests in 137 classes; 56 of them are integration tests (`*IT`) that start PostgreSQL (pgvector) via Testcontainers, so Docker is needed
+cd backend && ./mvnw verify      # 2153 tests in 137 classes; 56 of them are integration tests (`*IT`) that start PostgreSQL (pgvector) via Testcontainers, so Docker is needed
 cd frontend && npm test          # 494 Vitest tests in 29 files: SSE parser, chat store, approval card, Activity page, Markdown sanitising, citation chips and the clause drawer, trace builder and drawer, guardrail badge, admin traces page, Usage page, error codes, info badge, matching English and Arabic message keys
 node --test evals/*.test.mjs     # 172 tests in 15 files: the eval harness (runner, grading, claims, judge, aggregation, report) and the shape of every case in questions.json
 ```
