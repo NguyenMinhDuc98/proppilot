@@ -60,6 +60,31 @@ test('each case is graded and keeps what the run did', async () => {
   assert.equal(trial.answer, 'B-205 [LSE-A-203#5]')
 })
 
+test('a correct answer that the guardrail flagged fails a case with noGuardrailFlag, naming the figure, and no other', async () => {
+  const flaggedReply = () => {
+    const flagged = reply({
+      answer: '11 tenants are 103 days late, among them Ahmed Al-Harbi (B-203).',
+      calls: [{ name: 'find_overdue_tenants', args: {} }], done: { guardrailStatus: 'FLAGGED' },
+    })
+    flagged.unverified = [{ kind: 'NUMBER', value: '11' }]
+    return flagged
+  }
+  const asked = { expect: ['B-203'], tools: ['find_overdue_tenants'] }
+  const client = fakeClient([flaggedReply(), flaggedReply()])
+
+  const results = await runCases({
+    cases: [item({ id: 'en-04', ...asked, noGuardrailFlag: true }), item({ id: 'en-05', ...asked })],
+    runs: 1, client, limits: LIMITS,
+  })
+  const [strict, lenient] = results.map((result) => result.trials[0])
+
+  assert.equal(strict.pass, false)
+  assert.deepEqual(strict.reasons, ['the guardrail flagged the answer (FLAGGED): 11'])
+  assert.deepEqual([strict.guardrailStatus, strict.guardrailValues], ['FLAGGED', [{ kind: 'NUMBER', value: '11' }]])
+  assert.equal(lenient.pass, true)
+  assert.equal(aggregate(results, 1).guardrail.flagged, 2)
+})
+
 test('a follow-up is asked with the earlier questions and the answers that were really given', async () => {
   const client = fakeClient([
     reply({ answer: 'A-105, A-305, B-205' }),

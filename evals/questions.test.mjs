@@ -228,6 +228,23 @@ test('ar-08 accepts the Arabic wordings of an unpaid month, however they are typ
   assert.deepEqual(gradedFor('ar-08', 'الوحدة B-203: لم يتم الدفع').missingFacts, ['أحمد الحربي'])
 })
 
+/** The cases whose correct answers the first live run (2026-10-12) flagged. */
+const FLAGGED_BY_THE_FIRST_LIVE_RUN = ['en-04', 'en-07', 'en-08', 'en-09', 'ar-03', 'ar-06', 'ar-08']
+
+test('the cases whose correct answers the first live run flagged report a flag as a failure, and a grounded answer passes', () => {
+  const answered = (id, guardrailStatus, unverified = []) => grade(byId.get(id), {
+    answer: '', tools: [], calls: [], proposals: [], error: null, done: { guardrailStatus }, unverified,
+  })
+
+  for (const id of FLAGGED_BY_THE_FIRST_LIVE_RUN) {
+    assert.equal(byId.get(id).noGuardrailFlag, true, id)
+    assert.deepEqual(answered(id, 'OK').guardrailProblems, [], id)
+    assert.deepEqual(answered(id, null).guardrailProblems, [], id)
+    assert.match(answered(id, 'FLAGGED', [{ kind: 'NUMBER', value: '11' }]).guardrailProblems[0], /flagged.*FLAGGED.*: 11/, id)
+    assert.equal(answered(id, 'RETRIED_FLAGGED').guardrailProblems.length, 1, id)
+  }
+})
+
 test('a case with an empty answer is graded without failing on a missing field', () => {
   for (const item of cases) {
     assert.doesNotThrow(() => grade(item, { answer: '', tools: [], error: null }), item.id)

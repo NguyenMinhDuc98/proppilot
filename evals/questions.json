@@ -21,7 +21,8 @@
     "id": "en-04", "lang": "en",
     "question": "Who is more than 30 days late on rent?",
     "tools": ["find_overdue_tenants"],
-    "expect": ["Ahmed Al-Harbi", "Sara Al-Qahtani", "B-203"]
+    "expect": ["Ahmed Al-Harbi", "Sara Al-Qahtani", "B-203"],
+    "noGuardrailFlag": true
   },
   {
     "id": "en-05", "lang": "en",
@@ -39,19 +40,22 @@
     "id": "en-07", "lang": "en",
     "question": "Summarise occupancy and collected rent for Building A this month.",
     "tools": ["get_occupancy_summary"],
-    "expect": ["25", "80"]
+    "expect": ["25", "80"],
+    "noGuardrailFlag": true
   },
   {
     "id": "en-08", "lang": "en",
     "question": "What is the occupancy rate of building D?",
     "tools": ["get_occupancy_summary"],
-    "expect": ["80"]
+    "expect": ["80"],
+    "noGuardrailFlag": true
   },
   {
     "id": "en-09", "lang": "en",
     "question": "Show the payment history for unit B-203.",
     "tools": ["get_payment_history"],
-    "expect": ["Ahmed Al-Harbi", "UNPAID"]
+    "expect": ["Ahmed Al-Harbi", "UNPAID"],
+    "noGuardrailFlag": true
   },
   {
     "id": "en-10", "lang": "en",
@@ -75,7 +79,8 @@
     "id": "ar-03", "lang": "ar",
     "question": "من المستأجرين المتأخرين في الدفع؟",
     "tools": ["find_overdue_tenants"],
-    "expect": ["أحمد الحربي", "B-203"]
+    "expect": ["أحمد الحربي", "B-203"],
+    "noGuardrailFlag": true
   },
   {
     "id": "ar-04", "lang": "ar",
@@ -93,7 +98,8 @@
     "id": "ar-06", "lang": "ar",
     "question": "لخّص الإشغال والإيجار المحصّل للمبنى A هذا الشهر.",
     "tools": ["get_occupancy_summary"],
-    "expect": ["25", "80"]
+    "expect": ["25", "80"],
+    "noGuardrailFlag": true
   },
   {
     "id": "ar-07", "lang": "ar",
@@ -105,7 +111,8 @@
     "id": "ar-08", "lang": "ar",
     "question": "ما سجل المدفوعات للوحدة B-203؟",
     "tools": ["get_payment_history"],
-    "expect": ["أحمد الحربي", ["UNPAID", "لم يُدفع", "غير مدفوع", "لم تُدفع", "لم يتم الدفع", "لم يتم السداد", "لم يُسدد", "لم تُسدد", "غير مسدد"]]
+    "expect": ["أحمد الحربي", ["UNPAID", "لم يُدفع", "غير مدفوع", "لم تُدفع", "لم يتم الدفع", "لم يتم السداد", "لم يُسدد", "لم تُسدد", "غير مسدد"]],
+    "noGuardrailFlag": true
   },
   {
     "id": "ar-09", "lang": "ar",
