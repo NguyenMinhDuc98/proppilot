@@ -4,7 +4,7 @@
 
 **A bilingual (English / Arabic) AI assistant for property managers: ask a question in either language and an agent answers by calling typed tools against a property database, streaming its work live.**
 
-> **Live demo:** https://proppilot-lake.vercel.app runs **real Claude (Haiku 4.5)**. A badge at the top of the app always shows the active mode: `Claude Haiku 4.5` or `Offline demo`. Run locally with no key and it uses the free offline assistant instead. The free-tier API sleeps when idle, so the first request after a pause can take a few minutes while it wakes up.
+> **Live demo:** https://proppilot-lake.vercel.app runs **real Claude (Haiku 4.5)**. A badge at the top of the app always shows the active mode: `Claude Haiku 4.5` or `Offline demo`. Run locally with no key and it uses the free offline assistant instead. The free-tier API sleeps when idle, so the first request after a pause can take a few minutes while it wakes up. A 60-second path through it, with the prompts and what to point at, is in [docs/DEMO.md](docs/DEMO.md).
 
 All data is fake seed data (3 cities, 6 buildings, 150 units, 120 tenants, 12 months of payments), and the 30 lease documents are generated from it. No real companies or people.
 
@@ -24,6 +24,28 @@ Arabic is a full right-to-left mirror, not just translated text, and the layout 
 
 <img src="docs/screenshots/chat-mobile-ar.jpg" alt="Arabic chat on a phone: top bar, data card that scrolls sideways, bottom tab bar" width="300">
 
+A change is only proposed until a person approves it. The card shows the invoice the payment would settle and the balance before and after, and expires after 15 minutes:
+
+![Approval card for a proposed payment: the invoice it settles, the balance before and after, the expiry](docs/screenshots/approval-card-en.jpg)
+
+A citation in an answer is a chip that opens the clause in a drawer, in the document's own language, with a link to the PDF:
+
+![Arabic answer to a lease question with a citation chip on the late fee clause](docs/screenshots/citation-chip-ar.jpg)
+
+![The clause drawer opened from the chip: lease, unit, tenant, clause, page, text and a link to the PDF](docs/screenshots/clause-drawer-ar.jpg)
+
+Every proposal and decision has an audit trail with the state before and after:
+
+![Activity page with the audit trail of an approved payment](docs/screenshots/activity-audit-en.jpg)
+
+For the owner of a deployment, the usage page (aggregates only, never a visitor's question):
+
+![Usage page: questions, cost, tool calls by tool and the model mix](docs/screenshots/usage-en.jpg)
+
+and, behind an admin token, one run's stored trace, here from the offline assistant (the model reads `rule-based`):
+
+![One run's trace: model calls, the tool call with its arguments, the result, the figure check and the totals](docs/screenshots/admin-trace-detail-en.jpg)
+
 ## What it shows
 
 - **A hand-written agent loop** (no Spring AI / LangChain4j): send messages and tool definitions, run the tools the model asks for, feed results back, repeat, with a hard iteration cap.
@@ -33,14 +55,21 @@ Arabic is a full right-to-left mirror, not just translated text, and the layout 
 - **Streaming UX over SSE:** the UI shows live "Searching units…" chips, then streams the answer.
 - **Cost and latency tracking** per question (`chat_runs` table, shown under each answer and on a Usage page).
 - **A transparent agent:** every answer has an expandable "How I answered" panel showing the tool call and its arguments, what the tool returned, tokens, cost and latency. It is drawn from the run's stored trace ([details](#tracing-and-observability)).
-- **Grounding guardrail:** every figure, unit code, tenant name and lease citation in an answer is held against what the run's tools returned, and an answer that states something nothing supports is flagged. Warn-only by default ([details](#grounding-guardrail)).
-- **Model routing with fallback, and prompt caching:** a small model answers; with a larger one configured, an explainable complexity score sends multi-step questions to it and an overload falls back to the other model. Requests mark their prefix for caching and the cache tokens the API reports are priced ([routing](#model-routing-and-fallback), [caching](#prompt-caching)).
-- **Evals v2:** 64 cases in nine categories, graded on answer, tool arguments, citations, proposals and refusals, with repeated runs, an optional LLM judge, and an offline subset in CI ([details](#evals-v2)).
+- **Grounding guardrail:** every figure, unit code, tenant name and lease citation in an answer is held against what the run's tools returned, and an answer that states something nothing supports is flagged. Mode `warn` by default: it flags an answer and never changes or blocks one ([details](#grounding-guardrail)). On real Claude it flagged 7 of 20 correct read answers at first and none of 20 after it learned counts, sums and roundings.
+- **Model routing with fallback, and prompt caching:** a small model answers; with a larger one configured, an explainable complexity score sends multi-step questions to it and an overload falls back to the other model. Requests mark their prefix for caching and the cache tokens the API reports are priced ([routing](#model-routing-and-fallback), [caching](#prompt-caching)). Caching is measured on real Claude: the same 20 questions cost $0.0099 each before the prefix went over the cache minimum and $0.0043 after, with a warm cache (a question that arrives after five idle minutes was 18 percent cheaper than before, not 57). Routing and the fallback have run only against stubs and scripted clients.
+- **Evals v2:** 64 cases in nine categories, graded on answer, tool arguments, citations, proposals and refusals, with repeated runs, an optional LLM judge, and an offline subset in CI. The 20 read cases and the 16 lease cases have also run against real Claude; the other cases and the judge have not ([details](#evals-v2)).
 - **Real Arabic support:** vue-i18n, `dir="rtl"` flipping, Element Plus Arabic locale, bidi-safe numbers.
 - **Resilient LLM calls:** retries with exponential backoff and jitter on 429/5xx/529 (never after text has streamed), a per-question run deadline, replies cut off by `max_tokens` detected and flagged, and coded errors with localized messages (raw provider text never reaches the browser).
 - **Honest accounting:** a run that the browser abandons is still recorded with the tokens and cost spent so far (`ABORTED`).
 - **Privacy by default:** the public Usage page shows aggregates only; visitors' question text is readable only through an admin endpoint behind a token. Decisions are attributed to an anonymous name, never an address.
 - **Zero-cost by default:** the app runs with a built-in offline assistant, so it works with no API key. Set one env var to switch to real Claude.
+
+**Contents.**
+- **How it works:** [Architecture](#architecture) · [The agent loop](#how-the-agent-loop-works) · [Write actions](#human-in-the-loop-write-actions) · [Lease search](#lease-search-rag)
+- **Models and checks:** [Routing](#model-routing-and-fallback) · [Prompt caching](#prompt-caching) · [Grounding guardrail](#grounding-guardrail) · [Tracing](#tracing-and-observability)
+- **Evidence:** [Evals](#evals-v2) · [Tests](#tests) · [Failure modes](#failure-modes-i-handle)
+- **Running it:** [Tech stack](#tech-stack) · [Run locally](#run-locally) · [Safety](#safety) · [Deployment](#deployment) · [Demo script](docs/DEMO.md)
+- **Judgement:** [Design decisions](#design-decisions) · [What I'd do next](#what-id-do-next)
 
 ## Architecture
 
