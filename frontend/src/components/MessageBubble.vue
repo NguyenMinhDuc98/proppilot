@@ -14,11 +14,16 @@ import GuardrailBadge from './GuardrailBadge.vue'
 import ToolChip from './ToolChip.vue'
 import TraceDrawer from './TraceDrawer.vue'
 
-const props = defineProps<{ message: ChatMessage }>()
+const props = withDefaults(defineProps<{ message: ChatMessage; earlierSources?: readonly LeaseSource[] }>(), {
+  earlierSources: () => [],
+})
 const { t, te, locale } = useI18n()
 
 const isUser = computed(() => props.message.role === 'user')
-const answer = computed(() => buildAnswer(isUser.value ? '' : props.message.text, props.message.sources))
+// A follow-up may cite a clause that an earlier answer found: the app has that clause too, so its marker is a chip.
+const answer = computed(() =>
+  buildAnswer(isUser.value ? '' : props.message.text, [...props.earlierSources, ...props.message.sources]),
+)
 const usage = computed(() => props.message.usage)
 // What the guardrail found is shown when the answer is complete, not while it may still be replaced by another.
 const guardrail = computed(() => (props.message.streaming ? undefined : props.message.guardrail))

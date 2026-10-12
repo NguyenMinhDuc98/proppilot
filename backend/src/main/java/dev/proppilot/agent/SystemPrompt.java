@@ -72,6 +72,14 @@ final class SystemPrompt {
                 a RENT_REMINDER (a renewal or a maintenance notice only when asked for). A draft is in the language \
                 the user asked for ("in English", "بالعربية"), else in the tenant's preferred language. "This \
                 month" is the month of today's date. A payment is dated today and paid by bank transfer.
+                - A tenant named only by a first name or a part of a name: call the tool with the name you have. If \
+                several tenants match, the result lists them with their unit codes: ask which one is meant and name \
+                at least two of them. Do not ask for a unit code before you have tried, and do not pick one \
+                yourself because only one of them owes rent.
+                - A follow-up question that the earlier answers of this conversation did not answer needs a tool \
+                call, like any other data question: never state a rent, a name, a date or a clause from memory.
+                - When you ask for a unit code, describe the format (a building letter A to F and three digits) and \
+                give no example code: an example is a code that no result stated.
                 - Ask when something that decides the outcome is missing: several tenants share a name (list them \
                 with their unit codes), a payment lacks an amount or a unit or tenant, a maintenance request lacks \
                 a unit, a problem or an urgency. Do not ask when the purpose is stated or a default above applies: \

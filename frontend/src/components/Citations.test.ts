@@ -461,6 +461,39 @@ describe('the clause drawer in Arabic', () => {
   })
 })
 
+describe('a follow-up that cites a clause which an earlier answer found', () => {
+  it('turns the marker into a chip, because the app has that clause from the earlier answer', () => {
+    const message: ChatMessage = {
+      id: 2, role: 'assistant', text: 'The fee is 3 months of rent [LSE-A-504#5].', tools: [], actions: [],
+      sources: [], streaming: false,
+    }
+    const wrapper = mount(MessageBubble, {
+      props: { message, earlierSources: [lateFee] },
+      attachTo: document.body,
+      global: { plugins: [i18n], stubs: { transition: false } },
+    })
+    mounted.push(wrapper)
+
+    expect(inline(wrapper)).toHaveLength(1)
+  })
+
+  it('leaves the marker as text when no earlier answer found that clause either', () => {
+    const message: ChatMessage = {
+      id: 2, role: 'assistant', text: 'The fee is 3 months of rent [LSE-A-504#5].', tools: [], actions: [],
+      sources: [], streaming: false,
+    }
+    const wrapper = mount(MessageBubble, {
+      props: { message },
+      attachTo: document.body,
+      global: { plugins: [i18n], stubs: { transition: false } },
+    })
+    mounted.push(wrapper)
+
+    expect(inline(wrapper)).toHaveLength(0)
+    expect(wrapper.text()).toContain('[LSE-A-504#5]')
+  })
+})
+
 describe('the clause drawer while it animates', () => {
   /** True when no transition is running, so a state asserted next is the settled one and not one on the way. */
   const settled = () => document.querySelector('[class*="-enter-active"], [class*="-leave-active"]') === null

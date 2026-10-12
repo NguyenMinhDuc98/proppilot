@@ -62,6 +62,25 @@ class SystemPromptTest {
     }
 
     @Test
+    void asksToTryAFirstNameWithTheToolAndToNameTheCandidatesInsteadOfGuessing() {
+        assertThat(prompt).contains("call the tool with the name you have")
+                .contains("name at least two of them")
+                .contains("do not pick one yourself");
+    }
+
+    @Test
+    void asksForAToolCallInsteadOfAFigureFromMemoryInAFollowUp() {
+        assertThat(prompt).contains("A follow-up question that the earlier answers of this conversation did not answer")
+                .contains("never state a rent, a name, a date or a clause from memory");
+    }
+
+    @Test
+    void givesNoExampleUnitCodeWhenAskingForOne() {
+        assertThat(prompt).contains("describe the format (a building letter A to F and three digits)")
+                .contains("give no example code");
+    }
+
+    @Test
     void asksForTheCitationMarkerExactlyAsReturnedAfterEachClauseBasedStatement() {
         assertThat(prompt).contains("directly after every statement that rests on that clause",
                 "exactly as the result returned it, in square brackets",

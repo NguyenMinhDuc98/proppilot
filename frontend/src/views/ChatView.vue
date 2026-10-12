@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import type { LeaseSource } from '../api/types'
 import MessageBubble from '../components/MessageBubble.vue'
 import ModeBadge from '../components/ModeBadge.vue'
 import { splitUnitCodes } from '../composables/unitCodes'
@@ -13,6 +14,16 @@ const chat = useChatStore()
 const draft = ref('')
 const scroller = ref<HTMLElement | null>(null)
 const input = ref<HTMLTextAreaElement | null>(null)
+
+// For each message, the clauses that the answers before it found, so that a follow-up can cite one of them.
+const sourcesBefore = computed(() => {
+  const seen = new Map<string, LeaseSource>()
+  return chat.messages.map((message) => {
+    const before = [...seen.values()]
+    for (const source of message.sources) seen.set(source.ref, source)
+    return before
+  })
+})
 
 const examples = computed(() => (tm('chat.examples') as string[]).map((e) => rt(e)))
 
@@ -72,7 +83,12 @@ watch(
             </button>
           </div>
         </div>
-        <MessageBubble v-for="message in chat.messages" :key="message.id" :message="message" />
+        <MessageBubble
+          v-for="(message, index) in chat.messages"
+          :key="message.id"
+          :message="message"
+          :earlier-sources="sourcesBefore[index]"
+        />
       </div>
     </div>
 

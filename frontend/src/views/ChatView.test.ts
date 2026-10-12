@@ -5,6 +5,9 @@ import { nextTick, ref } from 'vue'
 import { i18n } from '../i18n'
 import ar from '../i18n/ar'
 import en from '../i18n/en'
+import MessageBubble from '../components/MessageBubble.vue'
+import { lateFee } from '../test/leaseFixtures'
+import { useChatStore } from '../stores/chat'
 import ChatView from './ChatView.vue'
 
 const streamChat = vi.fn()
@@ -71,5 +74,36 @@ describe('ChatView examples', () => {
     await flushPromises()
 
     expect(streamChat.mock.calls[0][0]).toBe('What is the late fee in the lease for unit A-203?')
+  })
+})
+
+describe('ChatView follow-ups', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    Element.prototype.scrollTo = () => {}
+  })
+
+  it('gives a message the clauses that earlier answers found, so a follow-up citation is a chip', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const chat = useChatStore()
+    const message = (id: number, role: 'user' | 'assistant', text: string, sources = [] as (typeof lateFee)[]) => ({
+      id, role, text, tools: [], actions: [], sources, streaming: false,
+    })
+    chat.messages.push(
+      message(1, 'user', 'What is the late fee?'),
+      message(2, 'assistant', 'The late fee is SAR 75 a day [LSE-A-504#5].', [lateFee]),
+      message(3, 'user', 'And what did that clause say about the grace period?'),
+      message(4, 'assistant', 'It allows 5 days of grace [LSE-A-504#5].'),
+    )
+
+    const wrapper = mount(ChatView, { global: { plugins: [pinia, i18n] } })
+    await flushPromises()
+
+    const bubbles = wrapper.findAllComponents(MessageBubble)
+    expect(bubbles).toHaveLength(4)
+    // The second answer has no source of its own: its chip comes from the first answer.
+    expect(bubbles[3].findAll('button.cite').length).toBeGreaterThan(0)
+    expect(bubbles[1].findAll('button.cite').length).toBeGreaterThan(0)
   })
 })

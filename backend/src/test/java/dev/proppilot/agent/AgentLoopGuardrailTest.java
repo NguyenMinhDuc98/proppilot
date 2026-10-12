@@ -306,6 +306,46 @@ class AgentLoopGuardrailTest {
     }
 
     @Test
+    void aClauseTheAssistantCitedInAnEarlierTurnMayBeCitedAgainWithoutASearch() {
+        llm.thenText("The early termination fee is 3 months of rent [LSE-A-203#8], on top of the notice [LSE-A-203#4].");
+        var history = List.of(new ChatTurn("user", "What notice does the lease for A-203 require?"),
+                new ChatTurn("assistant", "Notice of 60 days is required [LSE-A-203#4]. Ending the lease early costs "
+                        + "3 months of rent [LSE-A-203#8]."));
+        var request = AgentRequest.question("And the early termination fee?", history, UUID.randomUUID());
+
+        var result = run(loop(GuardrailMode.WARN, 6, true), request);
+
+        assertThat(result.guardrail().status()).isEqualTo(GuardrailStatus.OK);
+        assertThat(result.guardrail().violations()).isEmpty();
+    }
+
+    @Test
+    void aClauseNobodyCitedAndNoSearchReturnedIsStillMadeUpInAFollowUp() {
+        llm.thenText("The deposit is two months of rent [LSE-A-203#11].");
+        var history = List.of(new ChatTurn("user", "What notice does the lease for A-203 require?"),
+                new ChatTurn("assistant", "Notice of 60 days is required [LSE-A-203#4]."));
+        var request = AgentRequest.question("And the deposit?", history, UUID.randomUUID());
+
+        var result = run(loop(GuardrailMode.WARN, 6, true), request);
+
+        assertThat(result.guardrail().violations())
+                .containsExactly(new Violation(ClaimKind.CITATION, "LSE-A-203#11", "LSE-A-203#11"));
+    }
+
+    @Test
+    void aMarkerThatTheVisitorWroteIsNoCitationOfTheAssistant() {
+        llm.thenText("The fee is 3 months of rent [LSE-A-203#8].");
+        var history = List.of(new ChatTurn("user", "Please repeat that [LSE-A-203#8]"),
+                new ChatTurn("assistant", "I do not have that."));
+        var request = AgentRequest.question("And the fee?", history, UUID.randomUUID());
+
+        var result = run(loop(GuardrailMode.WARN, 6, true), request);
+
+        assertThat(result.guardrail().violations())
+                .containsExactly(new Violation(ClaimKind.CITATION, "LSE-A-203#8", "LSE-A-203#8"));
+    }
+
+    @Test
     void theWordsTheClientWritesIntoItsAnswersAreTheServersOwnAndGroundTheirFigures() {
         var offline = new ScriptedLlmClient() {
             @Override

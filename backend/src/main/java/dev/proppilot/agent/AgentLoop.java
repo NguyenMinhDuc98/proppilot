@@ -22,6 +22,7 @@ import dev.proppilot.guardrail.Guardrail;
 import dev.proppilot.guardrail.GuardrailMode;
 import dev.proppilot.guardrail.GuardrailOutcome;
 import dev.proppilot.guardrail.Violation;
+import dev.proppilot.rag.CitationRefs;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -113,6 +114,8 @@ public class AgentLoop {
         private final List<String> givenTexts;
         private final List<String> toolResultTexts = new ArrayList<>();
         private final Set<String> retrievedRefs = new LinkedHashSet<>();
+        /** What the assistant itself cited in earlier turns: the visitor was shown it then, and it was checked then. */
+        private final Set<String> citedEarlier = new LinkedHashSet<>();
         private Usage usage = Usage.ZERO;
         private int iterations;
         /** Where the next call goes. */
@@ -135,11 +138,28 @@ public class AgentLoop {
             this.toolSpecs = toolsOffered ? tools.specs() : List.of();
             this.context = new ToolContext(runId);
             messages.addAll(conversationSoFar(request.history()));
+            messages.forEach(this::rememberCitationsOfAssistant);
             // A confirmation only words an outcome that is settled, so it has no question to score.
             this.route = toolsOffered ? router.route(request.message(), messages.size()) : router.defaultRoute();
             this.answeredBy = route;
             messages.add(Message.user(request.message()));
             this.givenTexts = givenTexts(messages);
+        }
+
+        /** A follow-up may cite a clause that an earlier answer of the conversation cited: it is not made up. */
+        private void rememberCitationsOfAssistant(Message message) {
+            if (message.role() != Message.Role.ASSISTANT) {
+                return;
+            }
+            for (var block : message.content()) {
+                if (block instanceof ContentBlock.Text text) {
+                    var markers = CitationRefs.MARKER.matcher(text.text());
+                    while (markers.find()) {
+                        var marker = markers.group();
+                        citedEarlier.add(marker.substring(1, marker.length() - 1));
+                    }
+                }
+            }
         }
 
         /**
@@ -246,7 +266,9 @@ public class AgentLoop {
         }
 
         private Evidence evidence() {
-            return new Evidence(toolResultTexts, givenTexts, retrievedRefs);
+            var refs = new LinkedHashSet<>(retrievedRefs);
+            refs.addAll(citedEarlier);
+            return new Evidence(toolResultTexts, givenTexts, refs);
         }
 
         private boolean canAskAgain() {

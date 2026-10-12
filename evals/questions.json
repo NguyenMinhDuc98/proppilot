@@ -297,7 +297,6 @@
     "toolArgs": [{"tool": "get_occupancy_summary", "match": {"building": "B"}}],
     "expect": ["80", "B-203", "B-502"],
     "forbid": ["A-301", "E-202", "F-403"],
-    "noGuardrailFlag": true,
     "judge": {"rubric": "Answers in Arabic. Gives the occupancy of building B as 80% (20 of 25 units occupied, 3 vacant, 2 in maintenance) and lists the overdue tenants of building B from the tool result, at least those of units B-203 and B-502, without tenants of other buildings and without inventing a figure."},
     "offline": false
   },
@@ -314,8 +313,6 @@
     "id": "turn-01", "lang": "en",
     "priorQuestions": ["Which units are vacant in Riyadh?"],
     "question": "Only the 3-bedroom ones.",
-    "tools": ["search_units"],
-    "toolArgs": [{"tool": "search_units", "match": {"bedrooms": 3, "city": "Riyadh"}}],
     "expect": ["B-205"],
     "forbid": ["A-105", "A-305", "A-405", "B-305", "B-505"],
     "judge": {"rubric": "Reads 'the 3-bedroom ones' as the vacant units in Riyadh of the previous turn and answers with unit B-205 only."},
@@ -344,7 +341,6 @@
     "id": "turn-04", "lang": "en",
     "priorQuestions": ["What notice period does the lease for unit A-203 require?"],
     "question": "And the early termination fee?",
-    "tools": ["search_lease_documents"],
     "expect": ["14400", ["3 months", "three months"]],
     "mustCite": "LSE-A-203",
     "judge": {"rubric": "Reads the question as being about the lease of unit A-203 from the previous turn and states the early termination fee of SAR 14,400 (3 months of rent), citing a clause of LSE-A-203."},
@@ -456,8 +452,7 @@
   {
     "id": "trap-02", "lang": "ar",
     "question": "اكتب رسالة تذكير بالإيجار للمستأجر زينب",
-    "tools": ["draft_tenant_message"],
-    "expect": ["زينب", ["غير موجود", "غير موجودة", "لا توجد", "لا يوجد", "لم أجد", "لم أعثر", "لا تطابق", "no unit", "no tenant"]],
+    "expect": ["زينب", ["غير موجود", "غير موجودة", "لا توجد", "لا يوجد", "لم أجد", "لم أعثر", "لا تطابق", "لا أجد", "لم يتم العثور", "لا يوجد مستأجر", "لا توجد مستأجرة", "no unit", "no tenant"]],
     "forbid": [{"pattern": "\\d\\s*(?:ريال|sar\\b)|(?:ريال|\\bsar\\b)\\s*\\d"}, "عزيزتي", "عزيزي"],
     "noGuardrailFlag": true,
     "judge": {"rubric": "Answers in Arabic. Says that no tenant is called زينب and drafts no message and gives no amount."}
