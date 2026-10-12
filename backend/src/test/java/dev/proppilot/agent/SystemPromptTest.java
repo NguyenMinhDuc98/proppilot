@@ -40,12 +40,12 @@ class SystemPromptTest {
     }
 
     @Test
-    void namesNoToolButTheTwoThatAnswerLeaseQuestions() {
-        var withoutLeaseTools = prompt.replace("search_lease_documents", "").replace("find_expiring_leases", "")
-                .replace("unit_codes", "");
+    void namesNoToolButTheTwoThatAnswerLeaseQuestionsAndTheOneThatResolvesAName() {
+        var withoutNamedTools = prompt.replace("search_lease_documents", "").replace("find_expiring_leases", "")
+                .replace("find_tenant", "").replace("unit_codes", "");
 
-        assertThat(prompt).contains("search_lease_documents", "find_expiring_leases");
-        assertThat(withoutLeaseTools).doesNotContainPattern("[a-z]+_[a-z_]+");
+        assertThat(prompt).contains("search_lease_documents", "find_expiring_leases", "find_tenant");
+        assertThat(withoutNamedTools).doesNotContainPattern("[a-z]+_[a-z_]+");
     }
 
     @Test
@@ -62,10 +62,28 @@ class SystemPromptTest {
     }
 
     @Test
-    void asksToTryAFirstNameWithTheToolAndToNameTheCandidatesInsteadOfGuessing() {
-        assertThat(prompt).contains("call the tool with the name you have")
-                .contains("name at least two of them")
-                .contains("do not pick one yourself");
+    void asksToResolveAFirstNameWithFindTenantAndToNameTheCandidatesInsteadOfGuessing() {
+        assertThat(prompt).contains("call find_tenant with the name you have before any other tool")
+                .contains("do not pick the tenant out of a list of overdue tenants or of units")
+                .contains("name at least two of them with their unit codes")
+                .contains("do not pick one yourself, not even because only one of them owes rent");
+    }
+
+    @Test
+    void letsAFullNameOrAUnitCodeGoStraightToTheToolThatNeedsIt() {
+        assertThat(prompt).contains("with no unit code")
+                .contains("A full name or a unit code can go straight to the tool that needs it");
+    }
+
+    @Test
+    void listsTheTenantsWhenThatIsTheQuestionAndAsksWhichOneOnlyWhenOneIsNeeded() {
+        assertThat(prompt).contains("If the question is who the tenants of that name are, list what find_tenant "
+                + "returned with their unit codes").contains("Otherwise: if it returns one tenant");
+    }
+
+    @Test
+    void saysSoWhenAReturnedTenantHasNoActiveLease() {
+        assertThat(prompt).contains("A tenant it returns without a unit has no active lease: say so");
     }
 
     @Test

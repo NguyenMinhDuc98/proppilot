@@ -36,6 +36,15 @@ final class OfflineIntentRouter {
     private static final Pattern MONTH = Pattern.compile("\\b(20\\d{2}-(?:0[1-9]|1[0-2]))\\b");
     static final Pattern TENANT_NAME = Pattern.compile("tenant\\s+([A-Za-z][A-Za-z-]+)", Pattern.CASE_INSENSITIVE);
     static final Pattern TENANT_NAME_AR = Pattern.compile("(?:للمستأجر|المستأجر)\\s+(\\S+)");
+    /**
+     * A request to find a tenant by name ("find tenant Ahmed", "who is tenant Sara", "which tenants are called Ahmed").
+     * "Which tenant" alone is a question about the data ("which tenants paid in March"), so it needs "called" or
+     * "named". No group repeats without a bound, so the time it takes is in proportion to the question.
+     */
+    private static final Pattern FIND_TENANT = Pattern.compile("\\b(?:find|look\\s?up|search(?:\\s{1,3}for)?"
+            + "|who\\s{1,3}is)\\s{1,3}(?:the\\s{1,3}|a\\s{1,3})?tenants?\\b"
+            + "|\\btenants?\\s{1,3}(?:(?:are|is)\\s{1,3})?(?:called|named)\\b", Pattern.CASE_INSENSITIVE);
+    private static final int MOST_TENANT_NAME_LENGTH = 100;
     /** A sentence that starts as a question or as a request for information. */
     private static final Pattern QUESTION_OPENERS = Pattern.compile("^\\W*(?:what|which|who|how|when|where|why|is|are"
             + "|does|do|can|could|should|will|would|may|show|tell|list|give|explain|describe|check|find"
@@ -87,6 +96,10 @@ final class OfflineIntentRouter {
             first(MONTH, q).ifPresent(m -> call.args().put("month", m));
             return Optional.of(call);
         }
+        var tenant = unitCode == null ? findTenant(question, q) : Optional.<Call>empty();
+        if (tenant.isPresent()) {
+            return tenant;
+        }
         if (unitCode != null) {
             return Optional.of(call("get_unit_details").put("unit_code", unitCode));
         }
@@ -114,6 +127,34 @@ final class OfflineIntentRouter {
     private static boolean asksAboutALease(String question, String q) {
         return !OfflineWriteIntents.asksToDraft(question) && (q.contains("?") || q.contains("؟")
                 || QUESTION_OPENERS.matcher(q).find());
+    }
+
+    /** A request to find the tenants of a name, which names one: it asks the tool that lists every match. */
+    private Optional<Call> findTenant(String question, String q) {
+        boolean asks = FIND_TENANT.matcher(q).find()
+                || hasAny(q, "ابحث عن", "ابحث لي عن", "من هو المستأجر", "من هي المستأجرة");
+        if (!asks) {
+            return Optional.empty();
+        }
+        return TenantName.in(question).filter(name -> name.length() <= MOST_TENANT_NAME_LENGTH)
+                .filter(OfflineIntentRouter::isWrittenAsAName)
+                .map(name -> call("find_tenant").put("tenant_name", name));
+    }
+
+    /**
+     * Whether the word after "tenant" is written the way a name is, because the router has no list of tenants to check
+     * it against: a Latin name starts with a capital ("find tenant details for Sara" is not a lookup of "details"),
+     * and an Arabic one is not a single word with the definite article, which is an adjective ("المستأجر الأقدم").
+     */
+    private static boolean isWrittenAsAName(String name) {
+        int first = name.codePointAt(0);
+        if (Character.isUpperCase(first)) {
+            return true;
+        }
+        if (Character.isLowerCase(first) || !Character.isLetter(first)) {
+            return false;
+        }
+        return !name.startsWith("ال") || name.indexOf(' ') > 0;
     }
 
     private Optional<Call> draft(String question, String q, String unitCode) {

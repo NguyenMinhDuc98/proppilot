@@ -122,6 +122,7 @@ export default {
     create_maintenance_request: { running: 'Preparing maintenance request…', done: 'Prepared maintenance request', failed: 'Could not prepare maintenance request', source: 'Maintenance request' },
     send_tenant_reminder: { running: 'Preparing reminder…', done: 'Prepared reminder', failed: 'Could not prepare reminder', source: 'Reminder proposal' },
     search_lease_documents: { running: 'Searching lease documents…', done: 'Searched lease documents', failed: 'Could not search lease documents', source: 'Lease documents' },
+    find_tenant: { running: 'Looking up tenant…', done: 'Looked up tenant', failed: 'Could not look up tenant', source: 'Tenant lookup' },
     find_expiring_leases: { running: 'Checking leases that end soon…', done: 'Checked leases that end soon', failed: 'Could not check leases that end soon', source: 'Leases that end soon' },
     unknown: { running: 'Working…', done: 'Done', failed: 'Failed' },
   },

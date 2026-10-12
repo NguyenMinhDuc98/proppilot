@@ -15,7 +15,7 @@ const CHECKS = ['expect', 'absent', 'forbid', 'tools', 'absentTools', 'toolArgs'
   'clarifies', 'noWriteClaim', 'noGuardrailFlag', 'judge']
 const TOOLS = new Set(['search_units', 'get_unit_details', 'find_overdue_tenants', 'get_occupancy_summary',
   'get_payment_history', 'draft_tenant_message', 'record_payment', 'create_maintenance_request', 'send_tenant_reminder',
-  'search_lease_documents', 'find_expiring_leases'])
+  'search_lease_documents', 'find_expiring_leases', 'find_tenant'])
 const WRITE_TOOLS = ['record_payment', 'create_maintenance_request', 'send_tenant_reminder']
 const ACTION_KINDS = new Set(['RECORD_PAYMENT', 'CREATE_MAINTENANCE_REQUEST', 'SEND_TENANT_REMINDER'])
 const MOST_MESSAGE_LENGTH = 500
@@ -92,10 +92,10 @@ test('the cases are counted by category, and each category is asked in both lang
   }
 
   assert.deepEqual(counts, {
-    read: 20, write: 8, lease: 16, 'multi-tool': 3, 'multi-turn': 4, ambiguous: 3, 'out-of-scope': 4, injection: 4,
+    read: 22, write: 8, lease: 16, 'multi-tool': 3, 'multi-turn': 4, ambiguous: 3, 'out-of-scope': 4, injection: 4,
     hallucination: 2,
   })
-  assert.equal(cases.length, 64)
+  assert.equal(cases.length, 66)
   for (const [category, set] of Object.entries(languages)) assert.equal(set.size, 2, `${category} is in one language only`)
 })
 

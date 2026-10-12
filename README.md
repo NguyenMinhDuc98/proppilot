@@ -59,7 +59,7 @@ Behind an admin token, the owner sees the list of runs with their question text 
 - **A transparent agent:** every answer has an expandable "How I answered" panel showing the tool call and its arguments, what the tool returned, tokens, cost and latency. It is drawn from the run's stored trace ([details](#tracing-and-observability)).
 - **Grounding guardrail:** every figure, unit code, tenant name and lease citation in an answer is held against what the run's tools returned, and an answer that states something nothing supports is flagged. Mode `warn` by default: it flags an answer and never changes or blocks one ([details](#grounding-guardrail)). On real Claude it flagged 7 of 20 read answers at first (6 of them correct, one a figure that contradicted its own rate) and none of 20 after it learned counts, sums and roundings.
 - **Model routing with fallback, and prompt caching:** a small model answers; with a larger one configured, an explainable complexity score sends multi-step questions to it and an overload falls back to the other model. Requests mark their prefix for caching and the cache tokens the API reports are priced ([routing](#model-routing-and-fallback), [caching](#prompt-caching)). Caching is measured on real Claude: the same 20 questions cost $0.0099 each before the prefix went over the cache minimum and $0.0043 after, with a warm cache (the one question that arrived cold was 18 percent cheaper than before, not 57). Routing and the fallback have run only against stubs and scripted clients.
-- **Evals v2:** 64 cases in nine categories, graded on answer, tool arguments, citations, proposals and refusals, with repeated runs, an optional LLM judge, and an offline subset in CI. The 20 read cases and the 16 lease cases have also run against real Claude; the other cases and the judge have not ([details](#evals-v2)).
+- **Evals v2:** 66 cases in nine categories, graded on answer, tool arguments, citations, proposals and refusals, with repeated runs, an optional LLM judge, and an offline subset in CI. The first 20 read cases and the 16 lease cases have also run against real Claude; the other cases and the judge have not ([details](#evals-v2)).
 - **Real Arabic support:** vue-i18n, `dir="rtl"` flipping, Element Plus Arabic locale, bidi-safe numbers.
 - **Resilient LLM calls:** retries with exponential backoff and jitter on 429/5xx/529 (never after text has streamed), a per-question run deadline, replies cut off by `max_tokens` detected and flagged, and coded errors with localized messages (raw provider text never reaches the browser).
 - **Honest accounting:** a run that the browser abandons is still recorded with the tokens and cost spent so far (`ABORTED`).
@@ -89,7 +89,7 @@ flowchart LR
     A -->|"4 which model"| R["ModelRouter<br/>default, larger,<br/>fallback"]
     A -->|"5 messages, tool defs"| L["LlmClient<br/>Claude or offline"]
     L -->|"6 text, tool calls"| A
-    A -->|"7 execute"| T["ToolRegistry<br/>11 tools"]
+    A -->|"7 execute"| T["ToolRegistry<br/>12 tools"]
     T --> D[("PostgreSQL")]
     A -->|"8 final answer"| G["GroundingChecker<br/>warn: flags it<br/>retry: asks once more"]
     A -->|"tool_call, tool_result,<br/>token, revise"| H
@@ -200,6 +200,7 @@ The loop repeats steps until a final answer, the iteration cap (default 6) or th
 - `ToolRegistry.execute` never throws: bad input, unknown tools and unexpected failures come back as error results (`is_error: true`), so the model can correct itself instead of the request failing.
 - The system prompt tells the model to reply in the user's language, only state numbers returned by tools, and not to mention internal tool names; the UI shows the data sources itself as localized labels. Its "Conventions and defaults" section says how the portfolio and the tools work (the buildings and what a unit code is, the payment statuses and what overdue means, how to write money) and what to do instead of asking (a reminder is a rent reminder, the language of a draft, this month), when to ask, how to decline and to prefer a figure a tool returns over one it computes.
 - Tool results reach the model, and the card of a proposal reaches the browser, with every amount as a plain decimal (`4800.00`, `80.0`, `0.50`), never in scientific notation (`4.8E+3`): Jackson's tree strips the trailing zeros of a `BigDecimal`, so the JSON of a result is written from the data directly (`ToolJson`) and amounts are never passed through a float.
+- A name is resolved by a tool, not by the prompt. `find_tenant` returns every tenant whose English or Arabic name contains the text, each with the unit they rent and nothing about rent or payments. It runs the same search (`TenantResolver.candidates`) that makes the other tools refuse a name that matches several tenants, so the two always agree on who the candidates are, and a test holds them to it. That search spells Arabic letters and hyphens one way (`احمد` finds `أحمد`, `Al Harbi` finds `Al-Harbi`) for every tool, and never finds less than the text as written did. It exists because of the ambiguous cases on real Claude: asked to remind "Ahmed", the model sometimes looked in the list of overdue tenants first, found one Ahmed there and picked him. With nothing in the result to tell the candidates apart, there is nothing to pick on. The system prompt says to call it first for a first name or a part of a name, and lets a full name go straight to the tool that needs it; the offline assistant routes "find tenant Ahmed" to it. **Not yet measured on real Claude**: every live run in this README predates the tool.
 - `LlmClient` has two implementations: `AnthropicLlmClient` (plain HTTP, a retry policy, a stream watchdog, and a hand-written SSE parser for text and tool-use blocks) and `OfflineLlmClient`.
 - The agent loop is tested against a scripted fake LLM: tool round trips, error feedback, the iteration cap, truncation, cancellation, the deadline, LLM failures and history handling.
 
@@ -552,11 +553,11 @@ A case is a question (or a conversation, for the follow-up cases) with what a go
 
 ### Cases
 
-64 cases in nine categories. A category is the prefix of a case's id.
+66 cases in nine categories. A category is the prefix of a case's id.
 
 | Category | Cases | What it asks |
 |---|---|---|
-| read (`en-`, `ar-`) | 20 | One lookup: vacant units, overdue tenants, a unit, occupancy, payment history, a draft |
+| read (`en-`, `ar-`) | 22 | One lookup: vacant units, overdue tenants, a unit, occupancy, payment history, a draft, the tenants of a first name |
 | write (`write-`) | 8 | A change that must be proposed and never executed: a payment, a maintenance request, a reminder |
 | lease (`rag-`) | 16 | What a lease says, with a citation; a unit with no document; the lease with the planted instruction |
 | multi-tool (`multi-`) | 3 | Two tools for one question |
@@ -596,16 +597,16 @@ A case is a question (or a conversation, for the follow-up cases) with what a go
 
 | | |
 |---|---|
-| Date | 2026-10-11, 17:25 UTC (committed in `901f8bf`) |
+| Date | 2026-10-12, 16:52 UTC (committed with the `find_tenant` tool) |
 | Provider | `offline` (rule-based, zero cost), lease search by keyword |
-| Cases | 54 of the 64; 10 skipped because only a real model can pass them (`offline: false`: `multi-01`, `multi-02`, `turn-01` to `turn-04`, `ambig-02`, `ambig-03`, `inject-01`, `inject-04`) |
-| Runs | 3 per case, 162 questions |
-| Pass rate | 100.0% (162/162), standard deviation 0.00 pt, 0 flaky cases |
-| Latency | average 9 ms, p95 31 ms |
-| Cost | $0.00 (the token counts, 48,030 in and 25,104 out, are estimates of about four characters each) |
+| Cases | 56 of the 66; 10 skipped because only a real model can pass them (`offline: false`: `multi-01`, `multi-02`, `turn-01` to `turn-04`, `ambig-02`, `ambig-03`, `inject-01`, `inject-04`) |
+| Runs | 3 per case, 168 questions |
+| Pass rate | 100.0% (168/168), standard deviation 0.00 pt, 0 flaky cases |
+| Latency | average 12 ms, p95 45 ms |
+| Cost | $0.00 (the token counts, 55,677 in and 31,047 out, are estimates of about four characters each) |
 | Cache read / write tokens | 0 / 0 (the offline assistant has no prompt cache) |
 | Answers the guardrail flagged | 0 |
-| Guardrail verdicts | OK 162 |
+| Guardrail verdicts | OK 168 |
 | Writes executed by a run | 0 |
 | LLM judge | not run |
 
@@ -689,7 +690,7 @@ The write, multi-tool, multi-turn, ambiguous, out-of-scope, injection and halluc
 - **What the run found in the checks, and was fixed:** `turn-01` required a tool call for a follow-up that the earlier answer could settle (Claude correctly filtered it: B-205 is the only 3-bedroom vacant unit in Riyadh), `turn-04` required a search for a fee that the earlier answer had stated, `trap-02` did not list "لا أجد", and `multi-02` failed on the sum of two listed rows, which the guardrail reports by design. The expectations were loosened and the reasons are in the commit.
 - **What it found in the guardrail, and was fixed:** a clause that the assistant itself cited in an earlier turn was flagged as made up when a follow-up cited it again; and the example codes that the assistant gives when it asks for one ("such as A-203", "مثل أ-٢٠٣") were flagged as unit codes that no result stated. Both are no longer claims (`30fe8c6`, `098fbd3`).
 - **What it found in the model, partly fixed by the prompt:** `turn-03` answered a rent from memory and got it wrong (SAR 3,500 for B-101, where the data says 5,950) and the guardrail flagged it, which is the guardrail working. The prompt now says that a follow-up the earlier answers did not answer needs a tool call, and the case then passed in all five later runs. For a name that matches several tenants the prompt now says to try the tool and name the candidates; it helped (`ambig-01` and `ambig-02` passed where they had failed) but not reliably: in the last run `ambig-01` still picked the one Ahmed who owes rent by his unit code in 2 of 3 runs, which is the behaviour the case is there to catch.
-- **Still flaky, and not fixed:** `ambig-01`, `ambig-02`, `ambig-03` (candidates not named, or one guessed), `turn-04` (the answer sometimes states "3 months of rent" without the SAR amount) and `multi-02` (once, B-502 was missing from the list of overdue tenants of building B). The last three-run sample was 24 of 30 runs passed. A tool that resolves a name to its candidates, instead of the model doing it from a prompt, would be the next step for the ambiguous cases.
+- **Still flaky, and not fixed:** `ambig-01`, `ambig-02`, `ambig-03` (candidates not named, or one guessed), `turn-04` (the answer sometimes states "3 months of rent" without the SAR amount) and `multi-02` (once, B-502 was missing from the list of overdue tenants of building B). The last three-run sample was 24 of 30 runs passed. The next step for the ambiguous cases was a tool that resolves a name to its candidates instead of the model doing it from a prompt: `find_tenant` was added after this run and has not been measured on real Claude.
 - **Cost and latency:** $0.0031 to $0.0039 per question and 3.2 to 3.9 s on average (p95 4.7 to 10.3 s), which is the same band as the read and lease cases (the write cases averaged 3.3 s, p95 4.7 s).
 
 ## Tech stack
@@ -774,8 +775,8 @@ A host may pass a variable on empty, or as only spaces. For `LLM_PRICE_INPUT_PER
 ## Tests
 
 ```bash
-cd backend && ./mvnw verify      # 2153 tests in 137 classes; 56 of them are integration tests (`*IT`) that start PostgreSQL (pgvector) via Testcontainers, so Docker is needed
-cd frontend && npm test          # 494 Vitest tests in 29 files: SSE parser, chat store, approval card, Activity page, Markdown sanitising, citation chips and the clause drawer, trace builder and drawer, guardrail badge, admin traces page, Usage page, error codes, info badge, matching English and Arabic message keys
+cd backend && ./mvnw verify      # 2199 tests in 139 classes; 57 of them are integration tests (`*IT`) that start PostgreSQL (pgvector) via Testcontainers, so Docker is needed
+cd frontend && npm test          # 495 Vitest tests in 29 files: SSE parser, chat store, approval card, Activity page, Markdown sanitising, citation chips and the clause drawer, trace builder and drawer, guardrail badge, admin traces page, Usage page, error codes, info badge, matching English and Arabic message keys
 node --test evals/*.test.mjs     # 172 tests in 15 files: the eval harness (runner, grading, claims, judge, aggregation, report) and the shape of every case in questions.json
 ```
 
@@ -848,7 +849,8 @@ Zero-cost path, step by step: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 - Auth and roles for approvals. The public demo lets any visitor approve, protected only by caps, expiry and the nightly reset; a real deployment needs signed-in approvers, who may approve what, and a named actor in the audit log. Multi-tenant portfolios come with that.
 - Real delivery for reminders: a worker that reads the outbox and sends through an email or messaging provider, with consent and opt-out. Today nothing is sent on purpose.
 - A credit ledger, so an overpayment can be kept and applied to the next invoice instead of only being reported.
-- Run the rest of the evals against real Claude. The harness exists and is tested, and two of the eight write cases already grade the arguments the model chose (the amount, the method, the priority), but only the 20 read cases (three times) and the 16 lease cases (three times) have run against Claude, never with the judge, and none of the write, multi-tool, multi-turn, ambiguous, out-of-scope, injection and hallucination cases has. Those runs would be the first evidence about the assistant's behaviour outside lookups and lease questions, and the cases that need a model may turn out too strict.
+- Run the judge and a larger sample against real Claude. Every category has now run on Claude (the 20 first read cases and the 16 lease cases three times, the rest one to four times: [third live run](#third-live-run-the-remaining-28-cases-2026-10-12)), but never with the judge, so tone, language and grounding were checked by string checks and the guardrail only, and the write cases ran once. The cases that need a model may still turn out too strict or too lenient.
+- Measure `find_tenant` on real Claude. After a deploy, `node evals/run.mjs --url <demo> --only ambig-,en-11,ar-11 --runs 3 --delay-ms 7000` against the last sample of the ambiguous cases (24 of 30 runs passed), and read the trace of each run for whether the tool was called first and with what name. If the model still skips it for a first name, the prompt rule is not enough and the other tools should refuse a partial name instead of resolving it.
 - Measure what routing, caching and the guardrail do on real traffic. Two full runs with `prompt_caching` true and false fill in the `false` row of the [caching table](#prompt-caching) (the prefix is now over the cache minimum, by 156 tokens, which the second run of 2026-10-12 measured); the run's routing reasons show what share of the cases the complexity rules send to the larger model, and whether they send the right ones; the flagged answers show how often the guardrail is wrong in both directions. Until then `warn` is the right mode and `retry` is unproven.
 - Make the guardrail smarter where it is wrong: counts, group sums and fractions are recognised now, a rounding of a figure with decimals is recognised now, and the check does not read the quantity a figure is attached to (this tenant's balance, not any figure that happens to be present). Of the seven answers that the run of 2026-10-12 flagged, four are derived counts and sums, two (50 twice) a rounding of 49.8, and one (57,000) an unsupported figure that the flag rightly caught; but neither the answer nor the tool results of a run are stored, so that was read back by asking again: keep both for the flagged runs, on the admin page only like the question, before deciding on another rule. The judge could grade grounding on a sample of real answers to calibrate it.
 - Check the Content-Security-Policy on the deployed pages with a real browser's report: `img-src` is set, but the other directives are deliberately left open because the app loads fonts from Google and calls the API on another origin, and I have not tightened them.

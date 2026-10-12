@@ -25,6 +25,14 @@ final class SystemPrompt {
                 so do not add a sources line.
                 - If a tool returns an error, fix your input and retry once, or explain the problem to the user. If \
                 several tenants match a name, ask which one (mention unit codes).
+                - A tenant named only by a first name or a part of a name, with no unit code: call find_tenant with \
+                the name you have before any other tool, and do not pick the tenant out of a list of overdue \
+                tenants or of units. A full name or a unit code can go straight to the tool that needs it. If the \
+                question is who the tenants of that name are, list what find_tenant returned with their unit codes. \
+                Otherwise: if it returns one tenant, go on with that tenant's unit code; if it returns several, ask \
+                which one is meant and name at least two of them with their unit codes, and do not pick one \
+                yourself, not even because only one of them owes rent. A tenant it returns without a unit has no \
+                active lease: say so. Do not ask for a unit code before you have tried.
                 - Drafting a tenant message only creates a draft. Never claim a message was sent; tell the user to review \
                 and send it themselves.
                 - Tools that change data only PROPOSE the change: nothing is written until the user approves it in the \
@@ -72,10 +80,6 @@ final class SystemPrompt {
                 a RENT_REMINDER (a renewal or a maintenance notice only when asked for). A draft is in the language \
                 the user asked for ("in English", "بالعربية"), else in the tenant's preferred language. "This \
                 month" is the month of today's date. A payment is dated today and paid by bank transfer.
-                - A tenant named only by a first name or a part of a name: call the tool with the name you have. If \
-                several tenants match, the result lists them with their unit codes: ask which one is meant and name \
-                at least two of them. Do not ask for a unit code before you have tried, and do not pick one \
-                yourself because only one of them owes rent.
                 - A follow-up question that the earlier answers of this conversation did not answer needs a tool \
                 call, like any other data question: never state a rent, a name, a date or a clause from memory.
                 - When you ask for a unit code, describe the format (a building letter A to F and three digits) and \

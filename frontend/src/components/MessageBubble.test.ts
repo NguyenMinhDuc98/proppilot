@@ -190,7 +190,7 @@ describe('MessageBubble data sources', () => {
     'search_units', 'get_unit_details', 'find_overdue_tenants',
     'get_occupancy_summary', 'get_payment_history', 'draft_tenant_message',
     'record_payment', 'create_maintenance_request', 'send_tenant_reminder',
-    'search_lease_documents', 'find_expiring_leases',
+    'search_lease_documents', 'find_expiring_leases', 'find_tenant',
   ] as const
 
   it.each(toolNames)('names %s with a friendly label in both languages instead of the tool name', async (name) => {

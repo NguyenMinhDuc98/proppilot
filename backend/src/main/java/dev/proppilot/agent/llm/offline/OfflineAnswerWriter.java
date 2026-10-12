@@ -25,6 +25,7 @@ final class OfflineAnswerWriter {
             case "record_payment", "create_maintenance_request", "send_tenant_reminder" -> proposed(data, arabic);
             case "search_lease_documents" -> leaseClauses(data, arabic);
             case "find_expiring_leases" -> expiringLeases(data, arabic);
+            case "find_tenant" -> foundTenants(data, arabic);
             default -> data.toString();
         };
     }
@@ -173,6 +174,33 @@ final class OfflineAnswerWriter {
                 ? marker + " من الوحدة " + unit + " (" + tenant + ")، وثيقة العقد " + document + "، صفحة " + page + "."
                 : marker + " From unit " + unit + " (" + tenant + "), lease document " + document + ", page " + page
                   + ".";
+    }
+
+    private static String foundTenants(JsonNode d, boolean ar) {
+        int count = d.path("count").asInt();
+        if (count == 0) {
+            return ar ? "لا يوجد مستأجر بهذا الاسم." : "No tenant matches that name.";
+        }
+        var sb = new StringBuilder(ar ? "عدد المستأجرين المطابقين: " + count + "." : count == 1
+                ? "1 tenant matches:" : count + " tenants match:");
+        for (var tenant : d.path("tenants")) {
+            var name = tenant.path(ar ? "nameAr" : "nameEn").asText();
+            var unit = tenant.path("unitCode").asText();
+            sb.append("\n- ").append(name);
+            if (tenant.path("activeLease").asBoolean()) {
+                sb.append(ar ? "، الوحدة " : ", unit ").append(unit);
+            } else {
+                sb.append(ar ? "، لا يوجد عقد ساري" : ", no active lease");
+            }
+        }
+        int shown = d.path("shown").asInt();
+        if (shown < count) {
+            sb.append("\n\n").append(ar ? "عُرض أول " + shown + " من " + count + "؛ اكتب جزءًا أطول من الاسم لتضييق النتيجة."
+                    : "Showing " + shown + " of " + count + "; give more of the name to narrow it down.");
+        } else if (count > 1) {
+            sb.append("\n\n").append(ar ? "أي مستأجر تقصد؟" : "Which one do you mean?");
+        }
+        return sb.toString();
     }
 
     private static String expiringLeases(JsonNode d, boolean ar) {

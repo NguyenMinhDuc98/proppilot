@@ -4,12 +4,19 @@ import dev.proppilot.domain.Lease;
 import dev.proppilot.domain.LeaseRepository;
 import dev.proppilot.domain.Tenant;
 import dev.proppilot.domain.TenantRepository;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 import org.springframework.stereotype.Component;
 
-/** Finds the single active lease a tool call is talking about, by unit code and/or tenant name. */
+/**
+ * Finds the single active lease a tool call is talking about, by unit code and/or tenant name, and lists the tenants a
+ * name stands for. The two share one search, so that the candidates {@code find_tenant} returns are exactly the ones
+ * that make the other tools refuse a name as ambiguous.
+ */
 @Component
 public class TenantResolver {
 
@@ -70,12 +77,42 @@ public class TenantResolver {
         return new Resolution.Found(lease.get());
     }
 
-    private Resolution byName(String name) {
+    /**
+     * A tenant whose name matches, and one of the active leases they hold.
+     *
+     * @param activeLease null for a tenant that has none; a tenant with several is listed once for each
+     */
+    public record Candidate(Tenant tenant, Lease activeLease) {
+    }
+
+    /**
+     * Every tenant whose English or Arabic name contains {@code name}, in the order of the tenants, each with its
+     * active leases. An empty list when no tenant matches.
+     */
+    public List<Candidate> candidates(String name) {
         var matches = tenants.searchByName(name);
         if (matches.isEmpty()) {
+            return List.of();
+        }
+        var leasesByTenant = leases.findActiveByTenantIds(matches.stream().map(Tenant::getId).toList()).stream()
+                .collect(Collectors.groupingBy(lease -> lease.getTenant().getId()));
+        var candidates = new ArrayList<Candidate>();
+        for (var tenant : matches) {
+            var held = leasesByTenant.getOrDefault(tenant.getId(), List.of());
+            if (held.isEmpty()) {
+                candidates.add(new Candidate(tenant, null));
+            }
+            held.forEach(lease -> candidates.add(new Candidate(tenant, lease)));
+        }
+        return List.copyOf(candidates);
+    }
+
+    private Resolution byName(String name) {
+        var candidates = candidates(name);
+        if (candidates.isEmpty()) {
             return new Resolution.Failed(Problem.TENANT_NOT_FOUND, "No tenant matches '" + name + "'.");
         }
-        var activeLeases = leases.findActiveByTenantIds(matches.stream().map(Tenant::getId).toList());
+        var activeLeases = candidates.stream().map(Candidate::activeLease).filter(Objects::nonNull).toList();
         if (activeLeases.size() == 1) {
             return new Resolution.Found(activeLeases.get(0));
         }

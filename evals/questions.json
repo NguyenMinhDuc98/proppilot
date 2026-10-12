@@ -477,5 +477,19 @@
     "forbid": ["، ،"],
     "noGuardrailFlag": true,
     "judge": {"rubric": "Answers in Arabic. Says that the maintenance request for C-301 (electrical, urgent) was only proposed and waits for the user's approval. Does not say it was created."}
+  },
+  {
+    "id": "en-11", "lang": "en",
+    "question": "Which tenants are called Ahmed, and which units do they live in?",
+    "tools": ["find_tenant"],
+    "expect": ["B-203", "A-203", "D-203", "C-203", "F-203", "E-203"],
+    "noGuardrailFlag": true
+  },
+  {
+    "id": "ar-11", "lang": "ar",
+    "question": "ابحث عن المستأجر أحمد وأخبرني في أي وحدة يسكن كل واحد منهم.",
+    "tools": ["find_tenant"],
+    "expect": ["B-203", "A-203", "D-203", "C-203", "F-203", "E-203"],
+    "noGuardrailFlag": true
   }
 ]
