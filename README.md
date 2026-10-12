@@ -404,7 +404,7 @@ INFO ... dev.proppilot.agent.AgentLoop : Grounding guardrail asks run <run id> t
 - It does not read meaning. A wrong status ("paid" for "overdue"), a wrong direction, a misquoted clause that cites a real ref, a tenant named by first name alone, an amount written in words, or a month named without a day are not checked.
 - A date or a figure that the model took from the question counts as grounded, because the question is evidence.
 
-The offline assistant quotes tool results, so the offline eval run flagged no answer. The only measurement of the guardrail on real Claude answers is the one above (7 of 20 flagged, all correct, under the earlier rules); its miss rate is unknown, and so is the false positive rate of the current rules. The eval harness counts flagged answers (and a case can require that none is flagged) so that the next full run measures it.
+The offline assistant quotes tool results, so the offline eval run flagged no answer. The only measurement of the guardrail on real Claude answers is the one above (7 of 20 flagged, all correct, under the earlier rules); its miss rate is unknown, and so is the false positive rate of the current rules. The eval harness counts flagged answers, and a case can require that none is flagged: the seven read cases whose correct answers that run flagged do, so that the next full run measures it and reports a false positive as a failure.
 
 ## Tracing and observability
 
@@ -517,7 +517,7 @@ A case is a question (or a conversation, for the follow-up cases) with what a go
 
 ### Against real Claude: what exists and what does not
 
-Two runs of the 20 read questions against real Claude (Haiku 4.5, seeded data) exist. The table below is from the first, on 2026-10-08 at commit `1a9eaf7` with `claude-haiku-4-5-20251001`, from a laptop talking to the Anthropic API; it is older than the write actions, the lease tools, the guardrail and this harness. The second, on 2026-10-12 against the deployed demo with one run per question, is the first measurement of the guardrail and is reported in [its section](#grounding-guardrail); its cost and cache tokens are in [the prompt caching section](#prompt-caching) and its pass rate (18 of 20) is not otherwise recorded in this section.
+Two runs of the 20 read questions against real Claude (Haiku 4.5, seeded data) exist. The table below is from the first, on 2026-10-08 at commit `1a9eaf7` with `claude-haiku-4-5-20251001`, from a laptop talking to the Anthropic API; it is older than the write actions, the lease tools, the guardrail and this harness. The second, on 2026-10-12 against the deployed demo, is the [first live run](#first-live-run-2026-10-12) below.
 
 | Set | Passed | Pass rate | Avg cost / question | Avg latency |
 |---|---|---|---|---|
@@ -537,6 +537,25 @@ node --test evals/*.test.mjs                                     # the harness's
 ```
 
 Against a public deployment add `--delay-ms 7000` (it answers 10 chat requests a minute by default), expect every request to count against its daily question cap, and leave the write cases out or reset first: they leave `PROPOSED` actions on the Activity page. [`evals/README.md`](evals/README.md#against-a-deployment) has the details, including why `multi-03`, `rag-11` and `rag-12` stop matching on a database that is older than a few weeks.
+
+#### First live run (2026-10-12)
+
+**One run of one model against the deployed demo, without the judge:** 20 questions, each asked once, so it says nothing about variance, and a case that passed once may be flaky. Tone, language and grounding were not scored, and visitors can change the demo's data. It is the first run since the write actions, the lease tools and the guardrail existed; the answers are not in the repository, so these are the figures recorded at the time. [`evals/README.md`](evals/README.md#first-live-run-2026-10-12) has the detail.
+
+| | |
+|---|---|
+| Date and model | 2026-10-12, Haiku 4.5 (`claude-haiku-4-5-20251001`) |
+| Cases | the 20 read cases of `evals/questions.json`, 1 run each |
+| Passed | 18 of 20 |
+| Average cost per question | $0.0099 |
+| Latency (average, p95) | not recorded |
+| Answers the guardrail flagged | 7 of 20, all of them correct ([the guardrail section](#grounding-guardrail)) |
+| Cache write / read tokens | 43,427 / 4,671 ([prompt caching](#prompt-caching)) |
+
+- **`ar-08` failed on the grader.** The answer was right; the model wrote "لم يتم الدفع" for an unpaid month and the case did not list that wording.
+- **`ar-10` failed on the model.** Asked for an English reminder for unit B-203, it asked which kind of reminder was meant instead of drafting a rent reminder.
+
+What 3.1 changed because of the run: the grader lists the Arabic wordings of an unpaid month; seven read cases (`en-04`, `en-07`, `en-08`, `en-09`, `ar-03`, `ar-06`, `ar-08`) carry `noGuardrailFlag`, so a correct answer that the guardrail flags is reported as their failure; the guardrail grounds a count, a sum and a rate that follow from a result; tool results write amounts as plain decimals instead of `4.8E+3`; the system prompt gained conventions and defaults (a reminder is a rent reminder, which also takes the prefix over the cache minimum); and the conversation is marked for caching from the third call of a run. None of that has been measured on real Claude: no run has been made since.
 
 ## Tech stack
 
@@ -622,7 +641,7 @@ A host may pass a variable on empty, or as only spaces. For `LLM_PRICE_INPUT_PER
 ```bash
 cd backend && ./mvnw verify      # 2104 tests in 137 classes; 56 of them are integration tests (`*IT`) that start PostgreSQL (pgvector) via Testcontainers, so Docker is needed
 cd frontend && npm test          # 488 Vitest tests in 29 files: SSE parser, chat store, approval card, Activity page, Markdown sanitising, citation chips and the clause drawer, trace builder and drawer, guardrail badge, admin traces page, Usage page, error codes, info badge, matching English and Arabic message keys
-node --test evals/*.test.mjs     # 169 tests in 15 files: the eval harness (runner, grading, claims, judge, aggregation, report) and the shape of every case in questions.json
+node --test evals/*.test.mjs     # 172 tests in 15 files: the eval harness (runner, grading, claims, judge, aggregation, report) and the shape of every case in questions.json
 ```
 
 Backend: the agent loop against a scripted LLM, retry policy and the Anthropic client against an in-process HTTP server (429/529 then success, 401, mid-stream errors, `max_tokens` truncation), run outcomes (OK, ERROR, TRUNCATED, ABORTED, deadline), admin authentication, every tool against the real seeded database, the SSE endpoint end to end, rate limiter, cost calculator, units API.
