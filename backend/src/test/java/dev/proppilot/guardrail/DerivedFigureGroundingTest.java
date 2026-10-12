@@ -9,12 +9,13 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 
 /**
- * The first measurement with real Claude (2026-10-12, 20 questions) flagged seven answers, all of them correct. This is
- * what the new rules do with them. The fixtures are the results that the tools behind those questions return from the
- * seeded database on that date, read with the same tools through the offline assistant (the amounts carry an exponent,
- * as Jackson writes a whole BigDecimal): the stored trace of the live run holds no tool results, so they are what the
- * model was given if the demo's data was the seed's, which I could not check. The answers are wordings I made up, in
- * English and in Arabic, of the figures that were flagged; they are not recordings.
+ * The first measurement of the guardrail on real Claude answers (2026-10-12, the 20 read questions) flagged seven
+ * answers, all of them correct. This is what the rules for derived figures do with them. The fixtures are the results
+ * that the tools behind those questions return from the seeded database on that date, read with the same tools through
+ * the offline assistant (the amounts carry an exponent, as Jackson writes a whole BigDecimal): the stored trace of the
+ * live run holds no tool results, so they are what the model was given if the demo's data was the seed's, which I could
+ * not check. The answers are wordings I made up, in English and in Arabic, of the figures that were flagged; they are
+ * not recordings.
  *
  * <p>Each test names the derivation that makes a figure of an answer follow from a result. Of the seven flagged
  * figures, four follow from a rule (11 and 11, 19,200 and 19,200) and three follow from none that this class can show
