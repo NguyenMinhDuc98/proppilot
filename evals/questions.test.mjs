@@ -211,6 +211,23 @@ test('the not-found cases fail a figure for the unit, and do not fail a word tha
   assert.equal(gradedFor('trap-02', 'The rent is SAR 4,800').unwantedFacts.length, 1)
 })
 
+test('ar-08 accepts the Arabic wordings of an unpaid month, however they are typed, and still wants one', () => {
+  // The first live run (2026-10-12) failed a correct answer that said "لم يتم الدفع". The answers are wordings made
+  // up around the status, not recordings.
+  const unpaid = ['UNPAID', 'غير مدفوع', 'غير مدفوعة', 'لم يُدفع', 'لم تُدفع', 'لم يتم الدفع', 'لم يتم السداد',
+    'لم يُسدد', 'لم تُسدد', 'غير مسدد', 'غير مسددة']
+  const withMarks = (wording) => `المستأجر أحمد الحربي، شهر أكتوبر: ${wording}، ومبلغه 4,800 ريال.`
+  for (const wording of unpaid) {
+    assert.deepEqual(gradedFor('ar-08', withMarks(wording)).missingFacts, [], wording)
+    const plain = wording.replace(/[\u064B-\u065F\u0670]/g, '')
+    assert.deepEqual(gradedFor('ar-08', withMarks(plain)).missingFacts, [], plain)
+  }
+  const paid = ['دفع أحمد الحربي الإيجار في موعده كل شهر.', 'أحمد الحربي: تم الدفع في شهر يونيو بعد تأخر يومين.',
+    'أحمد الحربي يدفع 4,800 ريال شهريًا.']
+  for (const answer of paid) assert.equal(gradedFor('ar-08', answer).missingFacts.length, 1, answer)
+  assert.deepEqual(gradedFor('ar-08', 'الوحدة B-203: لم يتم الدفع').missingFacts, ['أحمد الحربي'])
+})
+
 test('a case with an empty answer is graded without failing on a missing field', () => {
   for (const item of cases) {
     assert.doesNotThrow(() => grade(item, { answer: '', tools: [], error: null }), item.id)
