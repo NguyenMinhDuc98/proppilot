@@ -162,7 +162,7 @@ The same 20 read questions on build `eeb9515` and the 16 lease cases, one run ea
 | Cache write / read tokens (20 questions) | 43,427 / 4,671 | 4,252 / 165,828 |
 | The 16 lease cases | not run | 14 of 16, then 32 of 32 (two runs, after the fix) |
 
-It settles that `ar-08` and `ar-10` pass, and that the prompt prefix is 4,252 tokens, 156 over the 4,096 that Haiku 4.5 needs, so it is cached. It does not settle the effect of caching against a run with `PROMPT_CACHING=false`, routing, the judge, embeddings, or any case outside the read and lease sets: those have not run on real Claude.
+It settles that `ar-08` and `ar-10` pass, and that the prompt prefix is 4,252 tokens, 156 over the 4,096 that Haiku 4.5 needs, so it is cached. It does not settle the effect of caching against a run with `PROMPT_CACHING=false`, routing, the judge, or embeddings. The 28 other cases ran later the same day: see the [third live run](../README.md#third-live-run-the-remaining-28-cases-2026-10-12).
 
 ## Known real-model findings
 
