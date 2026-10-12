@@ -25,19 +25,20 @@ class PromptPrefixIT extends PostgresIntegrationTest {
     private static final int CACHE_MINIMUM_TOKENS = 4_096;
 
     /**
-     * What the prefix has to be at the ratio below: about 7 percent over the minimum, so that a prefix that is a
-     * little denser in tokens than this estimate still crosses it.
+     * What the prefix has to be at the ratio below: a little over the minimum, so that a prefix a few tokens denser
+     * than this estimate still crosses it. The margin is small on purpose: the prefix is only 4,252 tokens.
      */
-    private static final int REQUIRED_ESTIMATED_TOKENS = 4_400;
+    private static final int REQUIRED_ESTIMATED_TOKENS = 4_200;
 
     /**
-     * Characters per token of the prefix as the API counted it: on 2026-10-12 the prefix of 11,774 characters (the 11
-     * tool definitions as sent, 8,711, and the system prompt, 3,063) was 3,660 tokens, the first call of every run
-     * reporting that and no cache write. It is a ratio of this mix of JSON and prose, not a tokenizer, and the API's
-     * own tool-use instructions are in the 3,660. Prose tokenizes less densely than JSON, so what was added since is
-     * worth a little less than this ratio says, which the 4,400 above allows for.
+     * Characters per token of the prefix as the API counted it: on 2026-10-12 the prefix of 15,311 characters (the 11
+     * tool definitions as sent and the system prompt) was written to the cache by the first call of a run as 4,252
+     * tokens, which is 3.60 characters per token. It is a ratio of this mix of JSON and prose, not a tokenizer. The
+     * estimate made before that measurement, 3.22 characters per token from the 3,660-token prefix of the first live
+     * run, was too low a ratio for what was added (prose is less dense than JSON) and put the prefix at 4,760 tokens,
+     * 12 percent more than it was.
      */
-    private static final double CHARS_PER_TOKEN = 11_774 / 3_660.0;
+    private static final double CHARS_PER_TOKEN = 15_311 / 4_252.0;
 
     @Autowired
     ToolRegistry registry;
