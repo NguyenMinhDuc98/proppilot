@@ -124,7 +124,7 @@ A blank value (empty, or only spaces) of any of these means what an unset one me
 
 ### The guardrail mode
 
-`warn` (the value in `render.yaml`) checks every delivered answer, flags what nothing supports, writes one WARN line to the log (`Grounding guardrail flagged run ...`, with the kinds and values, never the answer) and changes nothing. `retry` also asks for such an answer once more, which is an extra model call per flagged answer, on the larger model when one is configured. `off` checks nothing. Start with `warn`, read the flagged answers on the admin page (`Flagged answers only`) for a while, and only then consider `retry`: the check has no measured false positive rate on real answers, and it flags a rounded or derived figure like an invented one.
+`warn` (the value in `render.yaml`) checks every delivered answer, flags what nothing supports, writes one WARN line to the log (`Grounding guardrail flagged run ...`, with the kinds and values, never the answer) and changes nothing. `retry` also asks for such an answer once more, which is an extra model call per flagged answer, on the larger model when one is configured. `off` checks nothing. Start with `warn`, read the flagged answers on the admin page (`Flagged answers only`) for a while, and only then consider `retry`: the check was measured once on real answers (7 of 20 flagged, all correct, before counts, sums and fractions were grounded) and has no measured rate since, and it flags a rounded figure, or one derived in another way, like an invented one.
 
 ### Prompt caching
 
