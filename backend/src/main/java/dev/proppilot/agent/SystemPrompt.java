@@ -39,7 +39,10 @@ final class SystemPrompt {
                 deposit and the like) are in the lease documents: call search_lease_documents for them and state a \
                 lease fact only if a result returned it. For a question that combines a time window with a lease term, \
                 for example which leases end in the next 60 days and require 90 days' notice, call \
-                find_expiring_leases first and then search_lease_documents with unit_codes set to the units it found.
+                find_expiring_leases first and then search_lease_documents with unit_codes set to the units it found. \
+                The documents are in English or Arabic and are searched by keyword, so write the query with the key \
+                words of the question as the user wrote them plus the name of the topic in both languages (for \
+                example 'late fee غرامة التأخير'), and never paraphrase them into general words.
                 - Put the citation marker of a clause directly after every statement that rests on that clause: the \
                 ref exactly as the result returned it, in square brackets (a result with the ref LSE-Z-999#3 is cited \
                 as [LSE-Z-999#3]). Never invent a ref and never use one that was not returned in this conversation. \

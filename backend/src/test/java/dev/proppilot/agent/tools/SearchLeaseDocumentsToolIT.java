@@ -221,7 +221,7 @@ class SearchLeaseDocumentsToolIT extends FakeEmbeddingIntegrationTest {
     }
 
     @Test
-    void everyNamedLeaseGetsAClauseEvenWhenThereAreMoreLeasesThanTopK() throws Exception {
+    void everyNamedLeaseGetsTwoClausesEvenWhenThereAreMoreLeasesThanTopK() throws Exception {
         var leases = new ArrayList<Document>();
         for (int i = 0; i < 7; i++) {
             leases.add(document(i % 2 == 0 ? "en" : "ar", i / 2));
@@ -232,8 +232,11 @@ class SearchLeaseDocumentsToolIT extends FakeEmbeddingIntegrationTest {
 
         var documents = new ArrayList<String>();
         d.get("results").forEach(clause -> documents.add(clause.get("document").asText()));
-        assertThat(documents).as("default top_k is 4, below the seven leases").hasSize(7)
-                .containsExactlyInAnyOrderElementsOf(leases.stream().map(Document::code).toList());
+        assertThat(documents).as("default top_k is 4, below the seven leases").hasSize(14)
+                .containsOnlyElementsOf(leases.stream().map(Document::code).toList());
+        assertThat(documents.stream().distinct().count()).isEqualTo(7);
+        assertThat(documents.stream().collect(java.util.stream.Collectors.groupingBy(code -> code,
+                java.util.stream.Collectors.counting())).values()).containsOnly(2L);
     }
 
     @Test
@@ -392,7 +395,7 @@ class SearchLeaseDocumentsToolIT extends FakeEmbeddingIntegrationTest {
         assertThat(d.get("retrieval").asText()).isEqualTo("keyword");
         var refs = new ArrayList<String>();
         d.get("results").forEach(clause -> refs.add(clause.get("ref").asText()));
-        assertThat(refs).containsExactlyInAnyOrderElementsOf(leases.stream().map(lease -> lease.code() + "#4").toList());
+        assertThat(refs).hasSize(10).containsAll(leases.stream().map(lease -> lease.code() + "#4").toList());
     }
 
     @Test

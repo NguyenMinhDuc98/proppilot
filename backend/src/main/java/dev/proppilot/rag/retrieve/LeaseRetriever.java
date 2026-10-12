@@ -56,12 +56,18 @@ public class LeaseRetriever {
             )
             select id, code, ordinal from scoped order by distance, code, ordinal limit ?""";
 
+    /**
+     * A clause whose title names what the question asks about comes before one that only mentions it: the early
+     * termination clause says "notice" as often as the clause titled "Notice period" does.
+     */
     private static final String BY_FULL_TEXT = """
             select c.id, d.code, c.ordinal
             from lease_chunks c join lease_documents d on d.id = c.document_id,
                  (select to_tsquery('arabic', ?) || to_tsquery('english', ?) as query) q
             where c.fts @@ q.query {scope}
-            order by ts_rank_cd(c.fts, q.query, 1) desc, d.code, c.ordinal
+            order by (to_tsvector('arabic', coalesce(c.section_title, ''))
+                      || to_tsvector('english', coalesce(c.section_title, ''))) @@ q.query desc,
+                     ts_rank_cd(c.fts, q.query, 1) desc, d.code, c.ordinal
             limit ?""";
 
     /** {@code <%} is true where the query is similar to a stretch of the chunk, as far as the threshold says. */

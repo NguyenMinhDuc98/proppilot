@@ -91,6 +91,29 @@ class LeaseRetrieverKeywordIT extends CorpusIntegrationTest {
     }
 
     @Test
+    void theClauseWhoseTitleNamesTheTopicOutranksOneThatOnlyMentionsIt() {
+        long lease = leaseOf("en");
+        // A bloated question, as a model writes it: the early termination clause says "notice" as often as the notice
+        // period clause, but only one of them is titled "Notice period".
+        var question = "فترة الإشعار notice period notification days advance warning";
+
+        var result = retriever.retrieve(question, Set.of(lease), 2);
+
+        assertThat(result.chunks()).isNotEmpty();
+        assertThat(result.chunks().get(0).ref()).isEqualTo(refOf(lease, "Notice period"));
+    }
+
+    @Test
+    void theArabicClauseWhoseTitleNamesTheTopicOutranksOneThatOnlyMentionsIt() {
+        long lease = leaseOf("ar");
+
+        var result = retriever.retrieve("ما فترة الإشعار notice period days advance warning", Set.of(lease), 2);
+
+        assertThat(result.chunks()).isNotEmpty();
+        assertThat(result.chunks().get(0).ref()).isEqualTo(refOf(lease, "مدة الإشعار"));
+    }
+
+    @Test
     void anEnglishWordIsFoundByItsStem() {
         long lease = leaseOf("en");
 

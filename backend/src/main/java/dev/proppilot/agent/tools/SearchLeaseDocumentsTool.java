@@ -25,6 +25,8 @@ import org.springframework.stereotype.Component;
 public class SearchLeaseDocumentsTool implements OwnTransactionTool {
 
     private static final int MAX_UNIT_CODES = 10;
+    /** The least that each of several named leases gets: two of ten leases are twenty clauses, about 4,000 tokens. */
+    private static final int CLAUSES_FOR_EACH_NAMED_LEASE = 2;
     private static final int MAX_UNIT_CODE_LENGTH = 20;
     private static final int MAX_TENANT_NAME_LENGTH = 100;
     /** Every search embeds its question with a paid provider, so a reply cannot ask for a search a hundred times. */
@@ -70,13 +72,15 @@ public class SearchLeaseDocumentsTool implements OwnTransactionTool {
     @Override
     public JsonNode inputSchema() {
         return ToolSchema.object()
-                .string("query", "What to look for, in the words of the question, up to "
-                        + LeaseRetriever.MAX_QUERY_LENGTH + " characters")
+                .string("query", "What to look for, up to " + LeaseRetriever.MAX_QUERY_LENGTH + " characters: the key "
+                        + "words of the question as they were written, plus the name of the topic in English and in "
+                        + "Arabic (for example 'late fee غرامة التأخير'). Do not replace them with general words such "
+                        + "as 'terms and conditions': the documents are searched by keyword")
                 .string("unit_code", "Search the lease of this unit, such as A-203")
                 .stringArray("unit_codes", "Search the leases of these units, such as A-203", MAX_UNIT_CODES)
                 .string("tenant_name", "Search the lease of this tenant, by name in English or Arabic")
                 .integer("top_k", "How many clauses to return, 1 to " + LeaseRetriever.MAX_TOP_K + " (default "
-                        + LeaseRetriever.DEFAULT_TOP_K + "); several units share it, each getting at least one")
+                        + LeaseRetriever.DEFAULT_TOP_K + "); several units share it, each getting at least two")
                 .required("query")
                 .build();
     }
@@ -99,8 +103,9 @@ public class SearchLeaseDocumentsTool implements OwnTransactionTool {
     }
 
     /**
-     * Several named leases share top_k between them, and each gets at least one clause: a question about seven
-     * leases must not come back with the clauses of four of them.
+     * Several named leases share top_k between them, and each gets at least two clauses: a question about seven
+     * leases must not come back with the clauses of four of them, and the one best clause of a lease is not always
+     * the one the question means.
      */
     private RetrievalResult search(String query, LeaseScopeResolver.Scope scope, int topK) {
         if (scope.everything()) {
@@ -110,7 +115,7 @@ public class SearchLeaseDocumentsTool implements OwnTransactionTool {
         if (leaseIds.size() < 2) {
             return retriever.retrieve(query, leaseIds, topK);
         }
-        return retriever.retrievePerLease(query, leaseIds, Math.max(1, topK / leaseIds.size()));
+        return retriever.retrievePerLease(query, leaseIds, Math.max(CLAUSES_FOR_EACH_NAMED_LEASE, topK / leaseIds.size()));
     }
 
     private ToolResult result(String query, LeaseScopeResolver.Scope scope, RetrievalMode retrieval,
