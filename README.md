@@ -44,42 +44,94 @@ Arabic is a full right-to-left mirror, not just translated text, and the layout 
 
 ## Architecture
 
+Three views, one for each thing that is easy to get wrong when reading the code: how a question travels, how a change gets approved, and how a lease clause reaches an answer. The names are the classes of the code base.
+
+### The request path
+
+One question, from the browser to the stored run. Steps 3 to 6 repeat for every model call of a run, the guardrail reads only the final answer, and the SSE events are the only way the browser hears of any of it ([events](#sse-events), [routing](#model-routing-and-fallback), [guardrail](#grounding-guardrail), [traces](#tracing-and-observability)).
+
 ```mermaid
 flowchart LR
-    UI["Vue 3 SPA<br/>(Pinia, Element Plus, vue-i18n)"] -- "POST /api/chat" --> API["Spring Boot 3<br/>ChatController"]
-    API -- "SSE: tool_call · tool_result (+ sources) · action_proposed · token · revise · guardrail · done · error" --> UI
-    API --> LOOP["AgentLoop<br/>(max 6 iterations)"]
-    LOOP <-- "messages + tool defs / tool calls" --> LLM{"LlmClient"}
-    LLM --> CLAUDE["Claude Messages API<br/>(streaming)"]
-    LLM --> OFFLINE["Offline assistant<br/>(rule-based, free)"]
-    LOOP -- "execute(name, input)" --> REG["ToolRegistry"]
-    REG --> T["search_units · get_unit_details · find_overdue_tenants<br/>get_occupancy_summary · get_payment_history · draft_tenant_message"]
-    T --> DB[("PostgreSQL<br/>Flyway schema + seed")]
-    REG --> W["record_payment · create_maintenance_request<br/>send_tenant_reminder<br/>(propose only)"]
-    W -- "store a PROPOSED action" --> ACT[("pending_actions<br/>expire if undecided")]
-    UI -- "preview · approve + Idempotency-Key · reject" --> APPROVAL["ActionService<br/>(one transaction per approval)"]
-    APPROVAL -- "lock and re-validate" --> ACT
-    APPROVAL -- "payments · maintenance_requests<br/>outbox_messages (delivered = false)" --> DB
-    APPROVAL --> AUDIT[("audit_log<br/>who · when · before · after")]
-    API --> RUNS[("chat_runs + run_llm_calls + run_tool_calls<br/>tokens · cache · cost · latency · trace")]
-    UI -- "GET /api/units, /api/stats, /api/info, /api/runs/{id}/trace, /api/actions, /api/audit, /api/lease-documents" --> API
+    B["Browser<br/>Vue 3 SPA"] -->|"1 POST /api/chat"| C["ChatController<br/>validate, rate limit,<br/>daily cap"]
+    C -->|"2 ChatService"| A["AgentLoop<br/>6 model calls at most,<br/>90 s deadline"]
+    A -->|"3 which model"| R["ModelRouter<br/>default, larger,<br/>fallback"]
+    A -->|"4 messages, tool defs"| L["LlmClient<br/>Claude or offline"]
+    L -->|"5 text, tool calls"| A
+    A -->|"6 execute"| T["ToolRegistry<br/>11 tools"]
+    T --> D[("PostgreSQL")]
+    A -->|"7 final answer"| G["GroundingChecker<br/>warn: flags it<br/>retry: asks once more"]
+    A -->|"8 save"| S["chat_runs, run_llm_calls,<br/>run_tool_calls<br/>RunTracer"]
+    A -->|"SSE"| E["tool_call, tool_result + sources,<br/>action_proposed, token, revise,<br/>guardrail, done, error"]
+    E --> B
+```
 
-    REG --> L["search_lease_documents · find_expiring_leases<br/>(read only)"]
-    L -- "question" --> RETR["LeaseRetriever<br/>vector + full text + trigram<br/>fused with RRF (k = 60)"]
-    RETR --> CHUNKS[("lease_chunks<br/>pgvector HNSW · tsvector · pg_trgm")]
-    L -- "clauses, with citation refs" --> LOOP
-    L -. "sources: the clauses found<br/>(never sent to the model)" .-> API
+### Approving a change
 
-    subgraph INGEST["Lease corpus: written in the background at startup, from the database rows"]
-        SEED["LeaseDocumentSeeder<br/>first 30 active leases"] --> GEN["LeasePdfGenerator<br/>PDFBox + ICU4J, English or Arabic"]
-        GEN --> DOCS[("lease_documents<br/>PDF bytes")]
-        GEN --> READ["PdfTextExtractor<br/>PDFBox text, a page at a time"]
-        READ --> CUT["LeaseChunker<br/>one chunk per clause"]
-        CUT --> CHUNKS
-        EMB["EmbeddingClient<br/>Voyage AI, or none"] -. "vectors, when a provider is set" .-> CHUNKS
+The agent can only propose. No business table changes until a person approves, and everything after the proposal is a server fact: the preview, the key, the row lock and the audit entry ([details](#human-in-the-loop-write-actions)).
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant B as Browser
+    participant A as AgentLoop and record_payment
+    participant S as ActionService
+    participant D as PostgreSQL
+
+    B->>A: POST /api/chat "Record 4,950 SAR for unit A-504"
+    A->>S: propose(RECORD_PAYMENT, args, runId)
+    S->>D: validate, store a PROPOSED action and its audit entry
+    Note over D: payments table untouched
+    A-->>B: SSE action_proposed (preview, expiresAt), then the answer
+    B->>S: POST /api/actions/{id}/preview, optional edit
+    S-->>B: the diff, nothing written
+    alt approved within ACTION_TTL_MINUTES
+        B->>S: POST /api/actions/{id}/approve, Idempotency-Key K
+        S->>D: one transaction, lock the action row
+        S->>D: validate again, lock the invoices, execute, audit APPROVED with before and after
+        S-->>B: APPROVED, replayed false
+    else nobody decided in time
+        B->>S: approve
+        S-->>B: 410, the status flips to EXPIRED, no business table touched
+    else the data changed since the proposal
+        B->>S: approve
+        S-->>B: 422, rolled back, status FAILED with the reason
     end
-    DB --> SEED
-    RETR -. "embeds the question" .-> EMB
+    Note over S,D: two approvals at once queue on the row lock, the second sees the first
+    opt a retry after a lost response
+        B->>S: approve with the same key K
+        S-->>B: the first outcome, replayed true, nothing executed
+    end
+    opt another key on a decided action
+        B->>S: approve with key K2
+        S-->>B: 409, nothing executed
+    end
+    B->>A: POST /api/chat with the actionId only
+    A-->>B: a confirmation the server wrote from the stored action, no tools offered
+```
+
+### The lease search pipeline
+
+Documents are written from the database rows at startup and read back like any uploaded PDF, so what is searched is what a reader of the PDF would find. A question is answered from the fused result of up to three lists, and the browser gets the clauses on a side channel that the model never sees ([details](#lease-search-rag)).
+
+```mermaid
+flowchart TB
+    subgraph Startup["At startup"]
+        direction LR
+        S["LeaseDocumentSeeder<br/>30 active leases"] --> G["LeasePdfGenerator<br/>PDF from DB rows"]
+        G --> P[("lease_documents<br/>PDF bytes")]
+        G --> X["PdfTextExtractor<br/>text read back"]
+        X --> K["LeaseChunker<br/>one chunk per clause"]
+        K --> C[("lease_chunks<br/>text, tsvector,<br/>pg_trgm, vector")]
+        E["EmbeddingBackfill<br/>Voyage, optional"] -.-> C
+    end
+    subgraph Question["Per question"]
+        direction LR
+        T["search_lease_documents"] --> R["LeaseRetriever<br/>vector, full text, trigram"]
+        R --> F["RRF, k = 60"]
+        F -->|"clauses with refs"| M["Model writes<br/>[LSE-A-203#5]"]
+        F -->|"ToolResult.ui, never<br/>sent to the model"| U["Browser: chip,<br/>clause drawer, PDF"]
+    end
+    Startup -->|"stored once, searched<br/>by every question"| Question
 ```
 
 ## How the agent loop works
