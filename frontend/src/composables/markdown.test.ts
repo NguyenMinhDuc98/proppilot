@@ -33,6 +33,30 @@ describe('renderMarkdown', () => {
     expect(html).toContain('<blockquote dir="auto">')
   })
 
+  it('draws no image, whatever way it is written, so nothing is fetched by an answer', () => {
+    const tree = renderMarkdown(
+      '![x](https://evil.test/p.png?q=secret) <img src="https://evil.test/a.png"> '
+        + '<picture><source srcset="https://evil.test/b.png"></picture> <video src="https://evil.test/c.mp4"></video> '
+        + '<iframe src="https://evil.test"></iframe> <link rel="stylesheet" href="https://evil.test/s.css">',
+    )
+
+    expect(tree.querySelector('img, picture, source, video, audio, iframe, object, embed, link, style')).toBeNull()
+    const holder = document.createElement('div')
+    holder.append(tree)
+    expect(holder.innerHTML).not.toContain('evil.test/p.png')
+  })
+
+  it('keeps a link, opens it in a new tab and hands over nothing of the page', () => {
+    const tree = renderMarkdown('[the docs](https://example.test/docs) and <a href="https://example.test/x">x</a>')
+
+    const links = [...tree.querySelectorAll('a')]
+    expect(links).toHaveLength(2)
+    for (const link of links) {
+      expect(link.getAttribute('target')).toBe('_blank')
+      expect(link.getAttribute('rel')).toBe('noopener noreferrer')
+    }
+  })
+
   it('renders Arabic text unchanged', () => {
     expect(htmlOf('**أحمد الحربي**')).toContain('<strong>أحمد الحربي</strong>')
   })
