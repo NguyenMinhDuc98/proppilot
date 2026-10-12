@@ -5,9 +5,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.proppilot.PostgresIntegrationTest;
+import java.math.BigDecimal;
+import java.sql.Date;
 import java.time.Clock;
 import java.time.LocalDate;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 
@@ -106,6 +111,63 @@ class ToolsIT extends PostgresIntegrationTest {
         var days = d.get("tenants").findValues("daysOverdue").stream().map(JsonNode::asInt).toList();
         assertThat(days).isSortedAccordingTo(java.util.Comparator.reverseOrder());
         assertThat(d.get("tenants").findValuesAsText("nameEn")).contains("Ahmed Al-Harbi");
+    }
+
+    /** The chronic payer's row in the overdue list, and what the invoices past the threshold add up to in the database. */
+    private JsonNode overdueRowOfTheChronicPayer(int minDays) throws Exception {
+        var unit = chronicUnit();
+        for (var row : data(call("find_overdue_tenants", "{\"min_days_overdue\":" + minDays + "}")).get("tenants")) {
+            if (unit.equals(row.get("unitCode").asText())) {
+                return row;
+            }
+        }
+        throw new AssertionError(unit + " is not in the overdue list for " + minDays + " days");
+    }
+
+    private Map<String, Object> chronicPayersInvoicesDueBefore(LocalDate cutoff) {
+        return jdbc.queryForMap("""
+                select count(*) as months, sum(p.amount - p.paid_amount) as owed
+                from payments p join leases l on l.id = p.lease_id
+                where l.tenant_id = 7 and l.active = true and p.paid_on is null and p.due_date < ?""",
+                Date.valueOf(cutoff));
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {0, 30, 60})
+    void unpaidMonthsAndAmountOfAnOverdueTenantCoverTheUnpaidInvoicesPastTheThreshold(int minDays) throws Exception {
+        var expected = chronicPayersInvoicesDueBefore(LocalDate.now(clock).minusDays(minDays));
+
+        var row = overdueRowOfTheChronicPayer(minDays);
+
+        assertThat(row.get("unpaidMonths").asLong()).isEqualTo((Long) expected.get("months"));
+        assertThat(row.get("unpaidAmount").decimalValue()).isEqualByComparingTo((BigDecimal) expected.get("owed"));
+    }
+
+    @Test
+    void anOverdueListForSomeDaysShowsLessThanTheWholeBalanceWhichThePaymentHistoryHas() throws Exception {
+        var row = overdueRowOfTheChronicPayer(30);
+        var history = data(call("get_payment_history", "{\"unit_code\":\"" + chronicUnit() + "\"}"));
+        var owedInAll = BigDecimal.ZERO;
+        for (var payment : history.get("payments")) {
+            if (payment.get("paidOn").isNull()) {
+                owedInAll = owedInAll.add(payment.get("remainingAmount").decimalValue());
+            }
+        }
+
+        // the invoice due this month is never more than 30 days past due, so it is in the history and not in the list
+        assertThat(row.get("unpaidMonths").asInt()).isLessThan(history.get("unpaidMonths").asInt());
+        assertThat(row.get("unpaidAmount").decimalValue()).isLessThan(owedInAll);
+    }
+
+    @Test
+    void theOverdueToolSaysItsMonthsAndAmountCoverOnlyTheInvoicesPastTheThreshold() {
+        var description = registry.specs().stream().filter(spec -> spec.name().equals("find_overdue_tenants"))
+                .findFirst().orElseThrow().description();
+
+        assertThat(description).contains(
+                "unpaidMonths and unpaidAmount of a tenant cover only the invoices that are not fully paid and more "
+                        + "than min_days_overdue days past due (every unpaid invoice past due when it is 0)",
+                "they can be less than the tenant owes in all", "get_payment_history has the full balance");
     }
 
     @Test

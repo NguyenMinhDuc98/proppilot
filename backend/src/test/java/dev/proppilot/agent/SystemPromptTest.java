@@ -138,6 +138,14 @@ class SystemPromptTest {
     }
 
     @Test
+    void saysAnOverdueListCountsOnlyTheMonthsPastTheNumberOfDaysSoThePaymentHistoryHasTheWholeBalance() {
+        assertThat(prompt).contains("An unpaid amount is what is still owed of a month that is not fully paid",
+                "counts, for each tenant, only the months that were due more than that many days ago",
+                "so it can show less than a tenant owes in all",
+                "the payment history of the tenant shows the whole balance");
+    }
+
+    @Test
     void settlesTheDefaultsSoThatTheyAreNotAskedFor() {
         assertThat(prompt).contains("a reminder, or a message to a tenant with no other purpose, is a RENT_REMINDER",
                 "the language the user asked for", "else in the tenant's preferred language",

@@ -37,8 +37,11 @@ public class FindOverdueTenantsTool implements Tool {
     public String description() {
         return "List tenants whose oldest unpaid rent is more than N days past its due date, "
                 + "most overdue first. Returns the total count and the " + SHOWN + " most overdue. totalTenants and "
-                + "totalUnpaidAmount cover every tenant that matches, not only those listed; unpaidMonths counts a "
-                + "tenant's invoices not fully paid and daysOverdue counts from the oldest of them.";
+                + "totalUnpaidAmount cover every tenant that matches, not only those listed. unpaidMonths and "
+                + "unpaidAmount of a tenant cover only the invoices that are not fully paid and more than "
+                + "min_days_overdue days past due (every unpaid invoice past due when it is 0), so they can be less "
+                + "than the tenant owes in all: get_payment_history has the full balance of one tenant. daysOverdue "
+                + "counts from the oldest of those invoices.";
     }
 
     @Override

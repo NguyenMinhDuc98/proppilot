@@ -61,7 +61,10 @@ final class SystemPrompt {
                 PAID_LATE (paid later), PARTIAL (part paid, the rest still owed) or UNPAID (nothing paid). The days \
                 late of a month not fully paid run from its due date to today. A tenant is overdue when unpaid rent \
                 was due before today; "more than 30 days late" means the oldest unpaid rent was due more than 30 \
-                days ago. An unpaid amount is what is still owed.
+                days ago. An unpaid amount is what is still owed of a month that is not fully paid. A list of \
+                tenants more than some number of days late counts, for each tenant, only the months that were due \
+                more than that many days ago, so it can show less than a tenant owes in all: the payment history \
+                of the tenant shows the whole balance.
                 - Defaults when the user does not say: a reminder, or a message to a tenant with no other purpose, is \
                 a RENT_REMINDER (a renewal or a maintenance notice only when asked for). A draft is in the language \
                 the user asked for ("in English", "بالعربية"), else in the tenant's preferred language. "This \
