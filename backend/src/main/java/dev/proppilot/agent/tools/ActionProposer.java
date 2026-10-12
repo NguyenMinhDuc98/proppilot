@@ -33,7 +33,7 @@ class ActionProposer {
             var proposed = actions.propose(kind, arguments, context.runId());
             var data = new Proposed(proposed.id(), proposed.status(), proposed.summaryEn(), proposed.summaryAr(), NOTE);
             var ui = json.createObjectNode().put("type", ToolResult.ACTION_UI_TYPE);
-            ui.set("action", json.valueToTree(proposed));
+            ui.set("action", ToolJson.tree(json, proposed));
             return ToolResult.ok(json, data, "Proposed, waiting for approval: " + proposed.summaryEn()).withUi(ui);
         } catch (ActionException refused) {
             return ToolResult.error(refused.getMessage());

@@ -167,6 +167,28 @@ class ProposalToolsTest {
     }
 
     @Test
+    void theAmountsOfTheCardAreWrittenAsPlainDecimalsNotExponents() {
+        var args = JSON.createObjectNode().put("unit_code", "A-203").put("amount", new BigDecimal("4800.00"));
+        var preview = JSON.createObjectNode().put("outstandingBefore", new BigDecimal("9600.00"))
+                .put("outstandingAfter", new BigDecimal("4800.00")).put("overpaymentCredit", new BigDecimal("0.00"));
+        preview.putArray("payments").addObject().put("applied", new BigDecimal("4800.00"))
+                .put("remainingAfter", new BigDecimal("1E+3"));
+        when(actions.propose(any(), any(), any())).thenReturn(new ActionView(ACTION, ActionKind.RECORD_PAYMENT,
+                ActionStatus.PROPOSED, args, preview, "Record a SAR 4,800.00 payment.", "تسجيل دفعة.",
+                Instant.parse("2026-03-15T10:00:00Z"), Instant.parse("2026-03-15T10:15:00Z"), null, null, null, null,
+                RUN, null));
+
+        var result = recordPayment.propose(input("{\"unit_code\":\"A-203\",\"amount\":4800}"), ToolContext.NONE);
+
+        var card = result.ui().get("action");
+        assertThat(card.get("args").toString()).isEqualTo("{\"unit_code\":\"A-203\",\"amount\":4800.00}");
+        assertThat(card.get("preview").toString()).isEqualTo("{\"outstandingBefore\":9600.00,"
+                + "\"outstandingAfter\":4800.00,\"overpaymentCredit\":0.00,"
+                + "\"payments\":[{\"applied\":4800.00,\"remainingAfter\":1000}]}");
+        assertThat(card.get("preview").at("/payments/0/applied").decimalValue()).isEqualTo(new BigDecimal("4800.00"));
+    }
+
+    @Test
     void aRefusedProposalIsACleanToolErrorWithTheValidatorsMessage() {
         when(actions.propose(any(), any(), any())).thenThrow(new ActionException(ActionError.AMOUNT_EXCEEDS_OUTSTANDING,
                 "The amount SAR 9,000.00 is more than the SAR 4,800.00 outstanding for unit A-203."));

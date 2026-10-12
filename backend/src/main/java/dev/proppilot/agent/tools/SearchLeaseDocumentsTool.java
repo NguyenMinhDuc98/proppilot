@@ -122,9 +122,9 @@ public class SearchLeaseDocumentsTool implements OwnTransactionTool {
         // The query is the model's own words: it states what was asked for, not what the documents say
         var found = new Result(null, null, retrieval, searched, clauses, scope.noDocumentFor(), note);
         var sources = json.createObjectNode().put("type", ToolResult.SOURCES_UI_TYPE);
-        sources.set("sources", json.valueToTree(chunks.stream().map(SearchLeaseDocumentsTool::source).toList()));
+        sources.set("sources", ToolJson.tree(json, chunks.stream().map(SearchLeaseDocumentsTool::source).toList()));
         return ToolResult.ok(json, data, summary(chunks)).withUi(sources)
-                .withEvidence(json.valueToTree(found).toString());
+                .withEvidence(ToolJson.write(json, found));
     }
 
     /** At most {@value #MAX_UNIT_CODES}: the single unit code and the list together, without repeats. */

@@ -13,7 +13,8 @@ import java.util.function.IntConsumer;
  * grounded by a result with twelve of them, whether or not the number 12 is written in it. What follows from the
  * rows of an array and from a fraction is read for {@link DerivedFigures}.
  *
- * <p>A number is read as its plain digits: Jackson writes a whole amount of a tool as {@code 4.8E+3}, which is 4800.
+ * <p>A number is read as its plain digits, so one written with an exponent ({@code 4.8E+3}, as Jackson's tree wrote
+ * a whole amount before tool results were written as plain decimals) is 4800 all the same.
  *
  * <p>The text is read as a stream, not as a tree, so a document nested a million levels deep costs no stack; Jackson
  * stops at its own depth limit. A text that is not JSON (the message of a tool error) is scanned as a sentence.

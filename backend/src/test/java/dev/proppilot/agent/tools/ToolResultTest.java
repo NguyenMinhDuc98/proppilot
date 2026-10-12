@@ -3,6 +3,8 @@ package dev.proppilot.agent.tools;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.math.BigDecimal;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
@@ -16,6 +18,33 @@ class ToolResultTest {
         var result = ToolResult.ok(JSON, Map.of("monthlyRent", 4950), "found");
 
         assertThat(result.evidence()).isEqualTo(result.content()).isEqualTo("{\"monthlyRent\":4950}");
+    }
+
+    record Invoice(String month, BigDecimal amount, BigDecimal remainingAmount) {
+    }
+
+    record Occupancy(BigDecimal occupancyRatePercent, BigDecimal rentCollected, List<Invoice> payments) {
+    }
+
+    @Test
+    void anAmountReachesTheModelAsAPlainDecimalNotAnExponent() {
+        var data = new Occupancy(new BigDecimal("80.0"), new BigDecimal("93100.00"),
+                List.of(new Invoice("2026-10", new BigDecimal("4800.00"), new BigDecimal("4800.00"))));
+
+        var result = ToolResult.ok(JSON, data, "occupancy");
+
+        assertThat(result.content()).isEqualTo("{\"occupancyRatePercent\":80.0,\"rentCollected\":93100.00,"
+                + "\"payments\":[{\"month\":\"2026-10\",\"amount\":4800.00,\"remainingAmount\":4800.00}]}");
+        assertThat(result.evidence()).isEqualTo(result.content());
+    }
+
+    @Test
+    void wholeAmountsAreNeverWrittenInScientificNotation() {
+        var result = ToolResult.ok(JSON, Map.of("eighty", new BigDecimal("80"), "thousand", new BigDecimal("1E+3"),
+                "debt", new BigDecimal("-4800.00"), "half", new BigDecimal("0.50")), "amounts");
+
+        assertThat(result.content()).doesNotContainPattern("[0-9][eE][+-]?[0-9]")
+                .contains("\"eighty\":80", "\"thousand\":1000", "\"debt\":-4800.00", "\"half\":0.50");
     }
 
     @Test

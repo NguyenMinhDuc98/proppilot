@@ -132,6 +132,29 @@ class ToolsIT extends PostgresIntegrationTest {
     }
 
     @Test
+    void amountsAndRatesReachTheModelAsPlainDecimalsNeverAsExponents() throws Exception {
+        var unit = chronicUnit();
+        var overdue = call("find_overdue_tenants", "{\"min_days_overdue\":30}");
+        var occupancy = call("get_occupancy_summary", "{\"building\":\"A\"}");
+        var history = call("get_payment_history", "{\"unit_code\":\"" + unit + "\"}");
+        var details = call("get_unit_details", "{\"unit_code\":\"" + unit + "\"}");
+        var units = call("search_units", "{\"city\":\"Riyadh\"}");
+        var expiring = call("find_expiring_leases", "{\"within_days\":365}");
+
+        for (var result : java.util.List.of(overdue, occupancy, history, details, units, expiring)) {
+            assertThat(result.error()).as(result.content()).isFalse();
+            assertThat(result.content()).doesNotContainPattern("[0-9][eE][+-]?[0-9]");
+        }
+        assertThat(overdue.content()).containsPattern("\"totalUnpaidAmount\":[0-9]+\\.[0-9]{2}[,}]")
+                .containsPattern("\"unpaidAmount\":[0-9]+\\.[0-9]{2}[,}]");
+        assertThat(occupancy.content()).containsPattern("\"occupancyRatePercent\":[0-9]+\\.[0-9][,}]")
+                .containsPattern("\"rentCollected\":[0-9]+\\.[0-9]{2}[,}]");
+        assertThat(history.content()).containsPattern("\"remainingAmount\":[0-9]+\\.[0-9]{2}[,}]");
+        assertThat(details.content()).containsPattern("\"overdueAmount\":[0-9]+\\.[0-9]{2}[,}]");
+        assertThat(units.content()).containsPattern("\"monthlyRent\":[0-9]+\\.[0-9]{2}[,}]");
+    }
+
+    @Test
     void occupancySummaryValidatesBuildingAndMonth() throws Exception {
         var unknown = call("get_occupancy_summary", "{\"building\":\"Q\"}");
         assertThat(unknown.error()).isTrue();

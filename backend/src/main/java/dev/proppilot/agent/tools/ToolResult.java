@@ -20,7 +20,7 @@ public record ToolResult(String content, String summary, boolean error, JsonNode
     public static final String SOURCES_UI_TYPE = "sources";
 
     public static ToolResult ok(ObjectMapper json, Object data, String summary) {
-        var content = json.valueToTree(data).toString();
+        var content = ToolJson.write(json, data);
         return new ToolResult(content, summary, false, null, content);
     }
 
