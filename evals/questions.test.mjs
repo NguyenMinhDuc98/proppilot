@@ -214,16 +214,23 @@ test('the not-found cases fail a figure for the unit, and do not fail a word tha
 test('ar-08 accepts the Arabic wordings of an unpaid month, however they are typed, and still wants one', () => {
   // The first live run (2026-10-12) failed a correct answer that said "لم يتم الدفع". The answers are wordings made
   // up around the status, not recordings.
-  const unpaid = ['UNPAID', 'غير مدفوع', 'غير مدفوعة', 'لم يُدفع', 'لم تُدفع', 'لم يتم الدفع', 'لم يتم السداد',
-    'لم يُسدد', 'لم تُسدد', 'غير مسدد', 'غير مسددة']
+  const unpaid = ['UNPAID', 'غير مدفوع', 'غير مدفوعة', 'غير المدفوع', 'غير المدفوعة', 'غير مسدد', 'غير مسددة',
+    'غير المسدد', 'غير المسددة', 'لم يُدفع', 'لم تُدفع', 'لم يُسدد', 'لم تُسدد', 'لم يتم الدفع', 'لم يتم دفع',
+    'لم يتم السداد', 'لم يتم سداد', 'لم يتم التسديد', 'لم يتم تسديد', 'لم يقم بالدفع', 'لم يقم بدفع',
+    'لم يقم بالسداد', 'لم يقم بسداد', 'لم يقم بالتسديد', 'لم يقم بتسديد']
   const withMarks = (wording) => `المستأجر أحمد الحربي، شهر أكتوبر: ${wording}، ومبلغه 4,800 ريال.`
   for (const wording of unpaid) {
     assert.deepEqual(gradedFor('ar-08', withMarks(wording)).missingFacts, [], wording)
     const plain = wording.replace(/[\u064B-\u065F\u0670]/g, '')
     assert.deepEqual(gradedFor('ar-08', withMarks(plain)).missingFacts, [], plain)
   }
+  const sentences = ['أحمد الحربي: لم يتم دفع إيجار شهر أكتوبر', 'أحمد الحربي لم يقم بالدفع', 'أحمد الحربي: لم يتم دفعه',
+    'الأشهر غير المدفوعة لشهر أكتوبر عند أحمد الحربي', 'المبلغ غير المدفوع على أحمد الحربي هو 19,200 ريال',
+    'أحمد الحربي: لم يتم تسديد إيجار أكتوبر', 'أحمد الحربي لم يقم بسداد الإيجار منذ أربعة أشهر']
+  for (const answer of sentences) assert.deepEqual(gradedFor('ar-08', answer).missingFacts, [], answer)
   const paid = ['دفع أحمد الحربي الإيجار في موعده كل شهر.', 'أحمد الحربي: تم الدفع في شهر يونيو بعد تأخر يومين.',
-    'أحمد الحربي يدفع 4,800 ريال شهريًا.']
+    'أحمد الحربي يدفع 4,800 ريال شهريًا.', 'أحمد الحربي: تم تسديد كامل المبلغ في موعده.',
+    'قام أحمد الحربي بالدفع في موعده، ولم يتأخر عن الدفع في أي شهر.']
   for (const answer of paid) assert.equal(gradedFor('ar-08', answer).missingFacts.length, 1, answer)
   assert.deepEqual(gradedFor('ar-08', 'الوحدة B-203: لم يتم الدفع').missingFacts, ['أحمد الحربي'])
 })

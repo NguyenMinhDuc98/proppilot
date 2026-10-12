@@ -143,7 +143,7 @@ This is the first run of the read cases since the write actions, the lease tools
 
 **What 3.1 changed because of it.**
 
-- The grader: `ar-08` lists the wordings that say a month is unpaid (`لم يتم الدفع`, `لم تُدفع`, `لم يتم السداد`, `غير مسدد` and two more), and nothing else it checks was loosened.
+- The grader: `ar-08` lists the wordings that say a month is unpaid: `UNPAID`; `لم يتم` and `لم يقم ب` before `الدفع`, `دفع`, `السداد`, `سداد`, `التسديد` or `تسديد`; `لم يُدفع` and `لم يُسدد` in both genders; and `غير` before `مدفوع` or `مسدد`, with and without the article. A wording counts with or without vowel marks, and nothing else it checks was loosened.
 - The seven flagged cases carry `noGuardrailFlag` (see the field table), so the next live run reports a flagged correct answer as a failure of that case. `en-07`, `ar-06` and `en-08`, whose figures no rule derives, are the ones most likely to fail on it.
 - The guardrail grounds a count of rows that share a value, a sum of a group of rows and a fraction times 100 ([README](../README.md#grounding-guardrail)).
 - Tool results write amounts as plain decimals; the model saw `4.8E+3`.
