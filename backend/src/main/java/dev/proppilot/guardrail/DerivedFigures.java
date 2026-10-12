@@ -18,6 +18,8 @@ import java.util.function.Consumer;
  *       of rows that share a value of another field (the four unpaid months of 4,800, 19,200)</li>
  *   <li><b>A rate:</b> a number above 0 and up to 1 that has a fractional part, times 100, rounded to 0, 1 and 2
  *       decimals as an answer prints it (0.5 written as 50%)</li>
+ *   <li><b>A rounding:</b> a number that a result states with decimals, rounded to a whole number and to one
+ *       decimal, as an answer writes it (49.8 written as "just under 50%")</li>
  * </ul>
  *
  * Nothing else is derived: not a difference, a product, an average, or a sum of rows that nothing groups. A result
@@ -62,6 +64,18 @@ final class DerivedFigures {
         var percent = number.multiply(PERCENT);
         for (int decimals : PRINTED_DECIMALS) {
             emit(percent.setScale(decimals, RoundingMode.HALF_UP));
+        }
+    }
+
+    /** A number stated with decimals, rounded as an answer would write it: {@code 49.8} is also {@code 50}. */
+    void ofRounded(BigDecimal number) {
+        var plain = number.stripTrailingZeros();
+        if (plain.scale() <= 0 || spent()) {
+            return;
+        }
+        emit(plain.setScale(0, RoundingMode.HALF_UP));
+        if (plain.scale() > 1) {
+            emit(plain.setScale(1, RoundingMode.HALF_UP));
         }
     }
 

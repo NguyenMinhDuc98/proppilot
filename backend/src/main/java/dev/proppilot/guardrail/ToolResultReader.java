@@ -11,7 +11,7 @@ import java.util.function.IntConsumer;
  * be the thousands separator of a figure: so the result is read value by value, and only the strings, the numbers
  * and the names of fields are scanned for figures and codes. The length of every array is a figure too: "12 units" is
  * grounded by a result with twelve of them, whether or not the number 12 is written in it. What follows from the
- * rows of an array and from a fraction is read for {@link DerivedFigures}.
+ * rows of an array, from a fraction and from a number with decimals is read for {@link DerivedFigures}.
  *
  * <p>A number is read as its plain digits, so one written with an exponent ({@code 4.8E+3}, as Jackson's tree wrote
  * a whole amount before tool results were written as plain decimals) is 4800 all the same.
@@ -66,6 +66,7 @@ final class ToolResultReader {
             return;
         }
         derived.ofRate(value);
+        derived.ofRounded(value);
         open.scalar(field, value.stripTrailingZeros());
         ClaimScanner.ofEvidence(hasExponent(text) ? value.toPlainString() : text, claims);
     }

@@ -10,6 +10,7 @@ import java.util.stream.IntStream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /** The figures that follow from the rows of a tool result, and the bounds on how many are read. */
 class DerivedFiguresTest {
@@ -154,9 +155,28 @@ class DerivedFiguresTest {
     }
 
     @ParameterizedTest
-    @CsvSource({"1", "1.0", "0", "0.0", "-0.5", "1.5", "50", "85.5", "2"})
-    void aNumberThatIsNoFractionOfAWholeIsNoRate(String number) {
-        assertThat(derivedFrom("{\"rate\":" + number + "}")).isEmpty();
+    @CsvSource({"1,100", "1.0,100", "0,0", "0.0,0", "-0.5,50", "1.5,150", "50,5000", "85.5,8550", "2,200"})
+    void aNumberThatIsNoFractionOfAWholeIsNoRate(String number, String percentage) {
+        assertThat(derivedFrom("{\"rate\":" + number + "}")).doesNotContain(percentage);
+    }
+
+    @ParameterizedTest
+    @CsvSource({"49.8,50", "45.25,45.3", "45.25,45", "12.4,12", "12.5,13", "0.857,1", "4800.50,4801",
+            "4.98E+1,50"})
+    void aNumberWithDecimalsIsAlsoWrittenRoundedAsAnAnswerWritesIt(String number, String rounded) {
+        assertThat(derivedFrom("{\"rate\":" + number + "}")).contains(rounded);
+    }
+
+    @ParameterizedTest
+    @CsvSource({"49.8,51", "49.8,49", "45.25,46", "12.4,13", "4800.50,4802"})
+    void aRoundingIsNoRangeAroundTheNumber(String number, String other) {
+        assertThat(derivedFrom("{\"rate\":" + number + "}")).doesNotContain(other);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"4800", "4800.00", "80", "8E+1", "0", "5"})
+    void aWholeNumberIsNotRounded(String number) {
+        assertThat(derivedFrom("{\"amount\":" + number + "}")).isEmpty();
     }
 
     @Test

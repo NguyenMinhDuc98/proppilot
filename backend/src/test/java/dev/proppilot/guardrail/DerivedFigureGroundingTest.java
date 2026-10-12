@@ -242,6 +242,57 @@ class DerivedFigureGroundingTest {
                 OCCUPANCY_D))).containsExactly("57,000");
     }
 
+    /**
+     * Re-asked of the deployed demo on 2026-10-12 (the demo's data differs from the seed of that date): the answer said
+     * rent collection was "just under 50%" of the expected amount, and printed 49.8% elsewhere. The result below is
+     * what that answer implies, not a recording of the tool result.
+     */
+    private static final String OCCUPANCY_A_LIVE = """
+            {"building":"A","month":"2026-10","totalUnits":25,"occupiedUnits":20,"vacantUnits":3,\
+            "maintenanceUnits":2,"occupancyRatePercent":80.0,"rentExpected":133000.00,"rentCollected":66250.00,\
+            "collectionRatePercent":49.8,"unpaidInvoices":10}""";
+
+    /**
+     * Re-asked on the same day for building D: the answer wrote that 57,000 SAR of 123,000 had been collected, a rate of
+     * 45.3%. 45.3% of 123,000 is 55,719, so 57,000 is a figure that the answer's own rate contradicts and that no
+     * result of that call can hold. The result is again what the answer implies.
+     */
+    private static final String OCCUPANCY_D_LIVE = """
+            {"building":"D","month":"2026-10","totalUnits":25,"occupiedUnits":20,"vacantUnits":4,\
+            "maintenanceUnits":1,"occupancyRatePercent":80.0,"rentExpected":123000.00,"rentCollected":55719.00,\
+            "collectionRatePercent":45.3,"unpaidInvoices":11}""";
+
+    @Test
+    void justUnderFiftyPercentIsTheRoundingOfTheRateTheResultStates() {
+        var answer = "Occupancy: 20 of 25 units (80%). Collected: 66,250 of 133,000 SAR (49.8%). Rent collection is "
+                + "lagging at just under 50% of the expected amount, with 10 unpaid invoices.";
+
+        assertThat(check("Summarise occupancy and collected rent for Building A this month.", answer, OCCUPANCY_A_LIVE))
+                .isEmpty();
+        assertThat(check("لخّص الإشغال والإيجار المحصّل للمبنى A هذا الشهر.",
+                "الإشغال 80٪ (20 من 25 وحدة). المحصّل 66,250 من 133,000 ريال (49.8٪)، أي قرابة 50٪ تقريبًا.",
+                OCCUPANCY_A_LIVE)).isEmpty();
+    }
+
+    @Test
+    void aCollectedAmountThatTheRateOfTheSameAnswerContradictsIsStillReported() {
+        var answer = "Building D is 80% occupied. The rent collection rate is 45.3%, with 57,000 SAR collected out of "
+                + "123,000 SAR expected, and there are 11 unpaid invoices.";
+
+        assertThat(values(check("What is the occupancy rate of building D?", answer, OCCUPANCY_D_LIVE)))
+                .containsExactly("57,000");
+    }
+
+    @Test
+    void aRoundedFigureIsNoRangeAroundTheFigureTheResultStates() {
+        var question = "Summarise occupancy and collected rent for Building A this month.";
+
+        assertThat(values(check(question, "Collection is at 51% of the expected amount.", OCCUPANCY_A_LIVE)))
+                .containsExactly("51");
+        assertThat(values(check(question, "Collection is at 49% of the expected amount.", OCCUPANCY_A_LIVE)))
+                .containsExactly("49");
+    }
+
     @Test
     void aFractionIsGroundedAsThePercentageAnAnswerWritesIt() {
         var question = "How full is building A?";
