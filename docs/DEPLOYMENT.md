@@ -128,7 +128,7 @@ A blank value (empty, or only spaces) of any of these means what an unset one me
 
 ### Prompt caching
 
-`PROMPT_CACHING` is `"true"` in `render.yaml`. Anthropic caches a prefix only above a minimum length that depends on the model: 4,096 tokens for Haiku 4.5. On 2026-10-12 the prefix (tool definitions and system prompt) was about 3,660 tokens, so nothing was cached on the first call of a run. The prompt has since grown to about 4,600 tokens by estimate, and that has not been measured yet; the conversation is marked only from the third call of a run. The Usage page shows the cache read and write tokens the API reported, and says so when there were none. Nothing is wrong when it stays at zero. See the [README](../README.md#prompt-caching) for the measurement and how to repeat it.
+`PROMPT_CACHING` is `"true"` in `render.yaml`. Anthropic caches a prefix only above a minimum length that depends on the model: 4,096 tokens for Haiku 4.5. On 2026-10-12 the prefix (tool definitions and system prompt) was about 3,660 tokens, so nothing was cached on the first call of a run. The prompt has since grown to about 4,760 tokens by estimate, and that has not been measured yet; the conversation is marked only from the third call of a run. The Usage page shows the cache read and write tokens the API reported, and says so when there were none. Nothing is wrong when it stays at zero. See the [README](../README.md#prompt-caching) for the measurement and how to repeat it.
 
 ### OpenTelemetry
 

@@ -12,8 +12,9 @@ import java.util.List;
  *                      next: a model that stalled is likely to stall again, and the retries would use the time the
  *                      other model needs
  * @param iteration which model call of its run this is, counted from 1. A client that caches the conversation does so
- *                  only from the third call: the cache pays off only when another call of the run follows, which is
- *                  rare after the second and common after the third. A client that has no cache ignores it
+ *                  only from the third call: the cache pays off only when a later call of the run reads it, which is
+ *                  expected to be rare after the second call and is assumed, not measured, to be common after the
+ *                  third. A client that has no cache ignores it
  */
 public record LlmRequest(String system, List<Message> messages, List<ToolSpec> tools, Duration timeout, String model,
                          boolean retryTimeouts, int iteration) {

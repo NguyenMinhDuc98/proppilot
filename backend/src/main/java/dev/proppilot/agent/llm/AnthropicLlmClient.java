@@ -35,8 +35,10 @@ public class AnthropicLlmClient implements LlmClient {
     private static final int LOGGED_ERROR_BODY_BYTES = 500;
     /**
      * The conversation is marked for caching from this model call of a run. What a call writes is read only by a
-     * call that follows it, which after the second is rare and from the third common: an earlier mark would mostly
-     * be a write, at 1.25 times the input price, that nothing reads.
+     * call that follows it. After the second call one is expected to be rare, which the first measurement fits (one
+     * cache read in 20 runs); that one after the third is common is an assumption that has not been measured. An
+     * earlier mark would mostly be a write, at 1.25 times the input price, that nothing reads. The conversation is
+     * therefore written at the third call and first read at the fourth.
      */
     private static final int FIRST_CACHED_CONVERSATION_ITERATION = 3;
 
@@ -176,7 +178,8 @@ public class AnthropicLlmClient implements LlmClient {
     /**
      * Marks where the prompt may be cached up to: the end of the tools and of the system prompt, which are the same
      * from one call and one question to the next, and from the third call of a run the end of the conversation so far,
-     * which the next call of the run then reads. That is at most three of the four breakpoints a request may have.
+     * which the next call of the run reads, if there is one. That is at most three of the four breakpoints a request
+     * may have.
      *
      * <p>The API caches a prefix only when it is longer than a minimum that depends on the model (512 to 4096 tokens
      * at the time of writing) and otherwise silently does not: the request is accepted and nothing is written. A marked
