@@ -41,7 +41,9 @@ public class GetOccupancySummaryTool implements Tool {
     @Override
     public String description() {
         return "Occupancy and rent collection for a month: unit counts by status, occupancy rate, "
-                + "rent collected vs expected. Omit building for the whole portfolio, omit month for the current month.";
+                + "rent collected vs expected. Omit building for the whole portfolio, omit month for the current month. "
+                + "The unit counts and monthlyRentRoll are as of today; month only affects the rent collected and "
+                + "expected, the collection rate and the unpaid invoices.";
     }
 
     @Override

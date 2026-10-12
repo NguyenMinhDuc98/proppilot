@@ -18,6 +18,9 @@ import org.springframework.stereotype.Component;
 @Component
 public class GetPaymentHistoryTool implements Tool {
 
+    /** A month paid up to this many days after its due date counts as paid on time; later it is paid late. */
+    public static final int ON_TIME_GRACE_DAYS = 5;
+
     private final TenantResolver resolver;
     private final PaymentRepository payments;
     private final Clock clock;
@@ -106,7 +109,7 @@ public class GetPaymentHistoryTool implements Tool {
         Long daysLate = null;
         if (p.isPaid()) {
             long late = ChronoUnit.DAYS.between(p.getDueDate(), p.getPaidOn());
-            status = late > 5 ? "PAID_LATE" : "PAID_ON_TIME";
+            status = late > ON_TIME_GRACE_DAYS ? "PAID_LATE" : "PAID_ON_TIME";
             daysLate = Math.max(late, 0);
         } else {
             status = p.isPartiallyPaid() ? "PARTIAL" : "UNPAID";

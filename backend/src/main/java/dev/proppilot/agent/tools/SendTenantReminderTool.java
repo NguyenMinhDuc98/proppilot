@@ -39,7 +39,7 @@ public class SendTenantReminderTool implements ProposalTool {
         return ToolSchema.object()
                 .string("unit_code", "Unit code such as A-203 (preferred, unambiguous)")
                 .string("tenant_name", "Tenant name in English or Arabic (partial match)")
-                .enumeration("purpose", "What the message is about", MessageDrafter.Purpose.class)
+                .enumeration("purpose", MessageDrafter.PURPOSE_HELP, MessageDrafter.Purpose.class)
                 .enumeration("language", "Language of the message; defaults to the tenant's preferred language",
                         MessageDrafter.Language.class)
                 .required("purpose")

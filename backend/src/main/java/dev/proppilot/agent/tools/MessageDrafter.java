@@ -16,6 +16,10 @@ public class MessageDrafter {
 
     public enum Language { EN, AR }
 
+    /** Where the model picks a purpose: a plain "reminder" is a rent reminder, so it is never asked which kind. */
+    static final String PURPOSE_HELP = "What the message is about. A reminder, or a message with no other purpose, is "
+            + "RENT_REMINDER";
+
     public sealed interface Drafted {
 
         record Message(String tenantEn, String tenantAr, String unitCode, Language language, Purpose purpose,

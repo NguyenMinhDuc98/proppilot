@@ -35,7 +35,7 @@ public class DraftTenantMessageTool implements Tool {
         return ToolSchema.object()
                 .string("unit_code", "Unit code such as A-203 (preferred, unambiguous)")
                 .string("tenant_name", "Tenant name in English or Arabic (partial match)")
-                .enumeration("purpose", "What the message is about", "RENT_REMINDER", "LEASE_RENEWAL", "MAINTENANCE_NOTICE")
+                .enumeration("purpose", MessageDrafter.PURPOSE_HELP, MessageDrafter.Purpose.class)
                 .enumeration("language", "Language of the draft; defaults to the tenant's preferred language", "EN", "AR")
                 .required("purpose")
                 .build();
