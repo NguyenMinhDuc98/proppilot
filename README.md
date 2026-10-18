@@ -6,6 +6,10 @@
 
 > **Live demo:** https://proppilot-lake.vercel.app runs **real Claude (Haiku 4.5)**. A badge at the top of the app always shows the active mode: `Claude Haiku 4.5` or `Offline demo`. Run locally with no key and it uses the free offline assistant instead. The free-tier API sleeps when idle, so the first request after a pause can take a few minutes while it wakes up. A 60-second path through it, with the prompts and what to point at, is in [docs/DEMO.md](docs/DEMO.md).
 
+![A 46-second walk through the live demo in Arabic: overdue tenants, the "How I answered" panel, a payment history, a lease clause with its citation, a payment that is only proposed, its approval and the audit trail](docs/screenshots/demo.gif)
+
+*The path of [docs/DEMO.md](docs/DEMO.md) on the live demo with real Claude (Haiku 4.5), recorded on 2026-10-19: the page flips right to left, a table streams in, the trace panel shows the steps, a citation chip opens the clause, a payment waits for approval, and the audit trail shows who approved it. It is a scripted capture of the real app and its real answers, with a frame at each key moment, so the waiting is cut: each answer took 3.7 to 8.3 s by the app's own timer.*
+
 All data is fake seed data (3 cities, 6 buildings, 150 units, 120 tenants, 12 months of payments), and the 30 lease documents are generated from it. No real companies or people.
 
 ## Screenshots
