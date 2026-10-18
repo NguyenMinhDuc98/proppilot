@@ -49,6 +49,23 @@ Jobs on every push and PR: `backend` (`./mvnw verify`), `frontend` (typecheck, t
 - **Docs style:** the README states only what was measured, with dates and numbers, and says plainly what has not been measured. Keep that standard in docs, PR descriptions and commit messages.
 - Conventional commits; one PR per feature; never push to `main`.
 
+## Lessons that cost time here
+- **Regex and the stack:** `java.util.regex` recurses once per round of a repeated group, and production runs with `-Xss256k` (a test thread has four times that). No unbounded repeated groups on text a visitor wrote; bound every loop, and give a new parser a hostile-input test on a 256 KB thread (see `ComplexityAssessorHostileInputTest`). Run the backend suite as `./mvnw test -DargLine=-Xss256k` when you touch a pattern.
+- **MockMvc ITs:** use `@AutoConfigureMockMvc(print = MockMvcPrint.NONE)`. The result printer races the SSE thread and made `ChatRunOutcomesIT` flaky.
+- **The cached prefix:** tool definitions plus the system prompt must stay over 4,096 tokens, the minimum Haiku 4.5 caches; below it nothing is cached and nothing fails. `PromptPrefixIT` guards it. The system prompt's "Conventions and defaults" section names no tool or parameter (a test checks that); the rules section may.
+- **Editing `evals/questions.json`:** make surgical text edits. Reformatting it (for example `json.dump`) rewrites every line and hides the change. The first 42 cases keep their order and ids (`questions.test.mjs`).
+- **Secrets:** none in git, ever. New settings go in `.env.example` and the README environment table. On Render, keys that are `sync: false` in `render.yaml` are set in the dashboard, because a value in the file would overwrite it on every blueprint sync.
+- **Numbers in docs:** a README or evals README figure that a change moves (case counts, test counts, tool count, cache prefix size) is updated in the same PR. Say what was measured, how many runs, and what was not.
+
+## Adding or changing an agent tool
+A tool touches more places than its class. Checklist: the `Tool` bean and its input limits; a test against the seeded database (`*ToolIT`) and the name list in `ToolsIT`; a rule in `SystemPrompt` and its test; the label in `tools` of both `en.ts` and `ar.ts` and the tool list in `MessageBubble.test.ts`; offline routing and an offline answer, with a hostile-input test; the `TOOLS` set and a case in `evals/questions.json` (update the counts in `questions.test.mjs`); the tool count in the README diagram and `docs/index.md`. The guardrail reads a tool's result as evidence, so a result states only data, never advice or the model's own input.
+
+## Running evals against the live demo
+- A run spends the demo's shared daily question cap (100 on Render, held in memory, so a restart resets it) and real money. Use `--delay-ms 7000` for the per-minute limit and keep a sweep under the cap.
+- The `write-` cases leave expired proposals on the Activity page. Reset afterwards: `POST /api/admin/reset` with `X-Admin-Token` (the `demo-reset` workflow does it; start it with `gh workflow run demo-reset.yml`).
+- The Render free tier sleeps when idle; the first request after a pause can take minutes.
+- A case that fails once on a real model is not yet a finding: run it again (three runs) before changing a prompt or a grader.
+
 ## Do not touch without asking Duc
 - Already-applied Flyway migrations (`V1`…`V10`): add a new migration instead. The seed (`V2`) feeds eval facts.
 - The approval path (`actions/ActionService`, executors, audit) and the admin token check.
