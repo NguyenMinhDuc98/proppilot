@@ -14,7 +14,7 @@ The [README](../README.md) is the detailed, public description of the system. Th
 | Module | Purpose | Code location | Owner agent |
 | --- | --- | --- | --- |
 | Agent loop & LLM clients | Model calls, tool use, retries, routing, prompt caching, offline provider | `backend/.../agent/` | backend-dev |
-| Tools | 8 read tools, 3 proposal tools, lease search | `backend/.../agent/tools/` | backend-dev |
+| Tools | 9 read tools (including lease search and `find_tenant`), 3 proposal tools | `backend/.../agent/tools/` | backend-dev |
 | Write actions | Propose → preview → approve/reject/expire, audit trail | `backend/.../actions/` | backend-dev |
 | Chat & SSE | `/api/chat`, events, run accounting | `backend/.../chat/` | backend-dev |
 | Lease search (RAG) | PDF generation and extraction, chunking, hybrid retrieval, citations | `backend/.../rag/` | backend-dev |
