@@ -3,6 +3,7 @@
 A script to record, or to follow live in an interview. It walks one path through the app: an Arabic question that returns a table, the "How I answered" panel, a follow-up, a lease clause with a citation, a payment that is only proposed, its approval, and the audit trail. The last section maps each step to the part of the [README](../README.md) that explains it.
 
 - **Live demo:** https://proppilot-lake.vercel.app (real Claude, Haiku 4.5, when its badge says so).
+- **A recording of this path:** [screenshots/demo.gif](screenshots/demo.gif) (46 s, 1.2 MB, Arabic, the live demo with real Claude, 2026-10-19). It is a scripted capture with a frame at each key moment, not a screen recording, so the waiting between steps is cut.
 - **Locally:** `docker compose up --build` gives http://localhost:3000 with the free offline assistant; with `LLM_PROVIDER=anthropic ANTHROPIC_API_KEY=...` it uses Claude (see [Run locally](../README.md#run-locally)). A local stack is the right place to rehearse: approving a payment on the public demo changes data that every visitor shares.
 
 ## Before you record
